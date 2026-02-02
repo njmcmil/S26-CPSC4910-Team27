@@ -19,6 +19,51 @@ Usage:
 
 
 from db import get_connection
+from auth import hash_password, verify_password
+
+
+
+
+def create_user(username: str, password: str, role: str, email: str) -> dict:
+    """
+    Create a new user with password validation and hashed password.
+
+    Returns the created user dictionary or raises ValueError if invalid.
+    """
+    from utils import validate_password
+    from auth import hash_password
+    # 1️⃣ Validate password
+    is_valid, error_message = validate_password(password)
+    if not is_valid:
+        raise ValueError(error_message)
+
+    # 2️⃣ Hash password
+    password_hash = hash_password(password)
+
+    # 3️⃣ Insert into database
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            INSERT INTO Users (username, password_hash, role, email)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (username, password_hash, role, email)
+        )
+        conn.commit()
+
+        user_id = cursor.lastrowid
+        return {
+            "user_id": user_id,
+            "username": username,
+            "role": role,
+            "email": email
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
 
 def get_all_users():
     conn = get_connection()
@@ -121,8 +166,38 @@ def update_password(user_id: int, new_password_hash: str) -> bool:
         cursor.close()
         conn.close()
 
+
+def validate_login(username: str, password: str) -> dict:
+    """
+    Validate login credentials for any user.
+
+    Args:
+        username: User's username
+        password: Plain text password
+
+    Returns:
+        dict: User info if login successful, None otherwise
+    """
+    user = get_user_by_username(username)
+    if not user:
+        return None
+
+    # Use auth.py verify_password utility
+    if verify_password(password, user['password_hash']):
+        return user  # Includes role, so caller can handle driver/admin/sponsor
+    return None
+
 # Quick test
 if __name__ == "__main__":
     all_users = get_all_users()
     for u in all_users:
         print(f"Username: {u[0]}, Role: {u[1]}")
+
+    # Test login
+    username = input("\nEnter username to test login: ")
+    password = input("Enter password: ")
+    user = validate_login(username, password)
+    if user:
+        print(f"Login successful! Welcome {user['username']} ({user['role']})")
+    else:
+        print("Invalid username or password.")

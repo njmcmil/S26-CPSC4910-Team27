@@ -21,7 +21,7 @@ Usage:
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from db import get_connection
-from users import get_user_by_username, get_user_by_id, update_password
+from users import get_user_by_username, get_user_by_id, update_password, create_user, validate_login
 from utils import validate_password
 from auth import hash_password, verify_password
 from password_reset import generate_reset_token, validate_reset_token, mark_token_used
@@ -44,11 +44,69 @@ def get_all_users():
 def root():
     return {"message": "Good Driver Incentive Program API is running!"}
 
+
 # FastAPI endpoint to get all users
 @app.get("/users")
 def read_users():
     users = get_all_users()
     return [{"username": u[0], "role": u[1]} for u in users]
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str
+    email: str
+
+@app.post("/create-user")
+def create_user_endpoint(request: CreateUserRequest):
+    try:
+        user = create_user(
+            username=request.username,
+            password=request.password,
+            role=request.role,
+            email=request.email
+        )
+        return {"message": "User created successfully!", "user": user}
+
+    except ValueError as ve:
+        # Password validation errors
+        raise HTTPException(status_code=400, detail=str(ve))
+
+    except IntegrityError as ie:
+        # Duplicate username/email error
+        if "Duplicate entry" in str(ie):
+            raise HTTPException(status_code=400, detail=f"Username '{request.username}' already exists")
+        else:
+            raise HTTPException(status_code=400, detail="User with this email or username already exists")
+
+    except Exception as e:
+        # Unexpected errors
+        raise HTTPException(status_code=500, detail="Error creating user")
+
+# Request model
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+# Response model
+class LoginResponse(BaseModel):
+    user_id: int
+    username: str
+    role: str
+    email: str
+
+@app.post("/login", response_model=LoginResponse)
+def login_endpoint(request: LoginRequest):
+    user = validate_login(request.username, request.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    return {
+        "user_id": user["user_id"],
+        "username": user["username"],
+        "role": user["role"],
+        "email": user["email"]
+    }
 
 # =====================
 # Mock Authentication 
