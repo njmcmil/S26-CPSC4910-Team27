@@ -26,6 +26,7 @@ from utils import validate_password
 from auth import hash_password, verify_password
 from password_reset import generate_reset_token, validate_reset_token, mark_token_used
 from email_service import send_password_reset_email
+from fastapi import status
 
 app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
 
@@ -342,3 +343,14 @@ if __name__ == "__main__":
     print("Users in the database:")
     for u in users:
         print(f"Username: {u[0]}, Role: {u[1]}")
+
+@app.post("/logout")
+def logout():
+    """
+    Simple logout endpoint.
+
+    Logout just tells the client to delete their token.
+    """
+    return {
+        "message": "Logout successful. Please delete your token on the client side."
+    }
