@@ -1,0 +1,17 @@
+# Core dependencies for Team27 Good Driver Incentive Program
+# Install with: python -m pip install -r requirements.txt 
+
+# Web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# Database
+mysql-connector-python==8.2.0
+
+# Configuration
+python-dotenv==1.0.0
+
+# Password & Authentication
+passlib[bcrypt]==1.7.4      
+bcrypt==4.1.2               
