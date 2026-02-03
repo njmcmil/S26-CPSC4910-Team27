@@ -17,6 +17,8 @@ Usage:
     Run as API:
         uvicorn app:app --reload
 """
+from db import get_connection
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
@@ -39,8 +41,48 @@ from password_reset import generate_reset_token, validate_reset_token, mark_toke
 from email_service import send_password_reset_email
 from token_blacklist import blacklist_token
 
+INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
+
 
 app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
+
+def check_inactivity(current_user: dict = Depends(get_current_user)):
+    """
+    Check if the user has been inactive for more than 30 minutes.
+    Updates last_activity if still active.
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute(
+            "SELECT last_activity FROM Users WHERE user_id = %s",
+            (current_user["user_id"],)
+        )
+        row = cursor.fetchone()
+        if row and row["last_activity"]:
+            last_active = row["last_activity"]
+            now = datetime.utcnow()
+            if now - last_active > timedelta(minutes=INACTIVITY_LIMIT_MINUTES):
+                raise HTTPException(
+                    status_code=401,
+                    detail="Session expired due to inactivity"
+                )
+        
+        # Update last_activity to now
+        cursor.execute(
+            "UPDATE Users SET last_activity = %s WHERE user_id = %s",
+            (datetime.utcnow(), current_user["user_id"])
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+
+
 
 # Function to get all users from the DB
 def get_all_users():
@@ -375,19 +417,10 @@ def logout(request: Request):
 
 
 @app.get("/me/last-login", summary="Get Last Login Activity")
-def get_last_login_activity(current_user: dict = Depends(get_current_user)):
-    """
-    Returns the last login details for the authenticated user.
-
-    Requires:
-        - Authorization header: Bearer <token>
-
-    Response:
-        - last_login_time: timestamp of last login
-        - ip_address: IP address used
-        - user_agent: client user agent
-        - success: login success flag
-    """
+def get_last_login_activity(
+    current_user: dict = Depends(get_current_user),
+    _: None = Depends(check_inactivity)  #auto-logout check
+):
     last_login = get_last_login(current_user["user_id"])
     if not last_login:
         return {"message": "No login history available"}
@@ -397,6 +430,7 @@ def get_last_login_activity(current_user: dict = Depends(get_current_user)):
         "user_agent": last_login["user_agent"],
         "success": last_login["success"]
     }
+
 
 
 
