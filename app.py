@@ -18,17 +18,27 @@ Usage:
         uvicorn app:app --reload
 """
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
-from db import get_connection
-from users import get_user_by_username, get_user_by_id, update_password, create_user, validate_login
+from fastapi.security import OAuth2PasswordRequestForm
+
+from users import (
+    create_user,
+    validate_login,
+    get_all_users,
+    get_user_by_id,
+    get_last_login,
+    update_password,
+    get_user_by_username
+)
+
+from auth import hash_password, verify_password, get_current_user, create_access_token
+from login_audit import log_login_attempt
 from utils import validate_password
-from auth import hash_password, verify_password
 from password_reset import generate_reset_token, validate_reset_token, mark_token_used
 from email_service import send_password_reset_email
-from fastapi import status
-from fastapi import Request
 from token_blacklist import blacklist_token
+
 
 app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
 
@@ -98,45 +108,42 @@ class LoginResponse(BaseModel):
     role: str
     email: str
 
+
 @app.post("/login", response_model=LoginResponse)
-def login_endpoint(request: LoginRequest):
+def login_endpoint(request: LoginRequest, http_request: Request):
     user = validate_login(request.username, request.password)
+
+    ip = http_request.client.host
+    agent = http_request.headers.get("User-Agent")
+
     if not user:
+        log_login_attempt(
+            username=request.username,
+            success=False,
+            ip_address=ip,
+            user_agent=agent
+        )
         raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    log_login_attempt(
+        username=user["username"],
+        user_id=user["user_id"],
+        success=True,
+        ip_address=ip,
+        user_agent=agent
+    )
+
+    token = create_access_token({"user_id": user["user_id"]})
     
     return {
         "user_id": user["user_id"],
         "username": user["username"],
         "role": user["role"],
-        "email": user["email"]
+        "email": user["email"],
+        "access_token": token
     }
 
-async def get_current_user(request: Request):
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing")
 
-    parts = auth_header.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization header format")
-
-    token = parts[1]
-
-    # Check if token is blacklisted (logged out)
-    if is_token_blacklisted(token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")
-
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("user_id")
-        username = payload.get("username")
-        role = payload.get("role")
-        if not user_id or not username or not role:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-
-    return {"user_id": user_id, "username": username, "role": role}
 
 # ===============================
 # Request/Response Models
@@ -365,3 +372,52 @@ def logout(request: Request):
     blacklist_token(token)
 
     return {"message": "Successfully logged out"}
+
+
+@app.get("/me/last-login", summary="Get Last Login Activity")
+def get_last_login_activity(current_user: dict = Depends(get_current_user)):
+    """
+    Returns the last login details for the authenticated user.
+
+    Requires:
+        - Authorization header: Bearer <token>
+
+    Response:
+        - last_login_time: timestamp of last login
+        - ip_address: IP address used
+        - user_agent: client user agent
+        - success: login success flag
+    """
+    last_login = get_last_login(current_user["user_id"])
+    if not last_login:
+        return {"message": "No login history available"}
+    return {
+        "last_login_time": last_login["login_time"],
+        "ip_address": last_login["ip_address"],
+        "user_agent": last_login["user_agent"],
+        "success": last_login["success"]
+    }
+
+
+
+@app.post("/token")
+def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends()):
+    """
+    OAuth2 token endpoint for Swagger UI.
+
+    Accepts form data: username & password
+    Returns: access_token and token_type
+    """
+    user = validate_login(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    # create JWT access token
+    token = create_access_token({"user_id": user["user_id"]})
+
+    # Log successful login
+    # Optionally log IP & user-agent, if you pass request
+    return {
+        "access_token": token,
+        "token_type": "bearer"
+    }
