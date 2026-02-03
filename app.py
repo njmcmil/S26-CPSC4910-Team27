@@ -27,6 +27,8 @@ from auth import hash_password, verify_password
 from password_reset import generate_reset_token, validate_reset_token, mark_token_used
 from email_service import send_password_reset_email
 from fastapi import status
+from fastapi import Request
+from token_blacklist import blacklist_token
 
 app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
 
@@ -109,27 +111,32 @@ def login_endpoint(request: LoginRequest):
         "email": user["email"]
     }
 
-# =====================
-# Mock Authentication 
-# =====================
+async def get_current_user(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing")
 
-def mock_get_current_user():
-    """
-    MOCK function - returns a fake authenticated user.
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization header format")
 
-    In real implementation, this will:
-    1. Extract JWT token from Authorization header
-    2. Validate token
-    3. Return user data from token
+    token = parts[1]
 
-    For now, returns a mock user for testing change-password endpoint.
-    """
-    # simulate an authenticated sponsor user
-    return {
-        "user_id": 2,  # replace with actual user_id from database
-        "username": "sponsor1",
-        "role": "sponsor"
-    }
+    # Check if token is blacklisted (logged out)
+    if is_token_blacklisted(token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("user_id")
+        username = payload.get("username")
+        role = payload.get("role")
+        if not user_id or not username or not role:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    return {"user_id": user_id, "username": username, "role": role}
 
 # ===============================
 # Request/Response Models
@@ -267,7 +274,7 @@ def reset_password(request: ResetPasswordRequest):
 @app.post("/change-password")
 def change_password(
     request: ChangePasswordRequest,
-    current_user: dict = Depends(mock_get_current_user)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Change password for authenticated user.
@@ -296,7 +303,6 @@ def change_password(
         401: Not authenticated
 
     Note:
-        Currently uses mock_get_current_user() for testing.
         Replace with real get_current_user() when auth is ready.
     """
     # get full user data from database
@@ -345,12 +351,17 @@ if __name__ == "__main__":
         print(f"Username: {u[0]}, Role: {u[1]}")
 
 @app.post("/logout")
-def logout():
-    """
-    Simple logout endpoint.
+def logout(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Expect header format: "Bearer <token>"
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
 
-    Logout just tells the client to delete their token.
-    """
-    return {
-        "message": "Logout successful. Please delete your token on the client side."
-    }
+    token = parts[1]
+    blacklist_token(token)
+
+    return {"message": "Successfully logged out"}
