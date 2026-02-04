@@ -3,6 +3,8 @@ from services import get_user_by_id, get_user_by_username, update_password
 from auth import hash_password, verify_password
 from db import get_connection
 
+from typing import Optional, Dict
+
 # -----------------------------
 # User business logic
 # -----------------------------
@@ -38,7 +40,7 @@ def create_user(username: str, password: str, role: str, email: str) -> dict:
         conn.close()
 
 
-def validate_login(username: str, password: str) -> dict | None:
+def validate_login(username: str, password: str) -> Optional[Dict]:
     """Validate user login credentials."""
     user = get_user_by_username(username)
     if not user:
