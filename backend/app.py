@@ -104,11 +104,6 @@ def check_inactivity(current_user: dict = Depends(get_current_user)):
         cursor.close()
         conn.close()
 
-
-
-
-
-
 # Function to get all users from the DB
 def get_all_users():
     conn = get_connection()
@@ -124,6 +119,31 @@ def get_all_users():
 def root():
     return {"message": "Good Driver Incentive Program API is running!"}
 
+# About endpoint
+@app.get("/about")
+def get_about():
+    """Public endpoint — returns project metadata for the About page."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT team_number, version_number, sprint_number,
+                   release_date, product_name, product_description
+            FROM About
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="About information not found")
+        if row.get("release_date"):
+            row["release_date"] = str(row["release_date"])
+        return row
+    finally:
+        cursor.close()
+        conn.close()
 
 # FastAPI endpoint to get all users
 @app.get("/users")

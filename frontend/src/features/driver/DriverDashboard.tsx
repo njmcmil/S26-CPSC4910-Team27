@@ -1,26 +1,26 @@
 import { useAuth } from '../../auth/AuthContext';
 
-export function AdminDashboardPage() {
+export function DriverDashboardPage() {
   const { user } = useAuth();
 
   return (
-    <section aria-labelledby="admin-heading">
-      <h2 id="admin-heading">Admin Dashboard</h2>
+    <section aria-labelledby="driver-dash-heading">
+      <h2 id="driver-dash-heading">Driver Dashboard</h2>
       <p className="mt-1">Welcome back, {user?.username}.</p>
 
       <div className="placeholder-grid mt-2">
         <div className="card">
-          <h3>Total Users</h3>
+          <h3>Points Balance</h3>
           <p className="placeholder-value">--</p>
           <p className="helper-text">Coming soon</p>
         </div>
         <div className="card">
-          <h3>Active Sponsors</h3>
+          <h3>Recent Orders</h3>
           <p className="placeholder-value">--</p>
           <p className="helper-text">Coming soon</p>
         </div>
         <div className="card">
-          <h3>Recent Activity</h3>
+          <h3>Sponsor</h3>
           <p className="placeholder-value">--</p>
           <p className="helper-text">Coming soon</p>
         </div>
