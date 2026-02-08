@@ -23,12 +23,30 @@ export interface AuthUser {
   email: string;
 }
 
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
+}
+
+/* ── About ── */
+export interface AboutInfo {
+  team_number: number;
+  version_number: string;
+  sprint_number: number;
+  release_date: string;
+  product_name: string;
+  product_description: string;
+}
+
 /* ── Trusted Devices ── */
 export interface TrustedDevice {
-  id: string;
+  device_id: number;
   device_name: string;
+  device_type: string;
+  ip_address: string;
   last_used: string;
   created_at: string;
+  is_active: boolean;
 }
 
 /* ── Driver Profile ── */
@@ -36,33 +54,62 @@ export interface DriverProfile {
   user_id: number;
   username: string;
   email: string;
-  first_name: string;
-  last_name: string;
-  phone: string;
-  address: string;
-  license_number: string;
+  first_name: string | null;
+  last_name: string | null;
+  phone_number: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip_code: string | null;
+  license_number: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  vehicle_year: number | null;
+  vehicle_license_plate: string | null;
   points_balance: number;
-  sponsor_name: string;
+  profile_picture_url: string | null;
+  bio: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 /* ── Sponsor Profile ── */
 export interface SponsorProfile {
   user_id: number;
-  company_name: string;
-  contact_name: string;
+  username: string;
   email: string;
-  phone: string;
-  address: string;
-  point_value: number;
+  first_name: string | null;
+  last_name: string | null;
+  phone_number: string | null;
+  company_name: string | null;
+  company_address: string | null;
+  company_city: string | null;
+  company_state: string | null;
+  company_zip: string | null;
+  industry: string | null;
+  contact_person_name: string | null;
+  contact_person_phone: string | null;
+  profile_picture_url: string | null;
+  bio: string | null;
+  total_points_allocated: number;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface SponsorProfileUpdate {
-  company_name: string;
-  contact_name: string;
-  email: string;
-  phone: string;
-  address: string;
-  point_value: number;
+  first_name?: string;
+  last_name?: string;
+  phone_number?: string;
+  company_name?: string;
+  company_address?: string;
+  company_city?: string;
+  company_state?: string;
+  company_zip?: string;
+  industry?: string;
+  contact_person_name?: string;
+  contact_person_phone?: string;
+  profile_picture_url?: string;
+  bio?: string;
 }
 
 /* ── API Errors ── */

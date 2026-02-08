@@ -34,7 +34,7 @@ export function DriverProfilePage() {
     fetchProfile();
   }, [fetchProfile]);
 
-  if (loading) return <Spinner label="Loading profile…" />;
+  if (loading) return <Spinner label="Loading profile..." />;
 
   if (notFound) {
     return (
@@ -65,16 +65,17 @@ export function DriverProfilePage() {
 
   if (!profile) return null;
 
-  const fields: { label: string; value: string | number | undefined }[] = [
+  const fields: { label: string; value: string | number | null | undefined }[] = [
     { label: 'Username', value: profile.username },
     { label: 'Email', value: profile.email },
     { label: 'First Name', value: profile.first_name },
     { label: 'Last Name', value: profile.last_name },
-    { label: 'Phone', value: profile.phone },
-    { label: 'Address', value: profile.address },
+    { label: 'Phone', value: profile.phone_number },
+    { label: 'Address', value: [profile.address, profile.city, profile.state, profile.zip_code].filter(Boolean).join(', ') || null },
     { label: 'License Number', value: profile.license_number },
+    { label: 'Vehicle', value: [profile.vehicle_year, profile.vehicle_make, profile.vehicle_model].filter(Boolean).join(' ') || null },
+    { label: 'License Plate', value: profile.vehicle_license_plate },
     { label: 'Points Balance', value: profile.points_balance },
-    { label: 'Sponsor', value: profile.sponsor_name },
   ];
 
   return (
@@ -84,7 +85,7 @@ export function DriverProfilePage() {
         {fields.map(({ label, value }) => (
           <div key={label}>
             <dt>{label}</dt>
-            <dd>{value != null && value !== '' ? String(value) : '—'}</dd>
+            <dd>{value != null && value !== '' ? String(value) : '\u2014'}</dd>
           </div>
         ))}
       </dl>

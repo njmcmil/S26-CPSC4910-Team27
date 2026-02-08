@@ -10,7 +10,7 @@ export function AccountSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
 
   const fetchDevices = useCallback(async () => {
     setLoading(true);
@@ -33,10 +33,10 @@ export function AccountSettingsPage() {
   const handleRevoke = async (device: TrustedDevice) => {
     setSuccessMsg('');
     setError('');
-    setRevokingId(device.id);
+    setRevokingId(device.device_id);
     try {
-      await trustedDevicesService.revoke(device.id);
-      setDevices((prev) => prev.filter((d) => d.id !== device.id));
+      await trustedDevicesService.revoke(device.device_id);
+      setDevices((prev) => prev.filter((d) => d.device_id !== device.device_id));
       setSuccessMsg(`Device "${device.device_name}" has been removed.`);
     } catch (err) {
       const apiErr = err as ApiError;
@@ -51,13 +51,12 @@ export function AccountSettingsPage() {
       <h2 id="settings-heading">Account Settings</h2>
       <h3>Trusted Devices</h3>
 
-      {/* Live region for status messages */}
       <div aria-live="polite" aria-atomic="true">
         {successMsg && <Alert variant="success">{successMsg}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
       </div>
 
-      {loading && <Spinner label="Loading trusted devices…" />}
+      {loading && <Spinner label="Loading trusted devices..." />}
 
       {!loading && !error && devices.length === 0 && (
         <p className="mt-1">
@@ -80,15 +79,15 @@ export function AccountSettingsPage() {
           </thead>
           <tbody>
             {devices.map((d) => (
-              <tr key={d.id}>
+              <tr key={d.device_id}>
                 <td>{d.device_name}</td>
-                <td>{d.last_used ? new Date(d.last_used).toLocaleString() : '—'}</td>
-                <td>{d.created_at ? new Date(d.created_at).toLocaleString() : '—'}</td>
+                <td>{d.last_used ? new Date(d.last_used).toLocaleString() : '\u2014'}</td>
+                <td>{d.created_at ? new Date(d.created_at).toLocaleString() : '\u2014'}</td>
                 <td>
                   <Button
                     variant="danger"
                     onClick={() => handleRevoke(d)}
-                    loading={revokingId === d.id}
+                    loading={revokingId === d.device_id}
                     aria-label={`Remove device ${d.device_name}`}
                   >
                     Remove
