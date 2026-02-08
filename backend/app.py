@@ -51,10 +51,11 @@ from profiles.trusted_devices import router as trusted_devices_router
 INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
 
 
-app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
+# CORS middleware — add your frontend origins
 origins = [
-    "http://localhost:5173",  # Vite dev server
+    "http://localhost:5173",      # Vite dev server
     "http://127.0.0.1:5173",
+    "http://52.200.244.222:5173", # EC2 frontend
 ]
 
 app.add_middleware(
@@ -64,7 +65,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # Include routers
 app.include_router(driver_profile_router)
