@@ -17,6 +17,9 @@ Usage:
     Run as API:
         uvicorn app:app --reload
 """
+
+from mysql.connector import IntegrityError
+
 from shared.db import get_connection
 from datetime import datetime, timedelta
 
@@ -49,6 +52,8 @@ from profiles.sponsor_profile import router as sponsor_profile_router
 from profiles.trusted_devices import router as trusted_devices_router
 
 INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
+
+app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
 
 
 # CORS middleware — add your frontend origins
