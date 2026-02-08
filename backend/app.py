@@ -17,14 +17,14 @@ Usage:
     Run as API:
         uvicorn app:app --reload
 """
-from db import get_connection
+from shared.db import get_connection
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
 from fastapi.security import OAuth2PasswordRequestForm
 
-from users import (
+from users.users import (
     create_user,
     validate_login,
     get_all_users,
@@ -34,17 +34,42 @@ from users import (
     get_user_by_username
 )
 
-from auth import hash_password, verify_password, get_current_user, create_access_token
-from login_audit import log_login_attempt
-from utils import validate_password
-from password_reset import generate_reset_token, validate_reset_token, mark_token_used
-from email_service import send_password_reset_email
-from token_blacklist import blacklist_token
+from auth.auth import hash_password, verify_password, get_current_user, create_access_token
+from audit.login_audit import log_login_attempt
+from shared.utils import validate_password
+from users.password_reset import generate_reset_token, validate_reset_token, mark_token_used
+from users.email_service import send_password_reset_email
+from auth.token_blacklist import blacklist_token
+from fastapi.middleware.cors import CORSMiddleware
+
+
+# Import routers
+from profiles.driver_profile import router as driver_profile_router
+from profiles.sponsor_profile import router as sponsor_profile_router
+from profiles.trusted_devices import router as trusted_devices_router
 
 INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
 
 
 app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
+origins = [
+    "http://localhost:5173",  # Vite dev server
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Include routers
+app.include_router(driver_profile_router)
+app.include_router(sponsor_profile_router)
+app.include_router(trusted_devices_router)
 
 def check_inactivity(current_user: dict = Depends(get_current_user)):
     """
@@ -149,6 +174,7 @@ class LoginResponse(BaseModel):
     username: str
     role: str
     email: str
+    access_token: str
 
 
 @app.post("/login", response_model=LoginResponse)

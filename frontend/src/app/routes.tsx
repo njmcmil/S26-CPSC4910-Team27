@@ -1,0 +1,63 @@
+import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { Layout } from '../components/Layout';
+import { ProtectedRoute } from '../auth/ProtectedRoute';
+import { RoleGuard } from '../auth/RoleGuard';
+
+import { LoginPage } from '../pages/Login';
+import { AccountSettingsPage } from '../pages/AccountSettings';
+import { NotFoundPage } from '../pages/NotFound';
+import { DriverProfilePage } from '../features/driver/DriverProfile';
+import { SponsorProfileFormPage } from '../features/sponsor/SponsorProfileForm';
+import { AdminDashboardPage } from '../features/admin/AdminDashboard';
+
+export const router = createBrowserRouter([
+  {
+    path: '/login',
+    element: <LoginPage />,
+  },
+  {
+    element: <Layout />,
+    children: [
+      {
+        element: <ProtectedRoute />,
+        children: [
+          /* ── Account settings (all roles) ── */
+          {
+            path: '/account/settings',
+            element: <AccountSettingsPage />,
+          },
+
+          /* ── Driver routes ── */
+          {
+            element: <RoleGuard allowed={['driver']} />,
+            children: [
+              { path: '/driver/profile', element: <DriverProfilePage /> },
+            ],
+          },
+
+          /* ── Sponsor routes ── */
+          {
+            element: <RoleGuard allowed={['sponsor']} />,
+            children: [
+              { path: '/sponsor/profile', element: <SponsorProfileFormPage /> },
+            ],
+          },
+
+          /* ── Admin routes ── */
+          {
+            element: <RoleGuard allowed={['admin']} />,
+            children: [
+              { path: '/admin', element: <AdminDashboardPage /> },
+            ],
+          },
+        ],
+      },
+
+      /* ── Redirect root to login ── */
+      { path: '/', element: <Navigate to="/login" replace /> },
+
+      /* ── 404 ── */
+      { path: '*', element: <NotFoundPage /> },
+    ],
+  },
+]);

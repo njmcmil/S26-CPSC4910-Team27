@@ -1,4 +1,4 @@
-from db import get_connection
+from shared.db import get_connection
 
 def log_login_attempt(
     username: str,

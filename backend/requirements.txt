@@ -11,6 +11,7 @@ mysql-connector-python==8.2.0
 
 # Configuration
 python-dotenv==1.0.0
+python-multipart==0.0.22
 
 # Password & Authentication
 passlib[bcrypt]==1.7.4      

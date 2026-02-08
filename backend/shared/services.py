@@ -1,5 +1,5 @@
 # services.py
-from db import get_connection
+from shared.db import get_connection
 
 # -----------------------------
 # Raw user database functions
