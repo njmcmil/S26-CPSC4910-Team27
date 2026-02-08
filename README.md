@@ -1,5 +1,3 @@
 Project explanation:
 
-Testing: uvicorn app:app --reload 
-
-(ip)/docs
+URL: http://52.200.244.222:8000
