@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { sponsorService } from '../../services/sponsorService';
+import { sponsorService } from '../services/sponsorService';
+
 
 interface DriverApplication {
   application_id: number;

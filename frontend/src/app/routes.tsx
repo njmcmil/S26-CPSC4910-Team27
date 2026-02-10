@@ -9,7 +9,7 @@ import { NotFoundPage } from '../pages/NotFound';
 import { DriverProfilePage } from '../features/driver/DriverProfile';
 import { SponsorProfileFormPage } from '../features/sponsor/SponsorProfileForm';
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
-import { SponsorApplicationsPage } from '../features/sponsor/SponsorApplicationsPage';
+import { SponsorApplicationsPage } from '../pages/SponsorApplicationsPage';
 
 export const router = createBrowserRouter([
   {
