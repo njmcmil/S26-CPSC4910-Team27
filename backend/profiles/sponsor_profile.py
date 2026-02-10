@@ -414,6 +414,40 @@ def update_sponsor_profile(
         conn.close()
 
 
+
+
+@router.get("/applications", response_model=List[DriverApplication])
+def get_pending_applications(current_user: dict = Depends(require_role("sponsor"))):
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT da.application_id, da.driver_user_id, u.username, u.email, da.status, da.created_at
+            FROM DriverApplications da
+            JOIN Users u ON da.driver_user_id = u.user_id
+            WHERE da.sponsor_user_id = %s AND da.status = 'pending'
+            """,
+            (sponsor_id,)
+        )
+        rows = cursor.fetchall()
+        return [
+            DriverApplication(
+                application_id=row["application_id"],
+                driver_user_id=row["driver_user_id"],
+                username=row["username"],
+                email=row["email"],
+                status=row["status"],
+                created_at=row.get("created_at")
+            )
+            for row in rows
+        ]
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @router.post("/applications/{application_id}/reject")
 def reject_driver_application(
     application_id: int,
