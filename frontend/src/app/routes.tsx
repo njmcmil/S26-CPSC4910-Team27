@@ -9,6 +9,7 @@ import { NotFoundPage } from '../pages/NotFound';
 import { DriverProfilePage } from '../features/driver/DriverProfile';
 import { SponsorProfileFormPage } from '../features/sponsor/SponsorProfileForm';
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
+import { SponsorApplicationsPage } from '../features/sponsor/SponsorApplicationsPage';
 
 export const router = createBrowserRouter([
   {
@@ -37,11 +38,13 @@ export const router = createBrowserRouter([
 
           /* ── Sponsor routes ── */
           {
-            element: <RoleGuard allowed={['sponsor']} />,
-            children: [
-              { path: '/sponsor/profile', element: <SponsorProfileFormPage /> },
+           element: <RoleGuard allowed={['sponsor']} />,
+           children: [
+             { path: '/sponsor/profile', element: <SponsorProfileFormPage /> },
+             { path: '/sponsor/applications', element: <SponsorApplicationsPage /> },
             ],
           },
+
 
           /* ── Admin routes ── */
           {

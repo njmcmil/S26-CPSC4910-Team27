@@ -97,20 +97,55 @@ export interface SponsorProfile {
 }
 
 export interface SponsorProfileUpdate {
-  first_name?: string;
-  last_name?: string;
-  phone_number?: string;
-  company_name?: string;
-  company_address?: string;
-  company_city?: string;
-  company_state?: string;
-  company_zip?: string;
-  industry?: string;
-  contact_person_name?: string;
-  contact_person_phone?: string;
-  profile_picture_url?: string;
-  bio?: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  phone_number?: string | null;
+  company_name?: string | null;
+  company_address?: string | null;
+  company_city?: string | null;
+  company_state?: string | null;
+  company_zip?: string | null;
+  industry?: string | null;
+  contact_person_name?: string | null;
+  contact_person_phone?: string | null;
+  profile_picture_url?: string | null;
+  bio?: string | null;
 }
+
+export type ApplicationStatus = 'pending' | 'approved' | 'rejected';
+
+export interface DriverApplication {
+  application_id: number;
+  driver_user_id: number;
+  sponsor_user_id: number;
+  status: ApplicationStatus;
+  license_number: string;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_year: number;
+  vehicle_license_plate: string;
+  created_at: string;
+  updated_at: string | null;
+  username: string;
+  email: string;
+}
+
+export interface RejectApplicationRequest {
+  rejection_category:
+    | 'Incomplete Documents'
+    | 'Invalid License'
+    | 'Failed Background Check'
+    | 'Vehicle Not Eligible'
+    | 'Other';
+  rejection_reason: string;
+}
+
+
+
+
+
+
+
 
 /* ── API Errors ── */
 export interface ApiError {
@@ -119,3 +154,4 @@ export interface ApiError {
   detail?: string;
   fieldErrors?: Record<string, string>;
 }
+
