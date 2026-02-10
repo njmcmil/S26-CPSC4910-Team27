@@ -56,6 +56,16 @@ class UpdateDriverProfileRequest(BaseModel):
     vehicle_year: int | None = None
     vehicle_license_plate: str | None = None
 
+
+class CreateDriverApplicationRequest(BaseModel):
+    sponsor_user_id: int
+    license_number: str
+    vehicle_make: str
+    vehicle_model: str
+    vehicle_year: int
+    vehicle_license_plate: str
+
+
 # Endpoints
 @router.get("/profile", response_model=DriverProfile)
 def get_driver_profile(current_user: dict = Depends(require_role("driver"))):
@@ -279,6 +289,67 @@ def get_my_driver_applications(
             (user_id,)
         )
         return cursor.fetchall()
+
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.post("/applications")
+def create_driver_application(
+    request: CreateDriverApplicationRequest,
+    current_user: dict = Depends(require_role("driver"))
+):
+    """
+    Create a new driver application for a sponsor.
+
+    Status defaults to 'pending'.
+    """
+    user_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Check if there is already a pending application for this sponsor
+        cursor.execute(
+            """
+            SELECT * FROM DriverApplications
+            WHERE driver_user_id = %s AND sponsor_user_id = %s AND status = 'pending'
+            """,
+            (user_id, request.sponsor_user_id)
+        )
+        if cursor.fetchone():
+            raise HTTPException(
+                status_code=400,
+                detail="You already have a pending application for this sponsor."
+            )
+
+        # Insert the new driver application
+        cursor.execute(
+            """
+            INSERT INTO DriverApplications
+                (driver_user_id, sponsor_user_id, status, license_number, vehicle_make, vehicle_model, vehicle_year, vehicle_license_plate, created_at, updated_at)
+            VALUES (%s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                user_id,
+                request.sponsor_user_id,
+                request.license_number,
+                request.vehicle_make,
+                request.vehicle_model,
+                request.vehicle_year,
+                request.vehicle_license_plate,
+                datetime.utcnow(),
+                datetime.utcnow()
+            )
+        )
+        conn.commit()
+        application_id = cursor.lastrowid
+
+        return {
+            "message": "Driver application submitted successfully.",
+            "application_id": application_id,
+            "status": "pending"
+        }
 
     finally:
         cursor.close()
