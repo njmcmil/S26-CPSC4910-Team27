@@ -477,3 +477,67 @@ def reject_driver_application(
     finally:
         cursor.close()
         conn.close()
+
+
+@router.post("/applications/{application_id}/approve")
+def approve_driver_application(
+    application_id: int,
+    current_user: dict = Depends(require_role("sponsor"))
+):
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # 1) Verify this application belongs to THIS sponsor
+        cursor.execute(
+            """
+            SELECT da.status, da.driver_user_id, u.email, u.username
+            FROM DriverApplications da
+            JOIN Users u ON da.driver_user_id = u.user_id
+            WHERE da.application_id = %s
+              AND da.sponsor_user_id = %s
+            """,
+            (application_id, sponsor_id)
+        )
+
+        app = cursor.fetchone()
+        if not app:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        if app["status"] != "pending":
+            raise HTTPException(
+                status_code=400,
+                detail="Only pending applications can be approved"
+            )
+
+        cursor.execute(
+            """
+            UPDATE DriverApplications
+            SET status = 'approved',
+                updated_at = %s
+            WHERE application_id = %s
+            """,
+            (datetime.utcnow(), application_id)
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO SponsorDrivers (sponsor_user_id, driver_user_id, created_at)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE sponsor_user_id = sponsor_user_id
+            """,
+            (sponsor_id, app["driver_user_id"], datetime.utcnow())
+        )
+
+        conn.commit()
+
+        return {
+            "message": "Driver application approved",
+            "application_id": application_id,
+            "driver_user_id": app["driver_user_id"]
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
