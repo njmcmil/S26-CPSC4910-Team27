@@ -20,6 +20,7 @@ export function LoginPage() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -104,13 +105,22 @@ export function LoginPage() {
         <FormField
           label="Password"
           id="login-password"
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           autoComplete="current-password"
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-
+        
+        <div className="checkbox-group">
+          <input
+            type="checkbox"
+            id="show-password"
+            checked={showPassword}
+            onChange={() => setShowPassword(!showPassword)}
+          />
+          <label htmlFor="show-password">Show password</label>
+        </div>
         <div className="checkbox-group">
           <input
             type="checkbox"
