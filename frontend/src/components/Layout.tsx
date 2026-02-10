@@ -15,7 +15,7 @@ const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { to: '/driver/orders', label: 'My Orders' },
     { to: '/driver/profile', label: 'Profile' },
     { to: '/driver/settings', label: 'Settings' },
-    { to: '/about', label: 'About' },
+    { to: '/driver/about', label: 'About' },
   ],
   sponsor: [
     { to: '/sponsor/dashboard', label: 'Dashboard' },
@@ -26,7 +26,7 @@ const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { to: '/sponsor/reports', label: 'Reports' },
     { to: '/sponsor/profile', label: 'Sponsor Profile' },
     { to: '/sponsor/settings', label: 'Settings' },
-    { to: '/about', label: 'About' },
+    { to: '/driver/about', label: 'About' },
   ],
   admin: [
     { to: '/admin/dashboard', label: 'Dashboard' },
@@ -35,7 +35,7 @@ const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { to: '/admin/reports', label: 'Reports' },
     { to: '/admin/audit-logs', label: 'Audit Logs' },
     { to: '/admin/settings', label: 'Settings' },
-    { to: '/about', label: 'About' },
+    { to: '/driver/about', label: 'About' },
   ],
 };
 
