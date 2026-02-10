@@ -1,6 +1,15 @@
 import { api } from './apiClient';
 import type { SponsorProfile, SponsorProfileUpdate } from '../types';
 
+export interface DriverApplication {
+  application_id: number;
+  driver_user_id: number;
+  username: string;
+  email: string;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at?: string;
+}
+
 const PROFILE_BASE = '/sponsor/profile';
 const APPLICATIONS_BASE = '/sponsor/applications';
 
@@ -19,8 +28,8 @@ export const sponsorService = {
   /* =====================
      APPLICATIONS
   ===================== */
-  getPendingApplications() {
-    return api.get(`${APPLICATIONS_BASE}?status=pending`);
+  getPendingApplications(): Promise<DriverApplication[]> {
+    return api.get(`${APPLICATIONS_BASE}?status=pending`) as Promise<DriverApplication[]>;
   },
 
   approveApplication(applicationId: number) {
