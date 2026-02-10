@@ -87,7 +87,7 @@ export function LoginPage() {
 
   return (
     <section className="card login-card" aria-labelledby="login-heading">
-      <h2 id="login-heading">Sign In</h2>
+      <h2 id="login-heading">NEW SIGN IN RAH (pls ignore im debugging)</h2>
 
       {error && <Alert variant="error">{error}</Alert>}
 
