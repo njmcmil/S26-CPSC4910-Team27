@@ -236,3 +236,61 @@ def send_driver_application_rejection_email(
 
     # Mock always succeeds
     return True
+
+
+def send_driver_application_approval_email(
+    to_email: str,
+    username: str,
+    sponsor_name: str | None = None
+) -> bool:
+    """
+    Send driver application approval email.
+
+    MOCK VERSION: Prints email to console instead of actually sending.
+
+    Args:
+        to_email: Driver's email address
+        username: Driver's username
+        sponsor_name: Name of the sponsor (optional)
+
+    Returns:
+        bool: True if "sent" successfully (always True in mock)
+    """
+
+    sponsor_text = f" by {sponsor_name}" if sponsor_name else ""
+
+    email_content = f"""
+    ╔══════════════════════════════════════════════════════════════╗
+    ║        DRIVER APPLICATION APPROVED (MOCK)                    ║
+    ╚══════════════════════════════════════════════════════════════╝
+
+    To: {to_email}
+    From: noreply@gooddriverprogram.com
+    Subject: Your Driver Application Was Approved!
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    Hello {username},
+
+    Congratulations! 🎉
+
+    Your driver application{sponsor_text} has been APPROVED.
+
+    You are now eligible to:
+    - Deliver goods for your sponsor
+    - Earn reward points
+    - Redeem points for incentives
+
+    You can view your updated application status in your dashboard.
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    If you have questions, please contact support.
+
+    - Good Driver Incentive Program Team
+
+    ╚══════════════════════════════════════════════════════════════╝
+    """
+
+    print(email_content)
+    return True
