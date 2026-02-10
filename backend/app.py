@@ -37,6 +37,9 @@ from users.users import (
     get_user_by_username
 )
 
+from users.admin_routes import router as admin_router
+
+
 from auth.auth import hash_password, verify_password, get_current_user, create_access_token
 from audit.login_audit import log_login_attempt
 from shared.utils import validate_password
@@ -75,6 +78,8 @@ app.add_middleware(
 app.include_router(driver_profile_router)
 app.include_router(sponsor_profile_router)
 app.include_router(trusted_devices_router)
+app.include_router(admin_router)
+
 
 def check_inactivity(current_user: dict = Depends(get_current_user)):
     """

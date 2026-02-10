@@ -166,3 +166,73 @@ def send_password_change_confirmation(to_email: str, username: str) -> bool:
 
     print(email_content)
     return True
+
+
+def send_driver_application_rejection_email(
+    to_email: str,
+    username: str,
+    rejection_category: str,
+    rejection_reason: str
+) -> bool:
+    """
+    Send driver application rejection email.
+
+    MOCK VERSION: Prints email to console instead of actually sending.
+
+    Args:
+        to_email: Driver's email address
+        username: Driver's username
+        rejection_category: High-level rejection category
+        rejection_reason: Detailed explanation for rejection
+
+    Returns:
+        bool: True if "sent" successfully (always True in mock)
+
+    Email Contents:
+        - Subject: Driver Application Update
+        - Body: Rejection category + detailed reason
+        - Purpose: Transparency and clear communication
+    """
+
+    email_content = f"""
+    ╔══════════════════════════════════════════════════════════════╗
+    ║        DRIVER APPLICATION STATUS UPDATE (MOCK)               ║
+    ╚══════════════════════════════════════════════════════════════╝
+
+    To: {to_email}
+    From: noreply@gooddriverprogram.com
+    Subject: Driver Application Update - Good Driver Incentive Program
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    Hello {username},
+
+    Thank you for applying to participate in the Good Driver
+    Incentive Program.
+
+    After careful review, your driver application was not approved
+    at this time.
+
+    Rejection Category:
+    {rejection_category}
+
+    Additional Details:
+    {rejection_reason}
+
+    You are welcome to review this feedback, address any issues,
+    and submit a new application in the future.
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    If you have questions, please contact support.
+
+    - Good Driver Incentive Program Team
+
+    ╚══════════════════════════════════════════════════════════════╝
+    """
+
+    # MOCK: Print to console instead of sending
+    print(email_content)
+
+    # Mock always succeeds
+    return True

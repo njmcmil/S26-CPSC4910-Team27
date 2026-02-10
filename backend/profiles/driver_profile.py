@@ -255,3 +255,31 @@ def update_driver_profile(
     finally:
         cursor.close()
         conn.close()
+
+
+@router.get("/applications")
+def get_my_driver_applications(
+    current_user: dict = Depends(require_role("driver"))
+):
+    """
+    View driver's applications and their status.
+    """
+    user_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            """
+            SELECT application_id, status, rejection_reason, created_at, updated_at
+            FROM DriverApplications
+            WHERE driver_user_id = %s
+            ORDER BY created_at DESC
+            """,
+            (user_id,)
+        )
+        return cursor.fetchall()
+
+    finally:
+        cursor.close()
+        conn.close()
