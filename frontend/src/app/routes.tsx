@@ -10,7 +10,6 @@ import { DriverProfilePage } from '../features/driver/DriverProfile';
 import { SponsorProfileFormPage } from '../features/sponsor/SponsorProfileForm';
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
 import { SponsorApplicationsPage } from '../pages/SponsorApplicationsPage';
-import { AboutPage } from '../pages/About';
 
 export const router = createBrowserRouter([
   {
@@ -59,9 +58,7 @@ export const router = createBrowserRouter([
 
       /* ── Redirect root to login ── */
       { path: '/', element: <Navigate to="/login" replace /> },
-      
-      /* ── About page (public) ── */
-      { path: '/about', element: <AboutPage /> },
+    
 
       /* ── 404 ── */
       { path: '*', element: <NotFoundPage /> },
