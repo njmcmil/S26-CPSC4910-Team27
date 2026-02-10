@@ -14,7 +14,8 @@ from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime
 from auth.auth import get_current_user, require_role
 from shared.db import get_connection
-from users.email_service import send_driver_application_rejection_email
+from users.email_service import send_driver_application_rejection_email, send_driver_application_approval_email
+from typing import List
 
 
 from enum import Enum
@@ -95,6 +96,13 @@ class RejectDriverApplicationRequest(BaseModel):
     rejection_reason: str = Field(min_length=10, max_length=500)
 
 
+class DriverApplication(BaseModel):
+    application_id: int
+    driver_user_id: int
+    username: str
+    email: str
+    status: str
+    created_at: datetime | None = None
 
 
 
