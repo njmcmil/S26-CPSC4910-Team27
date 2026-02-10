@@ -17,7 +17,6 @@ from shared.db import get_connection
 from users.email_service import send_driver_application_rejection_email, send_driver_application_approval_email
 from typing import List
 
-
 from enum import Enum
 
 router = APIRouter(prefix="/sponsor", tags=["sponsor-profile"])
@@ -565,8 +564,9 @@ def approve_driver_application(
                 updated_at = %s
             WHERE application_id = %s
             """,
-            (datetime.utcnow(), application_id)
+            (datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), application_id)
         )
+
 
         cursor.execute(
             """
@@ -575,7 +575,7 @@ def approve_driver_application(
             VALUES (%s, %s, %s)
             ON DUPLICATE KEY UPDATE sponsor_user_id = sponsor_user_id
             """,
-            (sponsor_id, app["driver_user_id"], datetime.utcnow())
+            (sponsor_id, app["driver_user_id"], datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'))
         )
 
         conn.commit()
