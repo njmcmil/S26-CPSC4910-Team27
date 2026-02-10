@@ -24,7 +24,7 @@ Usage:
 
 import secrets
 from datetime import datetime, timedelta
-from db import get_connection
+from shared.db import get_connection
 
 # token expires after 24 hours 
 TOKEN_EXPIRY_HOURS = 24

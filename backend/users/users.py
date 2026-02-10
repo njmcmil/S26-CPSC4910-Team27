@@ -1,7 +1,7 @@
 # users.py
-from services import get_user_by_id, get_user_by_username, update_password
-from auth import hash_password, verify_password
-from db import get_connection
+from shared.services import get_user_by_id, get_user_by_username, update_password
+from auth.auth import hash_password, verify_password
+from shared.db import get_connection
 
 from typing import Optional, Dict
 
@@ -11,7 +11,7 @@ from typing import Optional, Dict
 
 def create_user(username: str, password: str, role: str, email: str) -> dict:
     """Create a new user after validating password and hashing it."""
-    from utils import validate_password
+    from shared.utils import validate_password
 
     if get_user_by_username(username):
         raise ValueError("Username already exists")

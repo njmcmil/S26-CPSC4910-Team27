@@ -26,9 +26,9 @@ from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
-from token_blacklist import is_token_blacklisted
+from auth.token_blacklist import is_token_blacklisted
 
-from services import get_user_by_id
+from shared.services import get_user_by_id
 
 
 SECRET_KEY = "TFYSADGUH908746TTYGU4HRJFDT5367489TURHIGYUJDSHGFXCR567894JSVH672"
@@ -95,7 +95,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     """
     Dependency to get the currently authenticated user from a Bearer token.
     """
-    from services import get_user_by_id 
+    from shared.services import get_user_by_id
 
     payload = verify_token(token)
     if payload is None:
@@ -110,3 +110,20 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=401, detail="User not found")
 
     return user
+
+def require_role(*allowed_roles: str):
+    """
+    Return a FastAPI dependency that enforces the current user's role is one of
+    the allowed roles. Usage:
+
+        current_user = Depends(require_role("driver"))
+
+    This centralizes role checks and prevents copy/paste mistakes across
+    endpoints.
+    """
+    def role_dependency(current_user: dict = Depends(get_current_user)):
+        if current_user.get("role") not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return current_user
+
+    return role_dependency

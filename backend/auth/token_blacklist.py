@@ -1,6 +1,6 @@
 # token_blacklist.py
 
-from db import get_connection
+from shared.db import get_connection
 
 def blacklist_token(token: str):
     conn = get_connection()

@@ -17,14 +17,17 @@ Usage:
     Run as API:
         uvicorn app:app --reload
 """
-from db import get_connection
+
+from mysql.connector import IntegrityError
+
+from shared.db import get_connection
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
 from fastapi.security import OAuth2PasswordRequestForm
 
-from users import (
+from users.users import (
     create_user,
     validate_login,
     get_all_users,
@@ -34,17 +37,49 @@ from users import (
     get_user_by_username
 )
 
-from auth import hash_password, verify_password, get_current_user, create_access_token
-from login_audit import log_login_attempt
-from utils import validate_password
-from password_reset import generate_reset_token, validate_reset_token, mark_token_used
-from email_service import send_password_reset_email
-from token_blacklist import blacklist_token
+from users.admin_routes import router as admin_router
+
+
+from auth.auth import hash_password, verify_password, get_current_user, create_access_token
+from audit.login_audit import log_login_attempt
+from shared.utils import validate_password
+from users.password_reset import generate_reset_token, validate_reset_token, mark_token_used
+from users.email_service import send_password_reset_email
+from auth.token_blacklist import blacklist_token
+from fastapi.middleware.cors import CORSMiddleware
+
+
+# Import routers
+from profiles.driver_profile import router as driver_profile_router
+from profiles.sponsor_profile import router as sponsor_profile_router
+from profiles.trusted_devices import router as trusted_devices_router
 
 INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
 
-
 app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
+
+
+# CORS middleware — add your frontend origins
+origins = [
+    "http://localhost:5173",      # Vite dev server
+    "http://127.0.0.1:5173",
+    "http://52.200.244.222:5173", # EC2 frontend
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(driver_profile_router)
+app.include_router(sponsor_profile_router)
+app.include_router(trusted_devices_router)
+app.include_router(admin_router)
+
 
 def check_inactivity(current_user: dict = Depends(get_current_user)):
     """
@@ -79,11 +114,6 @@ def check_inactivity(current_user: dict = Depends(get_current_user)):
         cursor.close()
         conn.close()
 
-
-
-
-
-
 # Function to get all users from the DB
 def get_all_users():
     conn = get_connection()
@@ -99,6 +129,31 @@ def get_all_users():
 def root():
     return {"message": "Good Driver Incentive Program API is running!"}
 
+# About endpoint
+@app.get("/about")
+def get_about():
+    """Public endpoint — returns project metadata for the About page."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT team_number, version_number, sprint_number,
+                   release_date, product_name, product_description
+            FROM About
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="About information not found")
+        if row.get("release_date"):
+            row["release_date"] = str(row["release_date"])
+        return row
+    finally:
+        cursor.close()
+        conn.close()
 
 # FastAPI endpoint to get all users
 @app.get("/users")
@@ -149,6 +204,7 @@ class LoginResponse(BaseModel):
     username: str
     role: str
     email: str
+    access_token: str
 
 
 @app.post("/login", response_model=LoginResponse)
