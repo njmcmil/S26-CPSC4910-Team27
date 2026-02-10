@@ -489,12 +489,19 @@ def approve_driver_application(
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # 1) Verify this application belongs to THIS sponsor
         cursor.execute(
             """
-            SELECT da.status, da.driver_user_id, u.email, u.username
+            SELECT 
+                da.status,
+                da.driver_user_id,
+                u.email,
+                u.username,
+                sp.company_name
             FROM DriverApplications da
-            JOIN Users u ON da.driver_user_id = u.user_id
+            JOIN Users u 
+              ON da.driver_user_id = u.user_id
+            LEFT JOIN SponsorProfiles sp
+              ON da.sponsor_user_id = sp.user_id
             WHERE da.application_id = %s
               AND da.sponsor_user_id = %s
             """,
@@ -506,7 +513,8 @@ def approve_driver_application(
             raise HTTPException(status_code=404, detail="Application not found")
 
         if app["status"] != "pending":
-            raise HTTPException(status_code=400, detail="Only pending applications can be rejected")
+            raise HTTPException(status_code=400, detail="Only pending applications can be approved")
+
 
         cursor.execute(
             """
@@ -520,7 +528,8 @@ def approve_driver_application(
 
         cursor.execute(
             """
-            INSERT INTO SponsorDrivers (sponsor_user_id, driver_user_id, created_at)
+            INSERT INTO SponsorDrivers 
+                (sponsor_user_id, driver_user_id, created_at)
             VALUES (%s, %s, %s)
             ON DUPLICATE KEY UPDATE sponsor_user_id = sponsor_user_id
             """,
@@ -528,6 +537,12 @@ def approve_driver_application(
         )
 
         conn.commit()
+
+        send_driver_application_approval_email(
+            to_email=app["email"],
+            username=app["username"],
+            sponsor_name=app.get("company_name")
+        )
 
         return {
             "message": "Driver application approved",
