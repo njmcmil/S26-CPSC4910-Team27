@@ -506,10 +506,7 @@ def approve_driver_application(
             raise HTTPException(status_code=404, detail="Application not found")
 
         if app["status"] != "pending":
-            raise HTTPException(
-                status_code=400,
-                detail="Only pending applications can be approved"
-            )
+            raise HTTPException(status_code=400, detail="Only pending applications can be rejected")
 
         cursor.execute(
             """
