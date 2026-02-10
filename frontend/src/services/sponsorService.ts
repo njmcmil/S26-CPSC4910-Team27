@@ -17,8 +17,8 @@ export interface DriverApplication {
    Backend Base URL
 ===================== */
 const BASE_URL = 'http://52.200.244.222:8000'; // EC2 backend
-const PROFILE_BASE = `${BASE_URL}/sponsor/profile`;
-const APPLICATIONS_BASE = `${BASE_URL}/sponsor/applications`;
+const PROFILE_BASE = '/sponsor/profile';
+const APPLICATIONS_BASE = '/sponsor/applications';
 
 /* =====================
    Sponsor Service
