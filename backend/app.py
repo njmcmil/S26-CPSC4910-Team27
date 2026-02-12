@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
 from fastapi.security import OAuth2PasswordRequestForm
+from profiles.points import router as points_router
 
 from users.users import (
     create_user,
@@ -79,6 +80,7 @@ app.include_router(driver_profile_router)
 app.include_router(sponsor_profile_router)
 app.include_router(trusted_devices_router)
 app.include_router(admin_router)
+app.include_router(points_router, prefix="/api", tags=["points"])
 
 
 def check_inactivity(current_user: dict = Depends(get_current_user)):
