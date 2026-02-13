@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from shared.db import get_db_connection
+from shared.db import get_connection
 from auth.dependencies import get_current_user, verify_admin
 
 router = APIRouter()
@@ -30,7 +30,7 @@ async def get_sponsor_settings(
     """Get sponsor settings including negative points setting"""
     
     sponsor_id = current_user.get('sponsor_id')
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -59,7 +59,7 @@ async def update_sponsor_settings(
     """Update sponsor settings"""
     
     sponsor_id = current_user.get('sponsor_id')
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -91,7 +91,7 @@ async def add_driver_points(
     if request.points <= 0:
         raise HTTPException(status_code=400, detail="Points must be positive for adding")
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -159,7 +159,7 @@ async def deduct_driver_points(
     if request.points <= 0:
         raise HTTPException(status_code=400, detail="Points must be positive for deducting")
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -231,7 +231,7 @@ async def get_sponsor_drivers(
     """Get all drivers for the current sponsor"""
     
     sponsor_id = current_user.get('sponsor_id')
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -262,7 +262,7 @@ async def get_driver_points(
 ):
     """Get current point balance for a driver"""
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -305,7 +305,7 @@ async def get_driver_point_history(
     if not driver_id:
         raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -350,7 +350,7 @@ async def get_driver_point_history_monthly(
     if not driver_id:
         raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -389,7 +389,7 @@ async def get_driver_point_month_details(
     if not driver_id:
         raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -423,7 +423,7 @@ async def set_point_expiration_policy(
 ):
     """Admin sets automatic point expiration policy for a sponsor"""
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -468,7 +468,7 @@ async def get_all_expiration_policies(
 ):
     """Get all point expiration policies"""
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -495,7 +495,7 @@ async def run_point_expiration(
 ):
     """Manually trigger point expiration process"""
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
