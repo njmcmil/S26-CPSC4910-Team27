@@ -53,6 +53,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from profiles.driver_profile import router as driver_profile_router
 from profiles.sponsor_profile import router as sponsor_profile_router
 from profiles.trusted_devices import router as trusted_devices_router
+from profiles.points import router as points_router 
 
 INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
 
@@ -79,6 +80,7 @@ app.include_router(driver_profile_router)
 app.include_router(sponsor_profile_router)
 app.include_router(trusted_devices_router)
 app.include_router(admin_router)
+app.include_router(points_router, prefix="/api", tags=["points"])
 
 
 def check_inactivity(current_user: dict = Depends(get_current_user)):
