@@ -2,9 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from shared.db import get_connection
-from auth.dependencies import get_current_user, verify_admin
+from auth.auth import get_current_user
 
 router = APIRouter()
+
+# Add verify_admin function
+def verify_admin(current_user: dict = Depends(get_current_user)):
+    """Verify user is an admin"""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
 
 # Pydantic models for request validation
 class PointChangeRequest(BaseModel):
