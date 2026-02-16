@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from shared.db import get_connection
 from auth.auth import get_current_user
 
-from schemas.points import PointChangeRequest, SponsorSettings, PointChangeResponse
+from schemas.points import PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest
 
 router = APIRouter()
 

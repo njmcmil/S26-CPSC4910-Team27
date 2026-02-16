@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from mysql.connector import IntegrityError
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 
 # --- Schemas (Blueprint layer) ---
 from schemas.user import (
@@ -43,13 +44,13 @@ from users.users import (
     validate_login,
     get_all_users,
     get_user_by_id,
-    get_last_login,
     update_password,
     get_user_by_username
 )
 from auth.auth import get_current_user, create_access_token
 from audit.login_audit import log_login_attempt
-from users.password_reset import generate_reset_token, send_password_reset_email
+from users.password_reset import generate_reset_token
+from users.email_service import send_password_reset_email
 
 # --- Database & Config ---
 from shared.db import get_connection
