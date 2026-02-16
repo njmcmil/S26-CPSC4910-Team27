@@ -1,10 +1,14 @@
 # users/admin_routes.py
+
+# Admin Control Panel
+# allows users with admin role to overlook everyone, and if necessary wipe an account from the system
 from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
 from auth.auth import require_role
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+# Allows admin to see big picture
 @router.get("/users")
 def list_all_users(current_user: dict = Depends(require_role("admin"))):
     conn = get_connection()
@@ -30,6 +34,8 @@ def get_user(username: str, current_user: dict = Depends(require_role("admin")))
         cursor.close()
         conn.close()
 
+
+# Admin- delete a user
 @router.delete("/users/{username}")
 def delete_user(username: str, current_user: dict = Depends(require_role("admin"))):
     conn = get_connection()

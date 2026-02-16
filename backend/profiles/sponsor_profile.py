@@ -9,105 +9,27 @@ Responsibilities:
     - Update sponsor profile
 """
 
+# Sponsor Profile Manager
+# Handles data for Sponsors...pulls data from Users, Profiles, and SponsorProfiles
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime
 from auth.auth import get_current_user, require_role
 from shared.db import get_connection
 from users.email_service import send_driver_application_rejection_email, send_driver_application_approval_email
 from typing import List
 
-from enum import Enum
+from schemas.sponsor import SponsorProfile, CreateSponsorProfileRequest, UpdateSponsorProfileRequest
+
 
 router = APIRouter(prefix="/sponsor", tags=["sponsor-profile"])
 
 
 #=============
-# Models
-#=============
-class SponsorProfile(BaseModel):
-    user_id: int
-    username: str
-    email: str
-    first_name: str | None
-    last_name: str | None
-    phone_number: str | None
-    company_name: str | None
-    company_address: str | None
-    company_city: str | None
-    company_state: str | None
-    company_zip: str | None
-    industry: str | None
-    contact_person_name: str | None
-    contact_person_phone: str | None
-    profile_picture_url: str | None
-    bio: str | None
-    total_points_allocated: int
-    created_at: datetime | None
-    updated_at: datetime | None
-
-
-
-
-
-class CreateSponsorProfileRequest(BaseModel):
-    username: str
-    email: EmailStr
-    first_name: str | None = None
-    last_name: str | None = None
-    phone_number: str | None = None
-    company_name: str | None = None
-    company_address: str | None = None
-    company_city: str | None = None
-    company_state: str | None = None
-    company_zip: str | None = None
-    industry: str | None = None
-    contact_person_name: str | None = None
-    contact_person_phone: str | None = None
-    profile_picture_url: str | None = None
-    bio: str | None = None
-
-class UpdateSponsorProfileRequest(BaseModel):
-    first_name: str | None = None
-    last_name: str | None = None
-    phone_number: str | None = None
-    profile_picture_url: str | None = None
-    bio: str | None = None
-    company_name: str | None = None
-    company_address: str | None = None
-    company_city: str | None = None
-    company_state: str | None = None
-    company_zip: str | None = None
-    industry: str | None = None
-    contact_person_name: str | None = None
-    contact_person_phone: str | None = None
-
-class RejectionCategory(str, Enum):
-    INCOMPLETE_DOCUMENTS = "Incomplete Documents"
-    INVALID_LICENSE = "Invalid License"
-    FAILED_BACKGROUND_CHECK = "Failed Background Check"
-    VEHICLE_NOT_ELIGIBLE = "Vehicle Not Eligible"
-    OTHER = "Other"
-
-
-class RejectDriverApplicationRequest(BaseModel):
-    rejection_category: RejectionCategory
-    rejection_reason: str = Field(min_length=10, max_length=500)
-
-
-class DriverApplication(BaseModel):
-    application_id: int
-    driver_user_id: int
-    username: str
-    email: str
-    status: str
-    created_at: datetime | None = None
-
-
-
-#=============
 # Endpoints
 #=============
+
+# allows a logged-in sponsor to see their profile data
 @router.get("/profile", response_model=SponsorProfile)
 def get_sponsor_profile(current_user: dict = Depends(require_role("sponsor"))):
     """
@@ -166,6 +88,8 @@ def get_sponsor_profile(current_user: dict = Depends(require_role("sponsor"))):
         conn.close()
 
 
+
+# Admin-only tool. Sponsors created by an admin
 @router.post("/admin/create", response_model=SponsorProfile)
 def create_sponsor_profile(
     request: CreateSponsorProfileRequest,
@@ -280,7 +204,7 @@ def create_sponsor_profile(
 
 
 
-
+# Allows the sponsor to update their own company details
 @router.put("/profile", response_model=SponsorProfile)
 def update_sponsor_profile(
     request: UpdateSponsorProfileRequest,

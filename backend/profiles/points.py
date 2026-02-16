@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from datetime import datetime, timedelta
 from shared.db import get_connection
 from auth.auth import get_current_user
+
+from schemas.points import PointChangeRequest, SponsorSettings, PointChangeResponse
 
 router = APIRouter()
 
@@ -12,21 +13,6 @@ def verify_admin(current_user: dict = Depends(get_current_user)):
     if current_user.get('role') != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
-
-# Pydantic models for request validation
-class PointChangeRequest(BaseModel):
-    driver_id: int
-    points: int
-    reason: str
-
-class ExpirationPolicyRequest(BaseModel):
-    sponsor_id: int
-    expiration_months: int
-    auto_expire: bool = True
-
-class SponsorSettings(BaseModel):
-    allow_negative_points: bool = False
-
 
 # ============= SPONSOR ENDPOINTS =============
 
@@ -57,6 +43,7 @@ async def get_sponsor_settings(
         cursor.close()
         conn.close()
 
+# Post Endpoints
 
 @router.post("/sponsor/settings")
 async def update_sponsor_settings(
@@ -84,30 +71,22 @@ async def update_sponsor_settings(
         conn.close()
 
 
-@router.post("/sponsor/points/add")
+@router.post("/sponsor/points/add", response_model=PointChangeResponse)
 async def add_driver_points(
     request: PointChangeRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """Sponsor adds points to a driver (reason required)"""
-    
-    # Validate reason is provided
-    if not request.reason or request.reason.strip() == "":
-        raise HTTPException(status_code=400, detail="Reason is required for point changes")
-    
-    if request.points <= 0:
-        raise HTTPException(status_code=400, detail="Points must be positive for adding")
+    # Note: Reason and positive point validation are now handled by the PointChangeRequest schema!
     
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
     try:
         # Verify driver belongs to this sponsor
-        cursor.execute("""
-            SELECT sponsor_id FROM SponsorDrivers WHERE driver_id = %s
-        """, (request.driver_id,))
-        
+        cursor.execute("SELECT sponsor_id FROM SponsorDrivers WHERE driver_id = %s", (request.driver_id,))
         driver = cursor.fetchone()
+        
         if not driver:
             raise HTTPException(status_code=404, detail="Driver not found")
         
@@ -140,31 +119,20 @@ async def add_driver_points(
             "message": f"Added {request.points} points",
             "new_total": new_total
         }
-        
-    except HTTPException:
+    except Exception:
         conn.rollback()
         raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cursor.close()
         conn.close()
 
 
-@router.post("/sponsor/points/deduct")
+@router.post("/sponsor/points/deduct", response_model=PointChangeResponse)
 async def deduct_driver_points(
     request: PointChangeRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """Sponsor deducts points from a driver (reason required)"""
-    
-    # Validate reason is provided
-    if not request.reason or request.reason.strip() == "":
-        raise HTTPException(status_code=400, detail="Reason is required for point changes")
-    
-    if request.points <= 0:
-        raise HTTPException(status_code=400, detail="Points must be positive for deducting")
     
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -174,7 +142,7 @@ async def deduct_driver_points(
         
         # Get sponsor settings and driver info
         cursor.execute("""
-            SELECT s.allow_negative_points, d.total_points, d.sponsor_id
+            SELECT s.allow_negative_points, d.total_points
             FROM SponsorProfiles s
             JOIN SponsorDrivers d ON d.sponsor_id = s.sponsor_id
             WHERE d.driver_id = %s AND s.sponsor_id = %s
@@ -182,7 +150,7 @@ async def deduct_driver_points(
         
         result = cursor.fetchone()
         if not result:
-            raise HTTPException(status_code=404, detail="Driver not found or doesn't belong to your organization")
+            raise HTTPException(status_code=404, detail="Driver not found or unauthorized")
         
         allow_negative = result['allow_negative_points']
         current_points = result['total_points']
@@ -191,7 +159,7 @@ async def deduct_driver_points(
         if not allow_negative and (current_points - request.points) < 0:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Cannot deduct {request.points} points. Driver only has {current_points} points and negative points are not allowed. Enable negative points in settings or deduct a smaller amount."
+                detail=f"Insufficient points. Balance would be {current_points - request.points}."
             )
         
         # Update driver points (deduct)
@@ -201,7 +169,7 @@ async def deduct_driver_points(
             WHERE driver_id = %s
         """, (request.points, request.driver_id))
         
-        # Log the point change (negative value)
+        # Log the audit trail
         cursor.execute("""
             INSERT INTO audit_log 
             (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
@@ -210,7 +178,6 @@ async def deduct_driver_points(
         
         conn.commit()
         
-        # Get updated point total
         cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_id = %s", (request.driver_id,))
         new_total = cursor.fetchone()['total_points']
         
@@ -219,13 +186,9 @@ async def deduct_driver_points(
             "message": f"Deducted {request.points} points",
             "new_total": new_total
         }
-        
-    except HTTPException:
+    except Exception:
         conn.rollback()
         raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cursor.close()
         conn.close()
@@ -236,7 +199,6 @@ async def get_sponsor_drivers(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all drivers for the current sponsor"""
-    
     sponsor_id = current_user.get('sponsor_id')
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -256,7 +218,6 @@ async def get_sponsor_drivers(
         
         drivers = cursor.fetchall()
         return {"drivers": drivers}
-        
     finally:
         cursor.close()
         conn.close()
