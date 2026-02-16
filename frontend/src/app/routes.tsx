@@ -11,6 +11,7 @@ import { SponsorProfileFormPage } from '../features/sponsor/SponsorProfileForm';
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
 import { SponsorApplicationsPage } from '../pages/SponsorApplicationsPage';
 import { AboutPage } from '../pages/About';
+import { PointsPage } from '../pages/pointsPage';
 
 export const router = createBrowserRouter([
   {
@@ -34,6 +35,7 @@ export const router = createBrowserRouter([
             element: <RoleGuard allowed={['driver']} />,
             children: [
               { path: '/driver/profile', element: <DriverProfilePage /> },
+              { path: '/driver/points', element: <PointsPage /> },
             ],
           },
 
