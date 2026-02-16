@@ -21,3 +21,23 @@ def log_login_attempt(
     finally:
         cursor.close()
         conn.close()
+
+def get_last_login(user_id: int):
+    """Fetch the most recent login attempt for a specific user."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT success, ip_address, user_agent, login_time
+            FROM LoginAudit
+            WHERE user_id = %s
+            ORDER BY login_time DESC
+            LIMIT 1
+            """,
+            (user_id,)
+        )
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
