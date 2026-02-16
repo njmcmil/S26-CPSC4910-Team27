@@ -9,65 +9,24 @@ Responsibilities:
     - Update driver profile
 """
 
+# Driver Profile Manager
+# Fetches data from Users, Profiles, and DriverProfiles and presents them as one clean object
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from datetime import datetime
 from auth.auth import get_current_user, require_role
 from shared.db import get_connection
 
+from schemas.driver import DriverProfile, UpdateDriverProfileRequest, CreateDriverApplicationRequest
+
 router = APIRouter(prefix="/me", tags=["driver-profile"])
-
-# Models
-class DriverProfile(BaseModel):
-    user_id: int
-    username: str
-    email: str
-    first_name: str | None
-    last_name: str | None
-    phone_number: str | None
-    address: str | None
-    city: str | None
-    state: str | None
-    zip_code: str | None
-    license_number: str | None
-    vehicle_make: str | None
-    vehicle_model: str | None
-    vehicle_year: int | None
-    vehicle_license_plate: str | None
-    points_balance: int
-    profile_picture_url: str | None
-    bio: str | None
-    created_at: datetime | None
-    updated_at: datetime | None
-
-class UpdateDriverProfileRequest(BaseModel):
-    first_name: str | None = None
-    last_name: str | None = None
-    phone_number: str | None = None
-    address: str | None = None
-    city: str | None = None
-    state: str | None = None
-    zip_code: str | None = None
-    profile_picture_url: str | None = None
-    bio: str | None = None
-    license_number: str | None = None
-    vehicle_make: str | None = None
-    vehicle_model: str | None = None
-    vehicle_year: int | None = None
-    vehicle_license_plate: str | None = None
-
-
-class CreateDriverApplicationRequest(BaseModel):
-    sponsor_user_id: int
-    license_number: str
-    vehicle_make: str
-    vehicle_model: str
-    vehicle_year: int
-    vehicle_license_plate: str
 
 
 # Endpoints
+
+# Gather all the driver's info for their dashboard
 @router.get("/profile", response_model=DriverProfile)
+#only someone logged in as a driver can see this data
 def get_driver_profile(current_user: dict = Depends(require_role("driver"))):
     """
     Fetch authenticated driver's profile.
@@ -124,6 +83,7 @@ def get_driver_profile(current_user: dict = Depends(require_role("driver"))):
         cursor.close()
         conn.close()
 
+# Updates what the user sent
 @router.put("/profile", response_model=DriverProfile)
 def update_driver_profile(
     request: UpdateDriverProfileRequest,
@@ -293,6 +253,8 @@ def get_my_driver_applications(
     finally:
         cursor.close()
         conn.close()
+
+# Apply to sponsor endpoint: only driver roles can see this
 
 @router.post("/applications")
 def create_driver_application(

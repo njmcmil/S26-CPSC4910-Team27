@@ -18,44 +18,52 @@ Usage:
         uvicorn app:app --reload
 """
 
-from mysql.connector import IntegrityError
 
-from shared.db import get_connection
+# Maint entry point
+
+# --- Standard Library & Third Party ---
 from datetime import datetime, timedelta
-
+from mysql.connector import IntegrityError
 from fastapi import FastAPI, HTTPException, Depends, Request
-from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 
+# --- Schemas (Blueprint layer) ---
+from schemas.user import (
+    CreateUserRequest, 
+    LoginRequest, 
+    LoginResponse, 
+    ForgotPasswordRequest, 
+    ResetPasswordRequest, 
+    ChangePasswordRequest
+)
+
+# --- Service & Business Logic Layer ---
 from users.users import (
     create_user,
     validate_login,
     get_all_users,
     get_user_by_id,
-    get_last_login,
     update_password,
     get_user_by_username
 )
-
-from users.admin_routes import router as admin_router
-
-
-from auth.auth import hash_password, verify_password, get_current_user, create_access_token
+from auth.auth import get_current_user, create_access_token
 from audit.login_audit import log_login_attempt
-from shared.utils import validate_password
-from users.password_reset import generate_reset_token, validate_reset_token, mark_token_used
+from users.password_reset import generate_reset_token
 from users.email_service import send_password_reset_email
-from auth.token_blacklist import blacklist_token
-from fastapi.middleware.cors import CORSMiddleware
 
+# --- Database & Config ---
+from shared.db import get_connection
 
-# Import routers
+# --- Routers (Feature Modules) ---
 from profiles.driver_profile import router as driver_profile_router
 from profiles.sponsor_profile import router as sponsor_profile_router
 from profiles.trusted_devices import router as trusted_devices_router
+from profiles.points import router as points_router 
+from users.admin_routes import router as admin_router
 
+# --- App Initialization ---
 INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
-
 app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
 
 
@@ -74,55 +82,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(driver_profile_router)
-app.include_router(sponsor_profile_router)
-app.include_router(trusted_devices_router)
-app.include_router(admin_router)
-
-
+# --- Security Helpers ---
 def check_inactivity(current_user: dict = Depends(get_current_user)):
-    """
-    Check if the user has been inactive for more than 30 minutes.
-    Updates last_activity if still active.
-    """
+    """Enforces session expiration based on last_activity."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    
     try:
-        cursor.execute(
-            "SELECT last_activity FROM Users WHERE user_id = %s",
-            (current_user["user_id"],)
-        )
+        cursor.execute("SELECT last_activity FROM Users WHERE user_id = %s", (current_user["user_id"],))
         row = cursor.fetchone()
         if row and row["last_activity"]:
-            last_active = row["last_activity"]
-            now = datetime.utcnow()
-            if now - last_active > timedelta(minutes=INACTIVITY_LIMIT_MINUTES):
-                raise HTTPException(
-                    status_code=401,
-                    detail="Session expired due to inactivity"
-                )
+            if datetime.utcnow() - row["last_activity"] > timedelta(minutes=INACTIVITY_LIMIT_MINUTES):
+                raise HTTPException(status_code=401, detail="Session expired due to inactivity")
         
-        # Update last_activity to now
-        cursor.execute(
-            "UPDATE Users SET last_activity = %s WHERE user_id = %s",
-            (datetime.utcnow(), current_user["user_id"])
-        )
+        cursor.execute("UPDATE Users SET last_activity = %s WHERE user_id = %s", 
+                      (datetime.utcnow(), current_user["user_id"]))
         conn.commit()
     finally:
         cursor.close()
         conn.close()
 
-# Function to get all users from the DB
-def get_all_users():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT username, role FROM Users")
-    users = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return users
+# --- Include Modular Routers ---
+app.include_router(driver_profile_router)
+app.include_router(sponsor_profile_router)
+app.include_router(trusted_devices_router)
+app.include_router(admin_router)
+app.include_router(points_router, prefix="/api", tags=["points"])
+
+# ==============================================================================
+# PUBLIC ENDPOINTS (No Auth Required)
+# ==============================================================================
 
 # Root endpoint
 @app.get("/")
@@ -155,17 +143,7 @@ def get_about():
         cursor.close()
         conn.close()
 
-# FastAPI endpoint to get all users
-@app.get("/users")
-def read_users():
-    users = get_all_users()
-    return [{"username": u[0], "role": u[1]} for u in users]
 
-class CreateUserRequest(BaseModel):
-    username: str
-    password: str
-    role: str
-    email: str
 
 @app.post("/create-user")
 def create_user_endpoint(request: CreateUserRequest):
@@ -193,21 +171,11 @@ def create_user_endpoint(request: CreateUserRequest):
         # Unexpected errors
         raise HTTPException(status_code=500, detail="Error creating user")
 
-# Request model
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-# Response model
-class LoginResponse(BaseModel):
-    user_id: int
-    username: str
-    role: str
-    email: str
-    access_token: str
-
 
 @app.post("/login", response_model=LoginResponse)
+# calls validate_login to check password hash
+# calls log_login_attempt
+# if successful, generates a JWT token
 def login_endpoint(request: LoginRequest, http_request: Request):
     user = validate_login(request.username, request.password)
 
@@ -242,25 +210,6 @@ def login_endpoint(request: LoginRequest, http_request: Request):
     }
 
 
-
-# ===============================
-# Request/Response Models
-# ===============================
-class ForgotPasswordRequest(BaseModel):
-    """Request body for forgot password endpoint."""
-    username: str
-
-
-class ResetPasswordRequest(BaseModel):
-    """Request body for reset password endpoint."""
-    token: str
-    new_password: str
-
-
-class ChangePasswordRequest(BaseModel):
-    """Request body for change password endpoint (authenticated users)."""
-    current_password: str
-    new_password: str
 
 
 # =================================
@@ -511,3 +460,14 @@ def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends()):
         "access_token": token,
         "token_type": "bearer"
     }
+
+
+# ==============================================================================
+# PROTECTED ENDPOINTS
+# ==============================================================================
+
+@app.get("/users", tags=["Admin"], dependencies=[Depends(check_inactivity)])
+def read_users(current_user: dict = Depends(get_current_user)):
+    users = get_all_users()
+    # u[0] is username, u[1] is role
+    return [{"username": u[0], "role": u[1]} for u in users]

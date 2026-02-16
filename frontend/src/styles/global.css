@@ -687,3 +687,159 @@ body {
 .mt-2 { margin-top: 1rem; }
 .mb-1 { margin-bottom: 0.5rem; }
 .text-center { text-align: center; }
+
+/* Points Balance Card */
+.points-balance-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 2rem;
+  text-align: center;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.points-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.points-label {
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.9;
+}
+
+.points-amount {
+  font-size: 3rem;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.points-unit {
+  font-size: 1rem;
+  opacity: 0.9;
+}
+
+/* Points History */
+.points-history {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.month-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.month-header {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #374151;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #e5e7eb;
+  margin: 0;
+}
+
+.transactions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.transaction-item {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 8px;
+  border-left: 4px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.transaction-item:hover {
+  background: #f3f4f6;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.transaction-item.earned {
+  border-left-color: #10b981;
+}
+
+.transaction-item.spent {
+  border-left-color: #ef4444;
+}
+
+.transaction-date {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.transaction-time {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.transaction-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.transaction-reason {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #111827;
+}
+
+.transaction-type {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+}
+
+.transaction-points {
+  font-size: 1.125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
+.transaction-points.positive {
+  color: #10b981;
+}
+
+.transaction-points.negative {
+  color: #ef4444;
+}
+
+.text-muted {
+  color: #6b7280;
+  font-style: italic;
+}
+
+/* Responsive Design for Points */
+@media (max-width: 640px) {
+  .points-amount {
+    font-size: 2.5rem;
+  }
+
+  .transaction-item {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .transaction-points {
+    justify-content: flex-start;
+  }
+}

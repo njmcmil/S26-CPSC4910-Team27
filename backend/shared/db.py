@@ -15,11 +15,16 @@ Usage:
 """
 
 
-
+# import MySQL driver for python
 import mysql.connector
+
+# gives access to enviornment variables (.env)
 import os
+
+# imports a helper that reads your .env file and loads those values into the system environment
 from dotenv import load_dotenv
 
+# loads the .env file into memory
 load_dotenv()
 
 def get_connection():

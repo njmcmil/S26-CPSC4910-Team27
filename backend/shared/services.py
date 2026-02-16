@@ -1,13 +1,16 @@
 # services.py
 from shared.db import get_connection
 
-# -----------------------------
-# Raw user database functions
-# -----------------------------
+# Data Access layer
+# - Job is to be the 'waiter" between python logic and SQL database. Fetches and saves data
+
+# Backbone to the security system. After user provides valid token, system uses this to grab
+# their full identity
 
 def get_user_by_id(user_id: int) -> dict:
-    """Fetch user record by ID from DB."""
+    # takes an integer found inside JWT payload and ass database for all cols related to user
     conn = get_connection()
+    # ensures when data comes back, you can assess it easily
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(
@@ -24,6 +27,8 @@ def get_user_by_id(user_id: int) -> dict:
         conn.close()
 
 
+# Login finder
+# Looks through the Users table for a string match on the username
 def get_user_by_username(username: str) -> dict:
     """Fetch user record by username from DB."""
     conn = get_connection()
@@ -43,6 +48,9 @@ def get_user_by_username(username: str) -> dict:
         conn.close()
 
 
+# Safe Updater
+# Write operation to update password securily
+# plain password stays in auth.py..never travels into database service unhased
 def update_password(user_id: int, new_password_hash: str) -> bool:
     """Update a user's password hash in DB."""
     conn = get_connection()

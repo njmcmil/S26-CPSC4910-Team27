@@ -29,8 +29,9 @@ from shared.db import get_connection
 # token expires after 24 hours 
 TOKEN_EXPIRY_HOURS = 24
 
-def generate_reset_token(user_id: int) -> str:
-    """
+
+
+"""
     Generate a secure password reset token.
 
     - Creates cryptographically secure random token (256 bits)
@@ -49,6 +50,11 @@ def generate_reset_token(user_id: int) -> str:
         - Old unused tokens are invalidated (prevents token accumulation)
         - Tokens expire automatically
     """
+
+# Ticket Generator
+# When a user clicks "Forgot Password", this functions creates a unique ticket for them
+
+def generate_reset_token(user_id: int) -> str:
     # generate secure token 
     token = secrets.token_urlsafe(32)
 
@@ -82,8 +88,8 @@ def generate_reset_token(user_id: int) -> str:
 
     return token
 
-def validate_reset_token(token: str) -> dict:
-    """
+
+"""
     Validate a password reset token
 
     Checks:
@@ -98,6 +104,9 @@ def validate_reset_token(token: str) -> dict:
         dict: Token data with user_id if valid
               None if invalid, expired, or used
     """
+# Security Gate
+# WHen the user clicks the link in their email, this function decides if the link is still good
+def validate_reset_token(token: str) -> dict:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -133,8 +142,9 @@ def validate_reset_token(token: str) -> dict:
         cursor.close()
         conn.close()
 
-def mark_token_used(token: str) -> bool:
-    """
+
+
+"""
     Mark a token as used (one-time use security).
 
     Args:
@@ -143,6 +153,9 @@ def mark_token_used(token: str) -> bool:
     Returns:
         bool: True if token was marked, False if token not found
     """
+# One-Time Use Enforcer
+# destroys the token, ensures security
+def mark_token_used(token: str) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -165,14 +178,18 @@ def mark_token_used(token: str) -> bool:
         cursor.close()
         conn.close()
 
-def cleanup_expired_tokens():
-    """
+
+"""
     Clean up expired tokens from database
 
     Can be run periodically to keep table size manageable.
     
     This isn't required it's just nice for like keeping it clean
     """
+
+# Janior
+# Deletes anything that is expired or already used
+def cleanup_expired_tokens():
     conn = get_connection()
     cursor = conn.cursor()
 

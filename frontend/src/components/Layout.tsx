@@ -13,6 +13,7 @@ const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { to: '/driver/dashboard', label: 'Dashboard' },
     { to: '/driver/catalog', label: 'Catalog' },
     { to: '/driver/orders', label: 'My Orders' },
+    { to: '/driver/points', label: 'Points' },
     { to: '/driver/profile', label: 'Profile' },
     { to: '/driver/settings', label: 'Settings' },
     { to: '/about', label: 'About' },
