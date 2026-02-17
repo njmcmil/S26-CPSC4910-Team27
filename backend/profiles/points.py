@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from shared.db import get_connection
 from auth.auth import get_current_user
 
-from schemas.points import PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest
+from schemas.points import PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest, TipCreate, Tip, TipView, TipViewCreate, AccrualStatusUpdate
 
 router = APIRouter()
 
@@ -261,6 +261,74 @@ async def get_driver_points(
         conn.close()
 
 
+
+# GET current accrual status
+@router.get("/driver/{driver_id}/accrual-status")
+async def get_accrual_status(driver_id: int, current_user: dict = Depends(get_current_user)):
+    """
+    Get the point accrual status for a driver.
+    """
+    sponsor_id = current_user.get('sponsor_id')
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute("""
+            SELECT driver_id, total_points, points_paused
+            FROM SponsorDrivers
+            WHERE driver_id = %s
+        """, (driver_id,))
+        
+        driver = cursor.fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+        
+        if driver['sponsor_id'] != sponsor_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        return {
+            "driver_id": driver['driver_id'],
+            "total_points": driver['total_points'],
+            "accrual_paused": driver['points_paused']
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# POST to update accrual status (pause/resume)
+@router.post("/driver/{driver_id}/accrual-status")
+async def update_accrual_status(driver_id: int, status: AccrualStatusUpdate, current_user: dict = Depends(get_current_user)):
+    """
+    Pause or resume point accrual for a driver
+    """
+    sponsor_id = current_user.get('sponsor_id')
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check driver exists and belongs to sponsor
+        cursor.execute("SELECT sponsor_id FROM SponsorDrivers WHERE driver_id = %s", (driver_id,))
+        driver = cursor.fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+        if driver[0] != sponsor_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        # Update accrual status
+        cursor.execute("""
+            UPDATE SponsorDrivers
+            SET points_paused = %s
+            WHERE driver_id = %s
+        """, (status.paused, driver_id))
+        conn.commit()
+        
+        return {"success": True, "driver_id": driver_id, "accrual_paused": status.paused}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ============= DRIVER ENDPOINTS =============
 
 @router.get("/driver/points/history")
@@ -380,7 +448,6 @@ async def get_driver_point_month_details(
     finally:
         cursor.close()
         conn.close()
-
 
 # ============= ADMIN ENDPOINTS =============
 
@@ -543,6 +610,113 @@ async def run_point_expiration(
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ------------------- TIP ENDPOINTS -------------------
+
+
+# Create a new tip
+@router.post("/tips", respone_model=Tip)
+async def create_tip(tip_data: TipCreate, current_user: dict = Depends(get_current_user)):
+    """
+    Sponsor creates a new tip.
+    
+    tip_data: TipCreate schema containing tip_text, category, active
+    current_user: fetched from token, must be a sponsor
+    """
+    sponsor_id = current_user.get("sponsor_id")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        #Insert tip into DB
+        cursor.execute("""
+                       INSERT INTO DriverTips (tip_text, category, active)
+                       VALUES (%s, %s, %s)
+                       """, (tip_data.tip_text, tip_data.category, tip_data.active))
+        # Get the ID of the newly created tip
+        tip_id = cursor.lastrowid
+        conn.commit()
+
+        # return the newly created tip as response
+
+        return {
+            "tip_id": tip_id,
+            "tip_text": tip_data.tip_text,
+            "category": tip_data.category,
+            "active": tip_data.active,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now()
+        }
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+# Get all active tips
+@router.get("/tips", response_model=list[Tip])
+async def get_all_tips(current_user: dict = Depends(get_current_user)):
+    """
+    Return tips that are active and applicable based on points/accrual status
+    """
+    driver_id = current_user.get("driver_id")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Get driver points and accrual status
+        cursor.execute("SELECT total_points, points_paused FROM SponsorDrivers WHERE driver_id = %s", (driver_id,))
+        driver = cursor.fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+        
+        # Only show tips if points below threshold and accrual is active
+        min_points_threshold = 50  # Example threshold
+        if driver['points_paused'] or driver['total_points'] >= min_points_threshold:
+            return []  # No encouragement tips
+        
+        cursor.execute("SELECT * FROM DriverTips WHERE active = TRUE ORDER BY created_at DESC")
+        tips = cursor.fetchall()
+        return tips
+    finally:
+        cursor.close()
+        conn.close()
+
+# Record tip view
+@router.post("/tips/view", response_model=TipView)
+async def record_tip_view(view_data: TipViewCreate, current_user: dict = Depends(get_current_user)):
+    """
+    Record that a driver has viewed a tip.
+    
+    view_data: TipViewCreate schema containing driver_id and tip_id
+    """
+    driver_id = current_user.get("driver_id")
+    tip_id = view_data.tip_id
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Insert or update the tip view for this driver
+        cursor.execute("""
+            INSERT INTO DriverTipViews (driver_id, tip_id, last_viewed)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE last_viewed = VALUES(last_viewed)
+        """, (driver_id, tip_id, datetime.now()))
+
+        conn.commit()
+
+        return {
+            "view_id": cursor.lastrowid,  # or you could SELECT back the row for exact id
+            "driver_id": driver_id,
+            "tip_id": tip_id,
+            "last_viewed": datetime.now()
+        }
+
     finally:
         cursor.close()
         conn.close()
