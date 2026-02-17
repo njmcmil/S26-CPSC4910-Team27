@@ -19,7 +19,7 @@ export const pointsService = {
    */
   async getPoints(): Promise<PointsData> {
     const data = await api.get<{ current_points: number; history: PointTransaction[] }>(
-      '/driver/points/history'
+      '/api/driver/points/history'
     );
     return {
       current_balance: data.current_points,
