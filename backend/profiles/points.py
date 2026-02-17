@@ -391,7 +391,7 @@ async def get_driver_point_history(
 ):
     """Get driver's complete point history"""
     
-    driver_id = current_user.get('driver_id')
+    driver_id = current_user.get('driver_profile_id')
     if not driver_id:
         raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
     
@@ -436,7 +436,7 @@ async def get_driver_point_history_monthly(
 ):
     """Get driver's point history grouped by month"""
     
-    driver_id = current_user.get('driver_id')
+    driver_id = current_user.get('driver_profile_id')
     if not driver_id:
         raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
     
@@ -475,7 +475,7 @@ async def get_driver_point_month_details(
 ):
     """Get detailed transactions for a specific month"""
     
-    driver_id = current_user.get('driver_id')
+    driver_id = current_user.get('driver_profile_id')
     if not driver_id:
         raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
     
@@ -721,8 +721,8 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
     Supports cycling tips per session using session_index.
     Only returns tips created by the driver's sponsor.
     """
-    driver_id = current_user.get("driver_id")
-    sponsor_id = current_user.get("sponsor_id")
+    driver_id = current_user.get('driver_profile_id')
+    sponsor_id = current_user.get("sponsor_profile_id")
     
     if not driver_id:
         raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
@@ -778,7 +778,7 @@ async def record_tip_view(view_data: TipViewCreate, current_user: dict = Depends
     
     view_data: TipViewCreate schema containing driver_id and tip_id
     """
-    driver_id = current_user.get("driver_id")
+    driver_id = current_user.get('driver_profile_id')
     tip_id = view_data.tip_id
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
