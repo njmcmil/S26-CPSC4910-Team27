@@ -1,11 +1,10 @@
 import { api } from './apiClient';
 
 export interface PointTransaction {
-  transaction_id: number;
-  points_change: number;
+  date: string;
+  points_changed: number;
   reason: string;
-  created_at: string;
-  transaction_type: 'earned' | 'redeemed' | 'adjustment';
+  changed_by_user_id: number;
 }
 
 export interface PointsData {
@@ -16,8 +15,15 @@ export interface PointsData {
 export const pointsService = {
   /**
    * Get current points balance and transaction history for the authenticated driver
+   * Calls GET /driver/points/history
    */
-  getPoints(): Promise<PointsData> {
-    return api.get<PointsData>('/api/points/me');
+  async getPoints(): Promise<PointsData> {
+    const data = await api.get<{ current_points: number; history: PointTransaction[] }>(
+      '/driver/points/history'
+    );
+    return {
+      current_balance: data.current_points,
+      transactions: data.history,
+    };
   },
 };
