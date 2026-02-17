@@ -15,9 +15,10 @@ def get_user_by_id(user_id: int) -> dict:
     try:
         cursor.execute(
             """
-            SELECT user_id, username, password_hash, role, email
-            FROM Users
-            WHERE user_id = %s
+            SELECT u.user_id, u.username, u.password_hash, u.role, u.email, d.driver_id
+            FROM Users u
+            LEFT JOIN Drivers d ON u.user_id = d.user_id
+            WHERE u.user_id = %s
             """,
             (user_id,)
         )
