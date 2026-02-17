@@ -19,7 +19,7 @@ from shared.db import get_connection
 from users.email_service import send_driver_application_rejection_email, send_driver_application_approval_email
 from typing import List
 
-from schemas.sponsor import SponsorProfile, CreateSponsorProfileRequest, UpdateSponsorProfileRequest, DriverApplication, RejectDriverApplicationRequest
+from schemas.sponsor import SponsorProfile, CreateSponsorProfileRequest, UpdateSponsorProfileRequest, DriverApplication, RejectDriverApplicationRequest, SponsorDriver
 
 
 router = APIRouter(prefix="/sponsor", tags=["sponsor-profile"])
@@ -515,6 +515,62 @@ def approve_driver_application(
             "application_id": application_id,
             "driver_user_id": app["driver_user_id"]
         }
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+@router.get("/drivers", response_model=List[SponsorDriver])
+def get_sponsor_drivers(current_user: dict = Depends(require_role("sponsor"))):
+    """
+    Returns all drivers associated with this sponsor.
+    Includes basic profile info and current points balance.
+    """
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            """
+            SELECT sd.sponsor_driver_id,
+                   u.user_id AS driver_user_id,
+                   u.username,
+                   u.email,
+                   d.points_balance,
+                   p.first_name,
+                   p.last_name,
+                   p.phone_number,
+                   p.city,
+                   p.state
+            FROM SponsorDrivers sd
+            JOIN Users u ON sd.driver_user_id = u.user_id
+            LEFT JOIN Profiles p ON u.user_id = p.user_id
+            LEFT JOIN DriverProfiles d ON u.user_id = d.user_id
+            WHERE sd.sponsor_user_id = %s
+            """,
+            (sponsor_id,)
+        )
+
+        rows = cursor.fetchall()
+
+        return [
+            SponsorDriver(
+                sponsor_driver_id=row["sponsor_driver_id"],
+                driver_user_id=row["driver_user_id"],
+                username=row["username"],
+                email=row["email"],
+                points_balance=row.get("points_balance") or 0,
+                first_name=row.get("first_name"),
+                last_name=row.get("last_name"),
+                phone_number=row.get("phone_number"),
+                city=row.get("city"),
+                state=row.get("state"),
+            )
+            for row in rows
+        ]
 
     finally:
         cursor.close()

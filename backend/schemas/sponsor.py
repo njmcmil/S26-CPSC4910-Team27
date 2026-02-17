@@ -86,3 +86,14 @@ class DriverApplication(BaseModel):
     status: str
     created_at: datetime | None = None
 
+class SponsorDriver(BaseModel):
+    sponsor_driver_id: int
+    driver_user_id: int
+    username: str
+    email: str
+    points_balance: int
+    first_name: str | None = None
+    last_name: str | None = None
+    phone_number: str | None = None
+    city: str | None = None
+    state: str | None = None
