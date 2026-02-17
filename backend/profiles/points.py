@@ -31,7 +31,7 @@ def verify_sponsor(current_user: dict = Depends(get_current_user)):
 
 @router.get("/sponsor/settings")
 async def get_sponsor_settings(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(verify_sponsor)
 ):
     """Get sponsor settings including negative points setting"""
     
@@ -61,7 +61,7 @@ async def get_sponsor_settings(
 @router.put("/sponsor/settings")
 async def update_sponsor_settings(
     settings: SponsorSettings,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(verify_sponsor)
 ):
     """Update sponsor settings"""
     
@@ -86,7 +86,7 @@ async def update_sponsor_settings(
 
 @router.get("/sponsor/reward-defaults")
 async def get_sponsor_reward_defaults(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(verify_sponsor)
 ):
     """Get default reward settings for the current sponsor (#13984)"""
     # NOTE: get_user_by_id returns {user_id, username, role, ...} — no 'sponsor_id'.
@@ -123,7 +123,7 @@ async def get_sponsor_reward_defaults(
 @router.put("/sponsor/reward-defaults")
 async def update_sponsor_reward_defaults(
     defaults: SponsorRewardDefaults,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(verify_sponsor)
 ):
     """Update default reward settings for the current sponsor (#13984)"""
     user_id = current_user["user_id"]
@@ -162,7 +162,7 @@ async def update_sponsor_reward_defaults(
 @router.post("/sponsor/points/add", response_model=PointChangeResponse)
 async def add_driver_points(
     request: PointChangeRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(verify_sponsor)
 ):
     """Sponsor adds points to a driver (reason required)"""
 
@@ -231,7 +231,7 @@ async def add_driver_points(
 
 
 @router.post("/sponsor/points/bulk-update", response_model=PointChangeResponse)
-async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_user: dict = Depends(get_current_user)):
+async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_user: dict = Depends(verify_sponsor)):
     user_id = current_user['user_id']
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -267,7 +267,7 @@ async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_use
 @router.post("/sponsor/points/deduct", response_model=PointChangeResponse)
 async def deduct_driver_points(
     request: PointChangeRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(verify_sponsor)
 ):
     """Sponsor deducts points from a driver (reason required)"""
     
@@ -331,39 +331,15 @@ async def deduct_driver_points(
         conn.close()
 
 
-@router.get("/sponsor/drivers")
-async def get_sponsor_drivers(
-    current_user: dict = Depends(get_current_user)
-):
-    """Get all drivers for the current sponsor"""
-    user_id = current_user['user_id']
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-
-    try:
-        cursor.execute("""
-            SELECT
-                sd.driver_user_id AS driver_id,
-                p.first_name,
-                p.last_name,
-                sd.total_points
-            FROM SponsorDrivers sd
-            LEFT JOIN Profiles p ON sd.driver_user_id = p.user_id
-            WHERE sd.sponsor_user_id = %s
-            ORDER BY p.last_name, p.first_name
-        """, (user_id,))
-        
-        drivers = cursor.fetchall()
-        return {"drivers": drivers}
-    finally:
-        cursor.close()
-        conn.close()
+# NOTE: Sponsor driver list endpoint lives in sponsor_profile.py at GET /sponsor/drivers.
+# Removed duplicate GET /api/sponsor/drivers to avoid conflicting response shapes
+# and divergent point sources. Single source of truth: SponsorDrivers.total_points.
 
 
 @router.get("/sponsor/drivers/{driver_id}/points")
 async def get_driver_points(
     driver_id: int,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(verify_sponsor)
 ):
     """Get current point balance for a driver"""
     

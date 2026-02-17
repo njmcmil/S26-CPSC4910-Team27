@@ -529,6 +529,10 @@ def get_sponsor_drivers(current_user: dict = Depends(require_role("sponsor"))):
     """
     Returns all drivers associated with this sponsor.
     Includes basic profile info and current points balance.
+
+    NOTE: points_balance is sourced from SponsorDrivers.total_points
+    (the single source of truth for points). The field keeps the name
+    "points_balance" for backwards compatibility with the frontend schema.
     """
     sponsor_id = current_user["user_id"]
     conn = get_connection()
@@ -541,7 +545,7 @@ def get_sponsor_drivers(current_user: dict = Depends(require_role("sponsor"))):
                    u.user_id AS driver_user_id,
                    u.username,
                    u.email,
-                   d.points_balance,
+                   sd.total_points,
                    p.first_name,
                    p.last_name,
                    p.phone_number,
@@ -550,7 +554,6 @@ def get_sponsor_drivers(current_user: dict = Depends(require_role("sponsor"))):
             FROM SponsorDrivers sd
             JOIN Users u ON sd.driver_user_id = u.user_id
             LEFT JOIN Profiles p ON u.user_id = p.user_id
-            LEFT JOIN DriverProfiles d ON u.user_id = d.user_id
             WHERE sd.sponsor_user_id = %s
             """,
             (sponsor_id,)
@@ -564,7 +567,7 @@ def get_sponsor_drivers(current_user: dict = Depends(require_role("sponsor"))):
                 driver_user_id=row["driver_user_id"],
                 username=row["username"],
                 email=row["email"],
-                points_balance=row.get("points_balance") or 0,
+                points_balance=row.get("total_points") or 0,
                 first_name=row.get("first_name"),
                 last_name=row.get("last_name"),
                 phone_number=row.get("phone_number"),
