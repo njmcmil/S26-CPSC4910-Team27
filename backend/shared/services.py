@@ -15,7 +15,7 @@ def get_user_by_id(user_id: int) -> dict:
     try:
         cursor.execute(
             """
-            SELECT u.user_id, u.username, u.password_hash, u.role, u.email, d.driver_id
+            SELECT u.user_id, u.username, u.password_hash, u.role, u.email, d.driver_profile_id
             FROM Users u
             LEFT JOIN DriverProfiles d ON u.user_id = d.user_id
             WHERE u.user_id = %s
