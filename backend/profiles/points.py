@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Cookie
 from datetime import datetime, timedelta
 from shared.db import get_connection
 from auth.auth import get_current_user
 
-from schemas.points import PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest, TipCreate, Tip, TipView, TipViewCreate, AccrualStatusUpdate
+from schemas.points import PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest, TipCreate, Tip, TipView, TipViewCreate, AccrualStatusUpdate, BulkPointUpdateRequest
+
 
 router = APIRouter()
 
@@ -125,6 +126,41 @@ async def add_driver_points(
     finally:
         cursor.close()
         conn.close()
+
+
+
+@router.post("/sponsor/points/bulk-update", response_model=PointChangeResponse)
+async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_user: dict = Depends(get_current_user)):
+    sponsor_id = current_user.get('sponsor_id')
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        updated_drivers = []
+        for driver_id in request.driver_ids:
+            cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_id = %s AND sponsor_id = %s", (driver_id, sponsor_id))
+            driver = cursor.fetchone()
+            if not driver:
+                continue
+            
+            # Prevent negative points
+            new_total = max(0, driver['total_points'] + request.points)
+
+            cursor.execute("UPDATE SponsorDrivers SET total_points = %s WHERE driver_id = %s", (new_total, driver_id))
+            # Log audit
+            cursor.execute("""
+                INSERT INTO audit_log (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                VALUES ('point_change', %s, %s, %s, %s, %s, %s)
+            """, (datetime.now(), sponsor_id, driver_id, request.points, request.reason, current_user['user_id']))
+            updated_drivers.append({"driver_id": driver_id, "new_total": new_total})
+
+        conn.commit()
+        return {"success": True, "updated_drivers": updated_drivers}
+
+    finally:
+        cursor.close()
+        conn.close()
+
 
 
 @router.post("/sponsor/points/deduct", response_model=PointChangeResponse)
@@ -298,13 +334,17 @@ async def get_accrual_status(driver_id: int, current_user: dict = Depends(get_cu
 
 # POST to update accrual status (pause/resume)
 @router.post("/driver/{driver_id}/accrual-status")
-async def update_accrual_status(driver_id: int, status: AccrualStatusUpdate, current_user: dict = Depends(get_current_user)):
+async def update_accrual_status(
+    driver_id: int, 
+    status: AccrualStatusUpdate, 
+    current_user: dict = Depends(get_current_user)
+):
     """
     Pause or resume point accrual for a driver
     """
     sponsor_id = current_user.get('sponsor_id')
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)  # Use dictionary=True for consistency
     
     try:
         # Check driver exists and belongs to sponsor
@@ -312,7 +352,7 @@ async def update_accrual_status(driver_id: int, status: AccrualStatusUpdate, cur
         driver = cursor.fetchone()
         if not driver:
             raise HTTPException(status_code=404, detail="Driver not found")
-        if driver[0] != sponsor_id:
+        if driver['sponsor_id'] != sponsor_id:
             raise HTTPException(status_code=403, detail="Unauthorized")
         
         # Update accrual status
@@ -323,11 +363,14 @@ async def update_accrual_status(driver_id: int, status: AccrualStatusUpdate, cur
         """, (status.paused, driver_id))
         conn.commit()
         
-        return {"success": True, "driver_id": driver_id, "accrual_paused": status.paused}
+        return {
+            "success": True, 
+            "driver_id": driver_id, 
+            "accrual_paused": status.paused
+        }
     finally:
         cursor.close()
         conn.close()
-
 
 # ============= DRIVER ENDPOINTS =============
 
@@ -643,14 +686,15 @@ async def create_tip(tip_data: TipCreate, current_user: dict = Depends(get_curre
 
         # return the newly created tip as response
 
-        return {
-            "tip_id": tip_id,
-            "tip_text": tip_data.tip_text,
-            "category": tip_data.category,
-            "active": tip_data.active,
-            "created_at": datetime.now(),
-            "updated_at": datetime.now()
-        }
+        return Tip(
+            tip_id=tip_id,
+            tip_text=tip_data.tip_text,
+            category=tip_data.category,
+            active=tip_data.active,
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+
     
     finally:
         cursor.close()
@@ -658,13 +702,19 @@ async def create_tip(tip_data: TipCreate, current_user: dict = Depends(get_curre
 
 
 
-# Get all active tips
+# Get all active tips (with dynamic min points and cycling)
 @router.get("/tips", response_model=list[Tip])
-async def get_all_tips(current_user: dict = Depends(get_current_user)):
+async def get_all_tips(current_user: dict = Depends(get_current_user), session_index: int = Cookie(default=0)):
     """
-    Return tips that are active and applicable based on points/accrual status
+    Return active tips for the driver based on current points and accrual status.
+    Supports cycling tips per session using session_index.
     """
     driver_id = current_user.get("driver_id")
+    sponsor_id = current_user.get("sponsor_id")
+    
+    if not driver_id:
+        raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
+    
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     
@@ -675,14 +725,25 @@ async def get_all_tips(current_user: dict = Depends(get_current_user)):
         if not driver:
             raise HTTPException(status_code=404, detail="Driver not found")
         
-        # Only show tips if points below threshold and accrual is active
-        min_points_threshold = 50  # Example threshold
+        # Get dynamic min points threshold from sponsor settings
+        cursor.execute("SELECT min_points_for_tips FROM SponsorProfiles WHERE sponsor_id = %s", (sponsor_id,))
+        sponsor_setting = cursor.fetchone()
+        min_points_threshold = sponsor_setting['min_points_for_tips'] if sponsor_setting else 50
+
+        # If points are paused or driver has enough points, no tips
         if driver['points_paused'] or driver['total_points'] >= min_points_threshold:
-            return []  # No encouragement tips
-        
+            return []
+
+        # Fetch active tips
         cursor.execute("SELECT * FROM DriverTips WHERE active = TRUE ORDER BY created_at DESC")
         tips = cursor.fetchall()
-        return tips
+        if not tips:
+            return []
+
+        # Cycle tips based on session_index
+        tip_to_show = tips[session_index % len(tips)]
+        return [tip_to_show]
+
     finally:
         cursor.close()
         conn.close()
@@ -710,12 +771,12 @@ async def record_tip_view(view_data: TipViewCreate, current_user: dict = Depends
 
         conn.commit()
 
-        return {
-            "view_id": cursor.lastrowid,  # or you could SELECT back the row for exact id
-            "driver_id": driver_id,
-            "tip_id": tip_id,
-            "last_viewed": datetime.now()
-        }
+        return TipView(
+            view_id=cursor.lastrowid,
+            driver_id=driver_id,
+            tip_id=tip_id,
+            last_viewed=datetime.now()
+        )
 
     finally:
         cursor.close()

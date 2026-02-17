@@ -1,7 +1,7 @@
 # schemas/points.py
 from pydantic import BaseModel, Field
 from datetime import datetime
-
+from typing import List
 
 class PointChangeRequest(BaseModel):
     driver_id: int
@@ -28,6 +28,10 @@ class AccrualStatusUpdate(BaseModel):
     driver_id: int
     paused: bool
 
+class BulkPointUpdateRequest(BaseModel):
+    driver_ids: List[int]
+    points: float
+    reason: str
 
 
 # Tip schemas

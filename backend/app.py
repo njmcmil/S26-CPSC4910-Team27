@@ -61,6 +61,7 @@ from profiles.sponsor_profile import router as sponsor_profile_router
 from profiles.trusted_devices import router as trusted_devices_router
 from profiles.points import router as points_router 
 from users.admin_routes import router as admin_router
+from shared.scheduler import scheduler
 
 # --- App Initialization ---
 INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
@@ -81,6 +82,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Run scheduler on startup
+@app.on_event("startup")
+def start_scheduler():
+    scheduler.start()
 
 # --- Security Helpers ---
 def check_inactivity(current_user: dict = Depends(get_current_user)):
