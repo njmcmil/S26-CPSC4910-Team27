@@ -53,7 +53,7 @@ async def get_sponsor_settings(
 
 # Post Endpoints
 
-@router.post("/sponsor/settings")
+@router.put("/sponsor/settings")
 async def update_sponsor_settings(
     settings: SponsorSettings,
     current_user: dict = Depends(get_current_user)
@@ -340,7 +340,7 @@ async def get_accrual_status(driver_id: int, current_user: dict = Depends(verify
 
 
 # POST to update accrual status (pause/resume)
-@router.post("/driver/{driver_id}/accrual-status")
+@router.put("/driver/{driver_id}/accrual-status")
 async def update_accrual_status(
     driver_id: int, 
     status: AccrualStatusUpdate, 
