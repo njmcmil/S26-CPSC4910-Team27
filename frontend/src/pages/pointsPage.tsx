@@ -6,11 +6,10 @@ import { Button } from '../components/Button';
 import type { ApiError, PointTransaction as PointTx } from '../types';
 
 interface PointTransaction {
-  transaction_id: number;
-  points_change: number;
+  date: string;
+  points_changed: number;
   reason: string;
-  created_at: string;
-  transaction_type: 'earned' | 'redeemed' | 'adjustment';
+  changed_by_user_id: number;
 }
 
 interface PointsData {
@@ -72,7 +71,7 @@ export function PointsPage() {
     const grouped: GroupedTransactions = {};
     
     transactions.forEach((transaction) => {
-      const date = new Date(transaction.created_at);
+      const date = new Date(transaction.date);
       const monthYear = date.toLocaleDateString('en-US', { 
         year: 'numeric', 
         month: 'long' 
@@ -180,12 +179,12 @@ export function PointsPage() {
                 <h4 className="month-header">{monthYear}</h4>
                 <div className="transactions-list">
                   {groupedTransactions[monthYear].map((transaction) => {
-                    const date = new Date(transaction.created_at);
-                    const isPositive = transaction.points_change > 0;
+                    const date = new Date(transaction.date);
+                    const isPositive = transaction.points_changed > 0;
                     
                     return (
                       <div 
-                        key={transaction.transaction_id} 
+                        key={transaction.date}
                         className={`transaction-item ${isPositive ? 'earned' : 'spent'}`}
                       >
                         <div className="transaction-date">
@@ -203,10 +202,9 @@ export function PointsPage() {
                         </div>
                         <div className="transaction-details">
                           <div className="transaction-reason">{transaction.reason}</div>
-                          <div className="transaction-type">{transaction.transaction_type}</div>
                         </div>
                         <div className={`transaction-points ${isPositive ? 'positive' : 'negative'}`}>
-                          {isPositive ? '+' : ''}{transaction.points_change.toLocaleString()}
+                          {isPositive ? '+' : ''}{transaction.points_changed.toLocaleString()}
                         </div>
                       </div>
                     );
