@@ -619,7 +619,7 @@ async def run_point_expiration(
 
 
 # Create a new tip
-@router.post("/tips", respone_model=Tip)
+@router.post("/tips", response_model=Tip)
 async def create_tip(tip_data: TipCreate, current_user: dict = Depends(get_current_user)):
     """
     Sponsor creates a new tip.
