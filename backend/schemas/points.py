@@ -54,7 +54,7 @@ class Tip(TipBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True # allows returning database objects directly
+        from_attributes = True # allows returning database objects directly
     
 class TipView(BaseModel):
     """Schema for when a driver views a tip"""
@@ -64,7 +64,7 @@ class TipView(BaseModel):
     last_viewed: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class TipViewCreate(BaseModel):
     """Schema for creatging a record when a driver views a tip"""
