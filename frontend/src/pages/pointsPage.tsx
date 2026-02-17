@@ -122,7 +122,7 @@ export function PointsPage() {
                     
                     return (
                       <div 
-                        key={transaction.transaction_id} 
+                        key={transaction.date}
                         className={`transaction-item ${isPositive ? 'earned' : 'spent'}`}
                       >
                         <div className="transaction-date">
@@ -140,7 +140,6 @@ export function PointsPage() {
                         </div>
                         <div className="transaction-details">
                           <div className="transaction-reason">{transaction.reason}</div>
-                          <div className="transaction-type">{transaction.transaction_type}</div>
                         </div>
                         <div className={`transaction-points ${isPositive ? 'positive' : 'negative'}`}>
                           {isPositive ? '+' : ''}{transaction.points_changed.toLocaleString()}
