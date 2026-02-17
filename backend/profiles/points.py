@@ -15,6 +15,13 @@ def verify_admin(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 
+# verify_sponsor function
+def verify_sponsor(current_user: dict = Depends(get_current_user)):
+    """Verify user is a sponsor"""
+    if current_user.get('role') != 'sponsor':
+        raise HTTPException(status_code=403, detail="Sponsor access required")
+    return current_user
+
 # ============= SPONSOR ENDPOINTS =============
 
 @router.get("/sponsor/settings")
@@ -300,7 +307,7 @@ async def get_driver_points(
 
 # GET current accrual status
 @router.get("/driver/{driver_id}/accrual-status")
-async def get_accrual_status(driver_id: int, current_user: dict = Depends(get_current_user)):
+async def get_accrual_status(driver_id: int, current_user: dict = Depends(verify_sponsor)):
     """
     Get the point accrual status for a driver.
     """
@@ -337,10 +344,10 @@ async def get_accrual_status(driver_id: int, current_user: dict = Depends(get_cu
 async def update_accrual_status(
     driver_id: int, 
     status: AccrualStatusUpdate, 
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(verify_sponsor)
 ):
     """
-    Pause or resume point accrual for a driver
+    Pause or resume point accrual for a driver: if a sponsor...
     """
     sponsor_id = current_user.get('sponsor_id')
     conn = get_connection()
