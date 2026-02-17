@@ -149,7 +149,7 @@ async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_use
     try:
         updated_drivers = []
         for driver_id in request.driver_ids:
-            cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_id = %s AND sponsor_id = %s", (driver_id, sponsor_id))
+            cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_id = %s", (driver_id, sponsor_id))
             driver = cursor.fetchone()
             if not driver:
                 continue
@@ -225,7 +225,7 @@ async def deduct_driver_points(
         
         conn.commit()
         
-        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_id = %s", (request.driver_id,))
+        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (request.driver_id,))
         new_total = cursor.fetchone()['total_points']
         
         return {
@@ -408,7 +408,7 @@ async def get_driver_point_history(
     try:
         # Get current total
         cursor.execute("""
-            SELECT total_points FROM SponsorDrivers WHERE driver_id = %s
+            SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s
         """, (driver_id,))
         current = cursor.fetchone()
         
