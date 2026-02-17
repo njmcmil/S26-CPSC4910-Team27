@@ -140,9 +140,11 @@ def create_sponsor_profile(
         cursor.execute(
             """
             INSERT INTO SponsorProfiles
-                (user_id, company_name, company_address, company_city, company_state, company_zip, 
-                 industry, contact_person_name, contact_person_phone, total_points_allocated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
+                (user_id, company_name, company_address, company_city, company_state, company_zip,
+                 industry, contact_person_name, contact_person_phone, total_points_allocated,
+                 dollar_per_point, earn_rate, expiration_days, max_points_per_day, max_points_per_month)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0,
+                    0.01, 1.00, NULL, NULL, NULL)
             """,
             (
                 user_id,

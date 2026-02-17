@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -32,11 +32,12 @@ export function LoginPage() {
   const [forgotMsg, setForgotMsg] = useState('');
   const [forgotError, setForgotError] = useState('');
 
-  // If already logged in, redirect
-  if (user) {
-    navigate(ROLE_HOME[user.role], { replace: true });
-    return null;
-  }
+  // ✅ If already logged in, redirect (but do it in an effect)
+  useEffect(() => {
+    if (user) {
+      navigate(ROLE_HOME[user.role], { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -54,7 +55,7 @@ export function LoginPage() {
         password,
         remember_device: rememberDevice,
       });
-      navigate(ROLE_HOME[role] ?? '/');
+      navigate(ROLE_HOME[role] ?? '/', { replace: true });
     } catch (err) {
       const apiErr = err as ApiError;
       setError(apiErr.message || 'Login failed. Please try again.');

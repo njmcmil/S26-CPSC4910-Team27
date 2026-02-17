@@ -140,6 +140,33 @@ export interface RejectApplicationRequest {
   rejection_reason: string;
 }
 
+export interface PointTransaction {
+  date: string;
+  points_changed: number;
+  reason: string | null;
+  changed_by_user_id: number | null;
+  expires_at: string | null;
+}
+
+export interface DriverPointHistory {
+  current_points: number;
+  history: PointTransaction[];
+}
+
+export interface SponsorPointHistoryResponse {
+  driver_id: number;
+  current_points: number;
+  history: PointTransaction[];
+  total_count: number;
+}
+
+export interface SponsorRewardDefaults {
+  dollar_per_point: number;
+  earn_rate: number;
+  expiration_days: number | null;
+  max_points_per_day: number | null;
+  max_points_per_month: number | null;
+}
 
 
 

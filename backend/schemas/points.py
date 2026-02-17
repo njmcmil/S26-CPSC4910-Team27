@@ -1,7 +1,7 @@
 # schemas/points.py
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 class PointChangeRequest(BaseModel):
     driver_id: int
@@ -33,6 +33,28 @@ class BulkPointUpdateRequest(BaseModel):
     points: float
     reason: str
 
+class SponsorRewardDefaults(BaseModel):
+    """Default reward settings for a sponsor (#13984)"""
+    dollar_per_point: float = Field(default=0.01, ge=0, description="Dollar value per point")
+    earn_rate: float = Field(default=1.0, ge=0, description="Point earning multiplier")
+    expiration_days: Optional[int] = Field(default=None, ge=1, description="Days until points expire; null = no expiration")
+    max_points_per_day: Optional[int] = Field(default=None, ge=1, description="Daily point cap; null = unlimited")
+    max_points_per_month: Optional[int] = Field(default=None, ge=1, description="Monthly point cap; null = unlimited")
+
+class PointHistoryItem(BaseModel):
+    """single entry in a drivers point history"""
+    date: datetime
+    points_changed: int
+    reason: Optional[str] = None
+    changed_by_user_id: Optional[int] = None
+    expires_at: Optional[datetime] = None
+
+class PointHistoryResponse(BaseModel):
+    """response for a driver point history endpoint"""
+    driver_id: int
+    current_points: int
+    history: List[PointHistoryItem]
+    total_count: int
 
 # Tip schemas
 

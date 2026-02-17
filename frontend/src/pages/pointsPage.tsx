@@ -3,7 +3,7 @@ import { pointsService } from '../services/pointsService';
 import { Spinner } from '../components/Spinner';
 import { Alert } from '../components/Alert';
 import { Button } from '../components/Button';
-import type { ApiError } from '../types';
+import type { ApiError, PointTransaction as PointTx } from '../types';
 
 interface PointTransaction {
   transaction_id: number;
@@ -26,6 +26,7 @@ export function PointsPage() {
   const [data, setData] = useState<PointsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [upcomingExpirations, setUpcomingExpirations] = useState<PointTx[]>([]);
 
   const fetchPoints = useCallback(async () => {
     setLoading(true);
@@ -33,6 +34,27 @@ export function PointsPage() {
     try {
       const pointsData = await pointsService.getPoints();
       setData(pointsData);
+
+      // Fetch full history with expires_at data 
+      try {
+        const historyData = await pointsService.getDriverPointHistory();
+        const now = new Date();
+        const expiring = historyData.history
+          .filter(
+            (h) =>
+              h.expires_at &&
+              h.points_changed > 0 &&
+              new Date(h.expires_at) > now,
+          )
+          .sort(
+            (a, b) =>
+              new Date(a.expires_at!).getTime() - new Date(b.expires_at!).getTime(),
+          )
+          .slice(0, 3);
+        setUpcomingExpirations(expiring);
+      } catch {
+        // Non-critical — silently ignore if history endpoint unavailable
+      }
     } catch (err) {
       const apiErr = err as ApiError;
       setError(apiErr.message || 'Failed to load points information.');
@@ -102,6 +124,46 @@ export function PointsPage() {
           <span className="points-unit">points</span>
         </div>
       </div>
+      
+      {/* Upcoming Expirations */}
+      {upcomingExpirations.length > 0 && (
+        <div className="card mt-2" style={{ borderLeft: '4px solid #e67e22' }}>
+          <h3>Upcoming Point Expirations</h3>
+          <div className="mt-1">
+            {upcomingExpirations.map((entry, idx) => {
+              const expDate = new Date(entry.expires_at!);
+              const daysLeft = Math.ceil(
+                (expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+              );
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    padding: '0.5rem 0',
+                    borderBottom: '1px solid var(--border-color, #eee)',
+                  }}
+                >
+                  <span>
+                    <strong>+{entry.points_changed.toLocaleString()}</strong> pts
+                    {entry.reason ? ` — ${entry.reason}` : ''}
+                  </span>
+                  <span style={{ color: daysLeft <= 7 ? '#e74c3c' : '#e67e22' }}>
+                    Expires{' '}
+                    {expDate.toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}{' '}
+                    ({daysLeft} day{daysLeft !== 1 ? 's' : ''})
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Points History */}
       <div className="card mt-2">

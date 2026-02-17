@@ -20,26 +20,53 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
-const STORAGE_KEY = 'gdip_auth';
+const TOKEN_KEY = 'gdip_auth';
+
+/** Save auth to the chosen storage and remove from the other. */
+function saveAuth(token: string, user: AuthUser, remember: boolean) {
+  const payload = JSON.stringify({ user, token });
+  if (remember) {
+    localStorage.setItem(TOKEN_KEY, payload);
+    sessionStorage.removeItem(TOKEN_KEY);
+  } else {
+    sessionStorage.setItem(TOKEN_KEY, payload);
+    localStorage.removeItem(TOKEN_KEY);
+  }
+}
+
+/** Load auth preferring sessionStorage first, then localStorage. */
+function loadAuth(): { user: AuthUser; token: string } | null {
+  for (const storage of [sessionStorage, localStorage]) {
+    try {
+      const raw = storage.getItem(TOKEN_KEY);
+      if (raw) {
+        return JSON.parse(raw) as { user: AuthUser; token: string };
+      }
+    } catch {
+      storage.removeItem(TOKEN_KEY);
+    }
+  }
+  return null;
+}
+
+/** Clear auth from both storages. */
+function clearAuth() {
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session from localStorage on mount
+  // Restore session on mount
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const stored = JSON.parse(raw) as { user: AuthUser; token: string };
-        setToken(stored.token);
-        setUser(stored.user);
-      }
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    } finally {
-      setLoading(false);
+    const stored = loadAuth();
+    if (stored) {
+      setToken(stored.token);
+      setUser(stored.user);
     }
+    setLoading(false);
   }, []);
 
   const login = useCallback(async (data: LoginRequest): Promise<UserRole> => {
@@ -52,10 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     setToken(res.access_token);
     setUser(authUser);
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ user: authUser, token: res.access_token }),
-    );
+    saveAuth(res.access_token, authUser, !!data.remember_device);
     return res.role;
   }, []);
 
@@ -67,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(null);
     setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
+    clearAuth();
   }, []);
 
   const value = useMemo(
