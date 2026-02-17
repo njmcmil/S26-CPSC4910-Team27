@@ -391,7 +391,14 @@ async def get_driver_point_history(
 ):
     """Get driver's complete point history"""
     
-    driver_id = current_user.get('driver_profile_id')
+    user_id = current_user.get('user_id')
+    conn2 = get_connection()
+    cursor2 = conn2.cursor(dictionary=True)
+    cursor2.execute("SELECT driver_profile_id FROM DriverProfiles WHERE user_id = %s", (user_id,))
+    dp = cursor2.fetchone()
+    cursor2.close()
+    conn2.close()
+    driver_id = dp['driver_profile_id'] if dp else None
     if not driver_id:
         raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
     
