@@ -27,6 +27,7 @@ from mysql.connector import IntegrityError
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from services.ebay.browse import search_products, get_product_details
 
 # --- Schemas (Blueprint layer) ---
 from schemas.user import (
@@ -467,6 +468,38 @@ def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends()):
         "token_type": "bearer"
     }
 
+
+
+
+@app.get("/api/ebay/search")
+def ebay_search(q: str):
+    """
+    Search eBay products using Browse API.
+
+    Query Parameters:
+    - q: search term
+
+    Returns:
+    - List of product summaries
+    """
+    try:
+        items = search_products(q)
+        return {"items": items}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"eBay search failed: {str(e)}")
+    
+
+
+@app.get("/api/ebay/product/{item_id}")
+def ebay_product(item_id: str):
+    """
+    Retrieve full eBay product details by eBay itemId
+    """
+    try:
+        product = get_product_details(item_id)
+        return {"product": product}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"eBay product fetch failed: {str(e)}")
 
 # ==============================================================================
 # PROTECTED ENDPOINTS

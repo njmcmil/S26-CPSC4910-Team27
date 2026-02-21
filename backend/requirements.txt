@@ -22,3 +22,6 @@ python-jose==3.3.0
 
 # Scheduling
 apscheduler==3.11.2
+
+# HTTP Requests
+requests==2.31.0
