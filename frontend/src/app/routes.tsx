@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 
 import { HomePage } from '../pages/Home';
 import { LoginPage } from '../pages/Login';
+import CatalogPage from "../pages/CatalogPage";
 import { AboutPage } from '../pages/About';
 import { SettingsPage } from '../pages/Settings';
 import { NotFoundPage } from '../pages/NotFound';
@@ -21,6 +22,7 @@ import { SponsorDriversPage } from '../features/sponsor/SponsorDrivers';
 import { SponsorPointsPage } from '../features/sponsor/SponsorPoints';
 
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
+
 
 /**
  * Redirects logged-in users to the dashboard for their role.
@@ -57,6 +59,7 @@ export const router = createBrowserRouter([
               { path: '/driver/dashboard', element: <DriverDashboardPage /> },
               { path: '/driver/profile', element: <DriverProfilePage /> },
               { path: '/driver/points', element: <PointsPage /> },
+              { path: '/driver/catalog', element: <CatalogPage /> }, 
             ],
           },
 

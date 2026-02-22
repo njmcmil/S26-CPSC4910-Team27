@@ -169,7 +169,18 @@ export interface SponsorRewardDefaults {
 }
 
 
-
+/* ── Products ── */
+export interface Product {
+  itemId: string;
+  title: string;
+  price: {
+    value: string;
+    currency: string;
+  };
+  image?: {
+    imageUrl: string;
+  };
+}
 
 
 

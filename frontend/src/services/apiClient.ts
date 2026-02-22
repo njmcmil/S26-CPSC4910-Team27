@@ -1,6 +1,8 @@
-import type { ApiError } from '../types';
+import type { ApiError, Product } from '../types';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://52.200.244.222:8000';
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
+// http://52.200.244.222:8000' change to this when moving to EC2
 
 let authToken: string | null = null;
 
@@ -75,3 +77,8 @@ export const api = {
 
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
+
+
+export async function getCatalog(): Promise<Product[]> {
+  return api.get<Product[]>('/catalog');
+}
