@@ -23,6 +23,7 @@ const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { to: '/sponsor/applications', label: 'Applications' },
     { to: '/sponsor/drivers', label: 'Drivers' },
     { to: '/sponsor/points', label: 'Points' },
+    { to: '/sponsor/reward-settings', label: 'Reward Settings' },
     { to: '/sponsor/catalog', label: 'Catalog' },
     { to: '/sponsor/reports', label: 'Reports' },
     { to: '/sponsor/profile', label: 'Sponsor Profile' },

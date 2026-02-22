@@ -128,9 +128,17 @@ async def update_sponsor_reward_defaults(
     """Update default reward settings for the current sponsor (#13984)"""
     user_id = current_user["user_id"]
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True) 
 
     try:
+        # Read current dollar_per_point before updating (for history tracking)
+        cursor.execute(
+            "SELECT dollar_per_point FROM SponsorProfiles WHERE user_id = %s",
+            (user_id,)
+        )
+        existing = cursor.fetchone()
+        old_dpp = float(existing['dollar_per_point']) if existing and existing['dollar_per_point'] is not None else 0.01
+        
         cursor.execute("""
             INSERT INTO SponsorProfiles
                 (user_id, dollar_per_point, earn_rate, expiration_days, max_points_per_day, max_points_per_month)
@@ -151,12 +159,60 @@ async def update_sponsor_reward_defaults(
             defaults.max_points_per_month,
         ))
 
+        # Log history if dollar_per_point actually changed
+        if defaults.dollar_per_point != old_dpp:
+            cursor.execute("""
+                INSERT INTO sponsor_point_value_history
+                    (sponsor_id, old_value, new_value, changed_by_user_id, changed_at)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (user_id, old_dpp, defaults.dollar_per_point, user_id, datetime.now()))
+
         conn.commit()
         return {"success": True, "defaults": defaults.model_dump()}
     finally:
         cursor.close()
         conn.close()
 
+@router.get("/sponsor/reward-defaults/history")
+async def get_sponsor_reward_defaults_history(
+    current_user: dict = Depends(verify_sponsor)
+):
+    """Get history of dollar_per_point changes for the current sponsor"""
+    user_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT
+                h.id,
+                h.old_value,
+                h.new_value,
+                h.changed_by_user_id,
+                h.changed_at,
+                u.username AS changed_by_username
+            FROM sponsor_point_value_history h
+            LEFT JOIN Users u ON h.changed_by_user_id = u.user_id
+            WHERE h.sponsor_id = %s
+            ORDER BY h.changed_at DESC
+        """, (user_id,))
+
+        rows = cursor.fetchall()
+        history = []
+        for row in rows:
+            history.append({
+                "id": row["id"],
+                "old_value": float(row["old_value"]),
+                "new_value": float(row["new_value"]),
+                "changed_by_user_id": row["changed_by_user_id"],
+                "changed_by_username": row["changed_by_username"],
+                "changed_at": row["changed_at"].isoformat() if row["changed_at"] else None,
+            })
+
+        return {"history": history}
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @router.post("/sponsor/points/add", response_model=PointChangeResponse)

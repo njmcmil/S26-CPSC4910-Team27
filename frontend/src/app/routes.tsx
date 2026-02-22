@@ -20,6 +20,7 @@ import { SponsorProfileFormPage } from '../features/sponsor/SponsorProfileForm';
 import { SponsorApplicationsPage } from '../pages/SponsorApplicationsPage';
 import { SponsorDriversPage } from '../features/sponsor/SponsorDrivers';
 import { SponsorPointsPage } from '../features/sponsor/SponsorPoints';
+import { SponsorRewardSettingsPage } from '../features/sponsor/SponsorRewardSettings';
 
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
 
@@ -72,6 +73,7 @@ export const router = createBrowserRouter([
               { path: '/sponsor/applications', element: <SponsorApplicationsPage /> },
               { path: '/sponsor/drivers', element: <SponsorDriversPage /> },
               { path: '/sponsor/points', element: <SponsorPointsPage /> },
+              { path: '/sponsor/reward-settings', element: <SponsorRewardSettingsPage /> },
             ],
           },
 

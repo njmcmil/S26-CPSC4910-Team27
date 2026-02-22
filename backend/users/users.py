@@ -42,6 +42,16 @@ def create_user(username: str, password: str, role: str, email: str) -> dict:
         conn.commit()
         # find ID of user just created
         user_id = cursor.lastrowid
+       
+        # For sponsors, ensure a SponsorProfiles row exists with default reward values
+        if role == 'sponsor':
+            cursor.execute("""
+                INSERT INTO SponsorProfiles (user_id, dollar_per_point, earn_rate, total_points_allocated)
+                VALUES (%s, 0.01, 1.00, 0)
+                ON DUPLICATE KEY UPDATE user_id = user_id
+            """, (user_id,))
+            conn.commit()
+
         # return full new user profile
         return get_user_by_id(user_id)
     finally:

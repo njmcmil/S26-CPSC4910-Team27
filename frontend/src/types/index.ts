@@ -168,6 +168,18 @@ export interface SponsorRewardDefaults {
   max_points_per_month: number | null;
 }
 
+export interface PointValueHistoryEntry {
+  id: number;
+  old_value: number;
+  new_value: number;
+  changed_by_user_id: number;
+  changed_by_username: string | null;
+  changed_at: string;
+}
+
+export interface PointValueHistoryResponse {
+  history: PointValueHistoryEntry[];
+}
 
 /* ── Products ── */
 export interface Product {

@@ -3,6 +3,7 @@ import type {
   DriverPointHistory,
   SponsorPointHistoryResponse,
   SponsorRewardDefaults,
+  PointValueHistoryResponse,
 } from '../types';
 
 export interface PointTransaction {
@@ -84,6 +85,11 @@ export const pointsService = {
     return api.put<{ success: boolean }>('/api/sponsor/reward-defaults', defaults);
   },
 
+  /** Get history of dollar_per_point changes for the current sponsor */
+  getPointValueHistory(): Promise<PointValueHistoryResponse> {
+    return api.get<PointValueHistoryResponse>('/api/sponsor/reward-defaults/history');
+  },
+  
   /** Sponsor adds points to a driver */
   addPoints(data: PointChangeRequest): Promise<PointChangeResponse> {
     return api.post<PointChangeResponse>('/api/sponsor/points/add', data);
