@@ -1,51 +1,196 @@
+import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from './Button';
 import type { UserRole } from '../types';
+
+/* ── Types ── */
 
 interface NavItem {
   to: string;
   label: string;
 }
 
-const NAV_ITEMS: Record<UserRole, NavItem[]> = {
-  driver: [
-    { to: '/driver/dashboard', label: 'Dashboard' },
-    { to: '/driver/catalog', label: 'Catalog' },
-    { to: '/driver/orders', label: 'My Orders' },
-    { to: '/driver/points', label: 'Points' },
-    { to: '/driver/profile', label: 'Profile' },
-    { to: '/account/settings', label: 'Settings' },
-    { to: '/about', label: 'About' },
-  ],
-  sponsor: [
-    { to: '/sponsor/dashboard', label: 'Dashboard' },
-    { to: '/sponsor/applications', label: 'Applications' },
-    { to: '/sponsor/drivers', label: 'Drivers' },
-    { to: '/sponsor/points', label: 'Points' },
-    { to: '/sponsor/reward-settings', label: 'Reward Settings' },
-    { to: '/sponsor/catalog', label: 'Catalog' },
-    { to: '/sponsor/reports', label: 'Reports' },
-    { to: '/sponsor/profile', label: 'Sponsor Profile' },
-    { to: '/account/settings', label: 'Settings' },
-    { to: '/about', label: 'About' },
-  ],
-  admin: [
-    { to: '/admin/dashboard', label: 'Dashboard' },
-    { to: '/admin/users', label: 'Users' },
-    { to: '/admin/sponsors', label: 'Sponsors' },
-    { to: '/admin/reports', label: 'Reports' },
-    { to: '/admin/audit-logs', label: 'Audit Logs' },
-    { to: '/account/settings', label: 'Settings' },
-    { to: '/about', label: 'About' },
-  ],
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+  defaultOpen: boolean;
+}
+
+interface GroupedNav {
+  groups: NavGroup[];
+  standalone: NavItem[];
+}
+
+/* ── Grouped nav config per role ── */
+
+const ROLE_NAV: Record<UserRole, GroupedNav> = {
+  driver: {
+    groups: [
+      {
+        label: 'Overview',
+        defaultOpen: true,
+        items: [{ to: '/driver/dashboard', label: 'Dashboard' }],
+      },
+      {
+        label: 'Rewards',
+        defaultOpen: true,
+        items: [
+          { to: '/driver/points', label: 'Points' },
+          { to: '/driver/catalog', label: 'Catalog' },
+          { to: '/driver/orders', label: 'My Orders' },
+        ],
+      },
+      {
+        label: 'Account',
+        defaultOpen: false,
+        items: [
+          { to: '/driver/profile', label: 'Profile' },
+          { to: '/account/settings', label: 'Settings' },
+        ],
+      },
+    ],
+    standalone: [{ to: '/about', label: 'About' }],
+  },
+
+  sponsor: {
+    groups: [
+      {
+        label: 'Overview',
+        defaultOpen: true,
+        items: [{ to: '/sponsor/dashboard', label: 'Dashboard' }],
+      },
+      {
+        label: 'Driver Management',
+        defaultOpen: true,
+        items: [
+          { to: '/sponsor/drivers', label: 'Drivers' },
+          { to: '/sponsor/applications', label: 'Applications' },
+          { to: '/sponsor/points', label: 'Points' },
+        ],
+      },
+      {
+        label: 'Incentive Program',
+        defaultOpen: true,
+        items: [
+          { to: '/sponsor/reward-settings', label: 'Reward Settings' },
+          { to: '/sponsor/catalog', label: 'Catalog' },
+        ],
+      },
+      {
+        label: 'Reporting',
+        defaultOpen: true,
+        items: [{ to: '/sponsor/reports', label: 'Reports' }],
+      },
+      {
+        label: 'Organization',
+        defaultOpen: false,
+        items: [
+          { to: '/sponsor/profile', label: 'Sponsor Profile' },
+          { to: '/account/settings', label: 'Settings' },
+        ],
+      },
+    ],
+    standalone: [{ to: '/about', label: 'About' }],
+  },
+
+  admin: {
+    groups: [
+      {
+        label: 'Overview',
+        defaultOpen: true,
+        items: [{ to: '/admin/dashboard', label: 'Dashboard' }],
+      },
+      {
+        label: 'Management',
+        defaultOpen: true,
+        items: [
+          { to: '/admin/users', label: 'Users' },
+          { to: '/admin/sponsors', label: 'Sponsors' },
+        ],
+      },
+      {
+        label: 'Reporting',
+        defaultOpen: true,
+        items: [
+          { to: '/admin/reports', label: 'Reports' },
+          { to: '/admin/audit-logs', label: 'Audit Logs' },
+        ],
+      },
+      {
+        label: 'Account',
+        defaultOpen: false,
+        items: [{ to: '/account/settings', label: 'Settings' }],
+      },
+    ],
+    standalone: [{ to: '/about', label: 'About' }],
+  },
 };
+
+/* ── Shared ── */
 
 const ROLE_LABELS: Record<UserRole, string> = {
   driver: 'Driver',
   sponsor: 'Sponsor',
   admin: 'Admin',
 };
+
+function renderNavLink(item: NavItem) {
+  return (
+    <li key={item.to}>
+      <NavLink
+        to={item.to}
+        className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+      >
+        {item.label}
+      </NavLink>
+    </li>
+  );
+}
+
+/* ── Collapsible sidebar group ── */
+
+function SidebarGroup({ group }: { group: NavGroup }) {
+  const [open, setOpen] = useState(group.defaultOpen);
+
+  return (
+    <div className="sidebar-group">
+      <button
+        type="button"
+        className="sidebar-group-toggle"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        {group.label}
+        <span className={`sidebar-group-chevron ${open ? 'expanded' : ''}`}>
+          &#9654;
+        </span>
+      </button>
+      <ul className={`sidebar-group-items ${open ? 'expanded' : 'collapsed'}`} role="list">
+        {group.items.map(renderNavLink)}
+      </ul>
+    </div>
+  );
+}
+
+/* ── Sidebar renderer ── */
+
+function GroupedSidebar({ nav }: { nav: GroupedNav }) {
+  return (
+    <>
+      {nav.groups.map((group) => (
+        <SidebarGroup key={group.label} group={group} />
+      ))}
+      {nav.standalone.length > 0 && (
+        <ul className="sidebar-standalone" role="list">
+          {nav.standalone.map(renderNavLink)}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/* ── Main layout ── */
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -55,8 +200,6 @@ export function Layout() {
     await logout();
     navigate('/login');
   };
-
-  const items = user ? NAV_ITEMS[user.role] ?? [] : [];
 
   return (
     <>
@@ -86,20 +229,7 @@ export function Layout() {
       <div className="app-shell">
         {user && (
           <nav className="app-sidebar" aria-label="Main navigation">
-            <ul className="sidebar-nav" role="list">
-              {items.map(({ to, label }) => (
-                <li key={to}>
-                  <NavLink
-                    to={to}
-                    className={({ isActive }) =>
-                      isActive ? 'nav-link active' : 'nav-link'
-                    }
-                  >
-                    {label}
-                  </NavLink>
-                </li>
-              ))}
-            </ul>
+            <GroupedSidebar nav={ROLE_NAV[user.role]} />
           </nav>
         )}
 

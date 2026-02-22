@@ -215,6 +215,54 @@ async def get_sponsor_reward_defaults_history(
         conn.close()
 
 
+@router.get("/sponsor/recent-activity")
+async def get_sponsor_recent_activity(
+    limit: int = 5,
+    current_user: dict = Depends(verify_sponsor),
+):
+    """Return the last N point-change audit events for the sponsor's drivers."""
+    user_id = current_user["user_id"]
+    limit = min(max(limit, 1), 50)
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT
+                a.date,
+                a.driver_id,
+                a.points_changed,
+                a.reason,
+                p.first_name  AS driver_first_name,
+                p.last_name   AS driver_last_name
+            FROM audit_log a
+            LEFT JOIN Profiles p ON a.driver_id = p.user_id
+            WHERE a.category = 'point_change'
+              AND a.sponsor_id = %s
+            ORDER BY a.date DESC
+            LIMIT %s
+        """, (user_id, limit))
+
+        rows = cursor.fetchall()
+
+        activity = []
+        for r in rows:
+            activity.append({
+                "date": r["date"].isoformat() if r["date"] else None,
+                "driver_id": r["driver_id"],
+                "points_changed": r["points_changed"],
+                "reason": r["reason"],
+                "driver_first_name": r["driver_first_name"] or "",
+                "driver_last_name": r["driver_last_name"] or "",
+            })
+
+        return {"activity": activity}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @router.post("/sponsor/points/add", response_model=PointChangeResponse)
 async def add_driver_points(
     request: PointChangeRequest,
