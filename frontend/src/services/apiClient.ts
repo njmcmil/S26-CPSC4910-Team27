@@ -1,8 +1,7 @@
 import type { ApiError, Product } from '../types';
 
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
-// http://52.200.244.222:8000' change to this when moving to EC2
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://52.200.244.222:8000';
 
 let authToken: string | null = null;
 
