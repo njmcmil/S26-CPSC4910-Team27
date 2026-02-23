@@ -10,6 +10,8 @@ export default function CatalogPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /* ------------------ Load Products ------------------ */
+
   const loadProducts = async (searchTerm: string) => {
     setLoading(true);
     setError(null);
@@ -24,6 +26,7 @@ export default function CatalogPage() {
     }
   };
 
+  /* ------------------ Load Points ------------------ */
   const loadPoints = async () => {
     try {
       const res = await driverService.getPoints();
@@ -33,25 +36,26 @@ export default function CatalogPage() {
     }
   };
 
-  // Load products + points on mount
+  /* ------------------ Effects ------------------ */
   useEffect(() => {
-    loadProducts(query);
     loadPoints();
+    loadProducts(query);
   }, []);
 
+    /* ------------------ Search Handler ------------------ */
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     loadProducts(query);
   };
 
+
+  /* ------------------ UI ------------------ */
   return (
     <div>
-      {/* Driver Points */}
       <div className="points-banner">
         <h2>Your Available Points: {points}</h2>
       </div>
 
-      {/* Search Bar */}
       <form onSubmit={handleSearch} className="search-bar">
         <input
           type="text"
@@ -62,10 +66,8 @@ export default function CatalogPage() {
         <button type="submit">Search</button>
       </form>
 
-      {/* Error Message */}
       {error && <p className="error">{error}</p>}
 
-      {/* Loading State */}
       {loading ? (
         <p>Loading products...</p>
       ) : (
@@ -80,7 +82,9 @@ export default function CatalogPage() {
                 ) : (
                   <div className="image-placeholder">No Image</div>
                 )}
+
                 <h3>{product.title || 'No Title'}</h3>
+
                 <p>
                   {product.price?.value
                     ? `${product.price.value} ${product.price.currency}`

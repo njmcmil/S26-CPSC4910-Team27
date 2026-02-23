@@ -74,6 +74,8 @@ export const router = createBrowserRouter([
               { path: '/sponsor/drivers', element: <SponsorDriversPage /> },
               { path: '/sponsor/points', element: <SponsorPointsPage /> },
               { path: '/sponsor/reward-settings', element: <SponsorRewardSettingsPage /> },
+
+              { path: '/sponsor/catalog', element: <CatalogPage /> },
             ],
           },
 
