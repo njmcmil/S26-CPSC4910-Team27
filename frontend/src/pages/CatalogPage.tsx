@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { getCatalog } from '../services/productService';
+import { driverService } from '../services/driverService';
 import type { Product } from '../types';
 
 export default function CatalogPage() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [query, setQuery] = useState('laptop'); // default search
+  const [points, setPoints] = useState<number>(0);
+  const [query, setQuery] = useState('laptop');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -13,7 +15,6 @@ export default function CatalogPage() {
     setError(null);
     try {
       const data = await getCatalog(searchTerm);
-      console.log('Catalog data:', data);
       setProducts(data);
     } catch (err) {
       console.error('Failed to load catalog', err);
@@ -23,9 +24,19 @@ export default function CatalogPage() {
     }
   };
 
-  // Load default products on mount
+  const loadPoints = async () => {
+    try {
+      const res = await driverService.getPoints();
+      setPoints(res.current_points);
+    } catch (err) {
+      console.error('Failed to load driver points', err);
+    }
+  };
+
+  // Load products + points on mount
   useEffect(() => {
     loadProducts(query);
+    loadPoints();
   }, []);
 
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
@@ -35,6 +46,11 @@ export default function CatalogPage() {
 
   return (
     <div>
+      {/* Driver Points */}
+      <div className="points-banner">
+        <h2>Your Available Points: {points}</h2>
+      </div>
+
       {/* Search Bar */}
       <form onSubmit={handleSearch} className="search-bar">
         <input
