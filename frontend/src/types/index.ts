@@ -192,8 +192,8 @@ export interface Product {
   image?: {
     imageUrl: string;
   };
+  rating?: 'G' | 'PG';
 }
-
 
 
 

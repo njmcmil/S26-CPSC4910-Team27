@@ -76,8 +76,3 @@ export const api = {
 
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
-
-
-export async function getCatalog(): Promise<Product[]> {
-  return api.get<Product[]>('/catalog');
-}

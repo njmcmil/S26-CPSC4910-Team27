@@ -1,107 +1,87 @@
 import { useEffect, useState } from 'react';
-import { getCatalog } from '../../services/productService';
 import { driverService } from '../../services/driverService';
+import { sponsorService } from '../../services/sponsorService';
 import type { Product } from '../../types';
 
-export function DriverCatalog() {
+interface Props {
+  previewMode?: boolean;
+}
+
+export function DriverCatalog({ previewMode = false }: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [points, setPoints] = useState<number>(0);
-  const [query, setQuery] = useState<string>('laptop');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  /* -------------------------------------------------- */
-  /* Load Products */
-  /* -------------------------------------------------- */
-  const loadProducts = async (searchTerm: string) => {
+  /* -------------------------------- */
+  /* Load Sponsor Catalog */
+  /* -------------------------------- */
+  const loadCatalog = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const data = await getCatalog(searchTerm);
+      const data = await sponsorService.getCatalog();
       setProducts(data);
     } catch (err) {
-      console.error('Failed to load catalog', err);
-      setError('Failed to load products. Please try again.');
+      console.error('Failed to load sponsor catalog', err);
+      setError('Failed to load catalog.');
     } finally {
       setLoading(false);
     }
   };
 
-  /* -------------------------------------------------- */
-  /* Load Driver Points */
-  /* -------------------------------------------------- */
+  /* -------------------------------- */
+  /* Load Points */
+  /* -------------------------------- */
   const loadPoints = async () => {
     try {
       const res = await driverService.getPoints();
       setPoints(res.current_points);
     } catch (err) {
-      console.error('Failed to load driver points', err);
+      console.error('Failed to load points', err);
     }
   };
 
-  /* -------------------------------------------------- */
-  /* Initial Load */
-  /* -------------------------------------------------- */
   useEffect(() => {
+    loadCatalog();
     loadPoints();
-    loadProducts(query);
   }, []);
 
-  /* -------------------------------------------------- */
-  /* Search Handler */
-  /* -------------------------------------------------- */
-  const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    loadProducts(query);
+  /* -------------------------------- */
+  /* Redeem */
+  /* -------------------------------- */
+  const handleRedeem = (product: Product) => {
+    if (previewMode) return;
+
+    console.log('Redeem:', product.itemId);
+    // TODO: Call redeem API
   };
 
-  /* -------------------------------------------------- */
-  /* UI */
-  /* -------------------------------------------------- */
   return (
     <div>
-      {/* Points Display */}
       <div className="points-banner">
         <h2>Your Available Points: {points}</h2>
+
+        {previewMode && (
+          <p className="text-sm text-gray-500">
+            Sponsor Preview — Purchase Disabled
+          </p>
+        )}
       </div>
 
-      {/* Search */}
-      <form onSubmit={handleSearch} className="search-bar">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search products..."
-        />
-        <button type="submit">Search</button>
-      </form>
-
-      {/* Error */}
       {error && <p className="error">{error}</p>}
 
-      {/* Loading */}
       {loading ? (
-        <p>Loading products...</p>
+        <p>Loading catalog...</p>
       ) : (
         <div className="catalog-grid">
           {products.length === 0 ? (
-            <p>No products found.</p>
+            <p>No sponsor products available.</p>
           ) : (
             products.map((product) => (
               <div key={product.itemId} className="product-card">
-                {product.image?.imageUrl ? (
-                  <img
-                    src={product.image.imageUrl}
-                    alt={product.title}
-                  />
-                ) : (
-                  <div className="image-placeholder">
-                    No Image
-                  </div>
-                )}
-
-                <h3>{product.title || 'No Title'}</h3>
+                <h3>{product.title}</h3>
 
                 <p>
                   {product.price?.value
@@ -109,7 +89,21 @@ export function DriverCatalog() {
                     : 'Price N/A'}
                 </p>
 
-                {/* Later: Add "Redeem" Button Here */}
+                {product.image?.imageUrl ? (
+                  <img
+                    src={product.image.imageUrl}
+                    alt={product.title}
+                  />
+                ) : (
+                  <div className="image-placeholder">No Image</div>
+                )}
+
+                <button
+                  disabled={previewMode}
+                  onClick={() => handleRedeem(product)}
+                >
+                  {previewMode ? 'Preview Only' : 'Redeem'}
+                </button>
               </div>
             ))
           )}

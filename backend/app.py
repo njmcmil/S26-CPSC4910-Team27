@@ -64,6 +64,8 @@ from profiles.points import router as points_router
 from users.admin_routes import router as admin_router
 from shared.scheduler import scheduler
 
+from services.catalog.catalog_service import get_sponsor_catalog, add_to_catalog
+
 # --- App Initialization ---
 INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
 app = FastAPI(title="Team27 API", description="API for Team27 application", version="1.0")
@@ -501,6 +503,34 @@ def ebay_product(item_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"eBay product fetch failed: {str(e)}")
 
+@app.get("/api/sponsor/catalog")
+def sponsor_catalog(current_user: dict = Depends(get_current_user)):
+    """
+    Returns sponsor catalog items.
+    """
+    if current_user["role"] != "sponsor":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    return get_sponsor_catalog(current_user["user_id"])
+
+@app.post("/api/sponsor/catalog")
+def add_product_to_catalog(
+    product: dict,
+    current_user=Depends(get_current_user)
+):
+
+    print("🔥 RECEIVED PRODUCT:", product)
+
+    if current_user["role"] != "sponsor":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        add_to_catalog(current_user["user_id"], product)
+    except Exception as e:
+        print("❌ DB ERROR:", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"message": "Product added to catalog"}
 # ==============================================================================
 # PROTECTED ENDPOINTS
 # ==============================================================================

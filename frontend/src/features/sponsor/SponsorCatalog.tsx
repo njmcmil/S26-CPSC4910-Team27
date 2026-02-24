@@ -1,21 +1,26 @@
 import { useEffect, useState } from 'react';
-import { getCatalog } from '../../services/productService';
 import { driverService } from '../../services/driverService';
+import { sponsorService } from '../../services/sponsorService';
+import { getCatalog } from '../../services/productService';
 import type { Product } from '../../types';
 
 export function SponsorCatalog() {
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState<string>('laptop');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [driverView, setDriverView] = useState(false);
+  const [driverView, setDriverView] = useState<boolean>(false);
   const [points, setPoints] = useState<number>(0);
 
-  /* -------------------------------------------- */
-  /* Load Products */
-  /* -------------------------------------------- */
-  const loadProducts = async (search: string) => {
+  // Store rating without mutating product object
+  const [ratings, setRatings] = useState<Record<string, 'G' | 'PG'>>({});
+
+  /* ===================================================== */
+  /* =============== LOAD EBAY SEARCH (Sponsor Mode) ===== */
+  /* ===================================================== */
+
+  const loadEbayProducts = async (search: string) => {
     setLoading(true);
     setError(null);
 
@@ -23,16 +28,36 @@ export function SponsorCatalog() {
       const data = await getCatalog(search);
       setProducts(data);
     } catch (err) {
-      console.error('Failed to load catalog', err);
-      setError('Failed to load catalog.');
+      console.error('Failed to search eBay', err);
+      setError('Failed to search products.');
     } finally {
       setLoading(false);
     }
   };
 
-  /* -------------------------------------------- */
-  /* Load Driver Points (For Preview Mode) */
-  /* -------------------------------------------- */
+  /* ===================================================== */
+  /* =============== LOAD SPONSOR TABLE (Driver Preview) == */
+  /* ===================================================== */
+
+  const loadSponsorCatalog = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await sponsorService.getCatalog();
+      setProducts(data);
+    } catch (err) {
+      console.error('Failed to load sponsor catalog', err);
+      setError('Failed to load sponsor catalog.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ===================================================== */
+  /* =============== LOAD DRIVER POINTS =================== */
+  /* ===================================================== */
+
   const loadPoints = async () => {
     try {
       const res = await driverService.getPoints();
@@ -42,66 +67,93 @@ export function SponsorCatalog() {
     }
   };
 
-  /* -------------------------------------------- */
-  /* Initial Load */
-  /* -------------------------------------------- */
+  /* ===================================================== */
+  /* =============== INITIAL LOAD ========================= */
+  /* ===================================================== */
+
   useEffect(() => {
-    loadProducts(query);
+    loadEbayProducts(query);
   }, []);
 
-  /* -------------------------------------------- */
-  /* Search */
-  /* -------------------------------------------- */
+  /* ===================================================== */
+  /* =============== SEARCH =============================== */
+  /* ===================================================== */
+
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    loadProducts(query);
+    loadEbayProducts(query);
   };
 
-  /* -------------------------------------------- */
-  /* Toggle Driver Preview */
-  /* -------------------------------------------- */
+  /* ===================================================== */
+  /* =============== TOGGLE PREVIEW ======================= */
+  /* ===================================================== */
+
   const toggleDriverView = () => {
+    setDriverView(prev => !prev);
+
+    // When entering preview → load DB table
     if (!driverView) {
-      loadPoints(); // Load points only when entering preview
+      loadSponsorCatalog();
+      loadPoints();
     }
-    setDriverView(!driverView);
   };
 
-  /* -------------------------------------------- */
-  /* UI */
-  /* -------------------------------------------- */
+  /* ===================================================== */
+  /* =============== ADD TO SPONSOR TABLE ================ */
+  /* ===================================================== */
+
+  const handleAddToCatalog = async (product: Product) => {
+    try {
+      await sponsorService.addToCatalog({
+        ...product,
+        rating: ratings[product.itemId] || 'G',
+      });
+
+      alert('Product added to sponsor catalog!');
+    } catch (err) {
+      console.error('Failed to add product', err);
+      alert('Failed to add product.');
+    }
+  };
+
+  /* ===================================================== */
+  /* ======================= UI ========================== */
+  /* ===================================================== */
+
   return (
-    <div>
+    <div className="sponsor-catalog-container">
       <h2>Sponsor Catalog Management</h2>
 
-      {/* Toggle Button */}
-      <button onClick={toggleDriverView}>
+      {/* Toggle Preview */}
+      <button onClick={toggleDriverView} className="preview-toggle-btn">
         {driverView ? 'Exit Driver Preview' : 'View As Driver'}
       </button>
 
-      {/* If Preview Mode → Show Points Banner */}
+      {/* Driver Preview Banner */}
       {driverView && (
         <div className="points-banner">
-          <h3>Driver Preview</h3>
+          <h3>Driver Preview Mode</h3>
           <p>Available Points: {points}</p>
         </div>
       )}
 
-      {/* Search */}
-      <form onSubmit={handleSearch} className="search-bar">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search products..."
-        />
-        <button type="submit">Search</button>
-      </form>
+      {/* Search only in Sponsor Mode */}
+      {!driverView && (
+        <form onSubmit={handleSearch} className="search-bar">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search eBay products..."
+          />
+          <button type="submit">Search</button>
+        </form>
+      )}
 
       {error && <p className="error">{error}</p>}
 
       {loading ? (
-        <p>Loading catalog...</p>
+        <p>Loading...</p>
       ) : (
         <div className="catalog-grid">
           {products.length === 0 ? (
@@ -109,6 +161,8 @@ export function SponsorCatalog() {
           ) : (
             products.map((product) => (
               <div key={product.itemId} className="product-card">
+
+                {/* Image */}
                 {product.image?.imageUrl ? (
                   <img
                     src={product.image.imageUrl}
@@ -120,28 +174,48 @@ export function SponsorCatalog() {
                   </div>
                 )}
 
+                {/* Title */}
                 <h3>{product.title}</h3>
 
+                {/* Price */}
                 <p>
                   {product.price?.value
                     ? `${product.price.value} ${product.price.currency}`
                     : 'Price N/A'}
                 </p>
 
-                {/* Buttons ONLY show in real sponsor mode */}
+                {/* ================= Sponsor Mode ================= */}
                 {!driverView && (
-                  <div>
-                    <button>Edit</button>
-                    <button>Remove</button>
+                  <div className="sponsor-actions">
+
+                    {/* Rating Selector */}
+                    <select
+                      value={ratings[product.itemId] || 'G'}
+                      onChange={(e) =>
+                        setRatings({
+                          ...ratings,
+                          [product.itemId]: e.target.value as 'G' | 'PG',
+                        })
+                      }
+                    >
+                      <option value="G">G</option>
+                      <option value="PG">PG</option>
+                    </select>
+
+                    <button onClick={() => handleAddToCatalog(product)}>
+                      Add to Catalog
+                    </button>
+
                   </div>
                 )}
 
-                {/* In Driver Preview — show disabled redeem */}
+                {/* ================= Driver Preview ================= */}
                 {driverView && (
-                  <button disabled>
+                  <button disabled className="preview-redeem-btn">
                     Preview: Redeem Disabled
                   </button>
                 )}
+
               </div>
             ))
           )}

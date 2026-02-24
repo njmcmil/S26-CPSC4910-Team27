@@ -4,6 +4,7 @@ import type { SponsorProfile, SponsorProfileUpdate } from '../types';
 /* =====================
    Types
 ===================== */
+
 export interface DriverApplication {
   application_id: number;
   driver_user_id: number;
@@ -14,16 +15,21 @@ export interface DriverApplication {
 }
 
 /* =====================
-   Backend Base URL
+   Base URLs
 ===================== */
+
 const PROFILE_BASE = '/sponsor/profile';
 const APPLICATIONS_BASE = '/sponsor/applications';
+const CATALOG_BASE = '/api/sponsor/catalog';
 
 /* =====================
    Sponsor Service
 ===================== */
+
 export const sponsorService = {
-  /* Profile */
+
+  /* ---------------- PROFILE ---------------- */
+
   getProfile(): Promise<SponsorProfile> {
     return api.get(PROFILE_BASE);
   },
@@ -32,9 +38,9 @@ export const sponsorService = {
     return api.put(PROFILE_BASE, data);
   },
 
-  /* Applications */
+  /* ---------------- APPLICATIONS ---------------- */
+
   getPendingApplications(): Promise<DriverApplication[]> {
-    // This now hits the GET /applications endpoint on the EC2 backend
     return api.get(`${APPLICATIONS_BASE}?status=pending`) as Promise<DriverApplication[]>;
   },
 
@@ -57,4 +63,18 @@ export const sponsorService = {
       rejection_reason,
     });
   },
+
+  /* ---------------- CATALOG ---------------- */
+
+  getCatalog(): Promise<any> {
+    return api.get(CATALOG_BASE);
+  },
+
+  addToCatalog(product: any) {
+    return api.post(CATALOG_BASE, product);
+  },
+
+  removeFromCatalog(itemId: string) {
+    return api.delete(`${CATALOG_BASE}/${itemId}`);
+  }
 };
