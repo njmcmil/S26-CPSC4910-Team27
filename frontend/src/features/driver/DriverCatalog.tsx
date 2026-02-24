@@ -53,7 +53,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
         message: string;
         new_points_balance: number;
         remaining_stock: number;
-      }>('/api/driver/catalog/purchase', { item_id: item.itemId });
+      }>('/api/driver/catalog/purchase', { item_id: item.item_id });
 
       setPoints(res.new_points_balance);
       setItems(prev =>
