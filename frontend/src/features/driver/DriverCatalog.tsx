@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react';
-import { getCatalog } from '../services/productService';
-import { driverService } from '../services/driverService';
-import type { Product } from '../types';
+import { getCatalog } from '../../services/productService';
+import { driverService } from '../../services/driverService';
+import type { Product } from '../../types';
 
-export default function CatalogPage() {
+export function DriverCatalog() {
   const [products, setProducts] = useState<Product[]>([]);
   const [points, setPoints] = useState<number>(0);
-  const [query, setQuery] = useState('laptop');
-  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState<string>('laptop');
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [driverView, setDriverView] = useState(false);
 
-  /* ------------------ Load Products ------------------ */
-
+  /* -------------------------------------------------- */
+  /* Load Products */
+  /* -------------------------------------------------- */
   const loadProducts = async (searchTerm: string) => {
     setLoading(true);
     setError(null);
+
     try {
       const data = await getCatalog(searchTerm);
       setProducts(data);
@@ -27,7 +28,9 @@ export default function CatalogPage() {
     }
   };
 
-  /* ------------------ Load Points ------------------ */
+  /* -------------------------------------------------- */
+  /* Load Driver Points */
+  /* -------------------------------------------------- */
   const loadPoints = async () => {
     try {
       const res = await driverService.getPoints();
@@ -37,26 +40,33 @@ export default function CatalogPage() {
     }
   };
 
-  /* ------------------ Effects ------------------ */
+  /* -------------------------------------------------- */
+  /* Initial Load */
+  /* -------------------------------------------------- */
   useEffect(() => {
     loadPoints();
     loadProducts(query);
   }, []);
 
-    /* ------------------ Search Handler ------------------ */
+  /* -------------------------------------------------- */
+  /* Search Handler */
+  /* -------------------------------------------------- */
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     loadProducts(query);
   };
 
-
-  /* ------------------ UI ------------------ */
+  /* -------------------------------------------------- */
+  /* UI */
+  /* -------------------------------------------------- */
   return (
     <div>
+      {/* Points Display */}
       <div className="points-banner">
         <h2>Your Available Points: {points}</h2>
       </div>
 
+      {/* Search */}
       <form onSubmit={handleSearch} className="search-bar">
         <input
           type="text"
@@ -67,8 +77,10 @@ export default function CatalogPage() {
         <button type="submit">Search</button>
       </form>
 
+      {/* Error */}
       {error && <p className="error">{error}</p>}
 
+      {/* Loading */}
       {loading ? (
         <p>Loading products...</p>
       ) : (
@@ -79,9 +91,14 @@ export default function CatalogPage() {
             products.map((product) => (
               <div key={product.itemId} className="product-card">
                 {product.image?.imageUrl ? (
-                  <img src={product.image.imageUrl} alt={product.title} />
+                  <img
+                    src={product.image.imageUrl}
+                    alt={product.title}
+                  />
                 ) : (
-                  <div className="image-placeholder">No Image</div>
+                  <div className="image-placeholder">
+                    No Image
+                  </div>
                 )}
 
                 <h3>{product.title || 'No Title'}</h3>
@@ -91,6 +108,8 @@ export default function CatalogPage() {
                     ? `${product.price.value} ${product.price.currency}`
                     : 'Price N/A'}
                 </p>
+
+                {/* Later: Add "Redeem" Button Here */}
               </div>
             ))
           )}

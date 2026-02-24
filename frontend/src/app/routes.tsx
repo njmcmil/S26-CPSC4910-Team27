@@ -6,7 +6,6 @@ import { useAuth } from '../auth/AuthContext';
 
 import { HomePage } from '../pages/Home';
 import { LoginPage } from '../pages/Login';
-import CatalogPage from "../pages/CatalogPage";
 import { AboutPage } from '../pages/About';
 import { SettingsPage } from '../pages/Settings';
 import { NotFoundPage } from '../pages/NotFound';
@@ -14,6 +13,8 @@ import { NotFoundPage } from '../pages/NotFound';
 import { DriverDashboardPage } from '../features/driver/DriverDashboard';
 import { DriverProfilePage } from '../features/driver/DriverProfile';
 import { PointsPage } from '../pages/pointsPage';
+import { DriverCatalog } from '../features/driver/DriverCatalog';
+
 
 import { SponsorDashboardPage } from '../features/sponsor/SponsorDashboard';
 import { SponsorProfileFormPage } from '../features/sponsor/SponsorProfileForm';
@@ -21,6 +22,7 @@ import { SponsorApplicationsPage } from '../pages/SponsorApplicationsPage';
 import { SponsorDriversPage } from '../features/sponsor/SponsorDrivers';
 import { SponsorPointsPage } from '../features/sponsor/SponsorPoints';
 import { SponsorRewardSettingsPage } from '../features/sponsor/SponsorRewardSettings';
+import { SponsorCatalog } from '../features/sponsor/SponsorCatalog';
 
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
 
@@ -60,7 +62,7 @@ export const router = createBrowserRouter([
               { path: '/driver/dashboard', element: <DriverDashboardPage /> },
               { path: '/driver/profile', element: <DriverProfilePage /> },
               { path: '/driver/points', element: <PointsPage /> },
-              { path: '/driver/catalog', element: <CatalogPage /> }, 
+              { path: '/driver/catalog', element: <DriverCatalog /> }
             ],
           },
 
@@ -75,7 +77,7 @@ export const router = createBrowserRouter([
               { path: '/sponsor/points', element: <SponsorPointsPage /> },
               { path: '/sponsor/reward-settings', element: <SponsorRewardSettingsPage /> },
 
-              { path: '/sponsor/catalog', element: <CatalogPage /> },
+              { path: '/sponsor/catalog', element: <SponsorCatalog /> }
             ],
           },
 
