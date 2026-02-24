@@ -540,3 +540,98 @@ def read_users(current_user: dict = Depends(get_current_user)):
     users = get_all_users()
     # u[0] is username, u[1] is role
     return [{"username": u[0], "role": u[1]} for u in users]
+
+# ==============================================================================
+# CATALOG: DRIVER ENDPOINTS (US-38, US-39)
+# ==============================================================================
+
+@app.get("/api/driver/catalog")
+def get_driver_catalog(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    driver_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
+            (driver_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="No sponsor relationship found")
+        cursor.execute(
+            """
+            SELECT item_id, title, price_value, price_currency,
+                   image_url, rating, stock_quantity, points_cost
+            FROM SponsorCatalog
+            WHERE sponsor_user_id = %s
+            ORDER BY title ASC
+            """,
+            (row["sponsor_user_id"],)
+        )
+        items = cursor.fetchall()
+        return {"current_points": row["total_points"] or 0, "items": items}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/driver/catalog/purchase")
+def purchase_catalog_item(body: dict, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    driver_id = current_user["user_id"]
+    item_id = body.get("item_id")
+    if not item_id:
+        raise HTTPException(status_code=400, detail="item_id required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
+            (driver_id,)
+        )
+        driver_row = cursor.fetchone()
+        if not driver_row:
+            raise HTTPException(status_code=404, detail="No sponsor relationship found")
+        sponsor_id = driver_row["sponsor_user_id"]
+        current_points = driver_row["total_points"] or 0
+        cursor.execute(
+            "SELECT item_id, title, points_cost, stock_quantity FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s",
+            (item_id, sponsor_id)
+        )
+        item = cursor.fetchone()
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found in your sponsor's catalog")
+        if current_points < item["points_cost"]:
+            raise HTTPException(status_code=400, detail=f"Insufficient points. '{item['title']}' costs {item['points_cost']} pts but your balance is {current_points} pts. You need {item['points_cost'] - current_points} more.")
+        if item["stock_quantity"] <= 0:
+            raise HTTPException(status_code=400, detail="This item is out of stock.")
+        cursor.execute(
+            "UPDATE SponsorDrivers SET total_points = total_points - %s WHERE driver_user_id = %s",
+            (item["points_cost"], driver_id)
+        )
+        cursor.execute(
+            "UPDATE SponsorCatalog SET stock_quantity = stock_quantity - 1 WHERE item_id = %s AND sponsor_user_id = %s",
+            (item_id, sponsor_id)
+        )
+        cursor.execute(
+            "INSERT INTO audit_log (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id) VALUES ('point_change', %s, %s, %s, %s, %s, %s)",
+            (datetime.utcnow(), sponsor_id, driver_id, -item["points_cost"], f"Redeemed: {item['title']}", driver_id)
+        )
+        conn.commit()
+        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (driver_id,))
+        new_balance = cursor.fetchone()["total_points"]
+        cursor.execute("SELECT stock_quantity FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s", (item_id, sponsor_id))
+        new_stock = cursor.fetchone()["stock_quantity"]
+        return {"message": f"Successfully redeemed '{item['title']}'", "points_spent": item["points_cost"], "new_points_balance": new_balance, "remaining_stock": new_stock}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
