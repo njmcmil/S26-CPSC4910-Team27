@@ -6,6 +6,7 @@ import type { Product } from '../../types';
 interface CatalogItem extends Product {
   stock_quantity: number;
   points_cost: number;
+  image_url: string | null;
 }
 
 interface Props {
@@ -106,8 +107,8 @@ export function DriverCatalog({ previewMode = false }: Props) {
 
               return (
                 <div key={item.itemId} className="product-card" style={{ opacity: inStock ? 1 : 0.6 }}>
-                  {item.image?.imageUrl ? (
-                    <img src={item.image.imageUrl} alt={item.title} />
+                  {item.image_url ? (
+                    <img src={item.image_url} alt={item.title} />
                   ) : (
                     <div className="image-placeholder">No Image</div>
                   )}
