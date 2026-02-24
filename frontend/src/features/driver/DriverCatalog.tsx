@@ -7,6 +7,7 @@ interface CatalogItem extends Product {
   stock_quantity: number;
   points_cost: number;
   image_url: string | null;
+  item_id: string;
 }
 
 interface Props {
