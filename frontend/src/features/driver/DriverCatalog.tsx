@@ -1,18 +1,23 @@
-import { useEffect, useState } from 'react';
-import { driverService } from '../../services/driverService';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../services/apiClient';
-import type { Product } from '../../types';
 
-interface CatalogItem extends Product {
+interface CatalogItem {
+  item_id: string;
+  title: string;
+  price_value: string | null;
+  price_currency: string | null;
+  image_url: string | null;
+  rating: string | null;
   stock_quantity: number;
   points_cost: number;
-  image_url: string | null;
-  item_id: string;
 }
 
 interface Props {
   previewMode?: boolean;
 }
+
+const DEBOUNCE_MS = 250;
 
 export function DriverCatalog({ previewMode = false }: Props) {
   const [items, setItems] = useState<CatalogItem[]>([]);
@@ -21,6 +26,26 @@ export function DriverCatalog({ previewMode = false }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [purchasing, setPurchasing] = useState<string | null>(null);
+
+  // client-side search
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => setSearchQuery(value.trim().toLowerCase()), DEBOUNCE_MS);
+  };
+
+  // filter items by search query (client-side, catalog already loaded)
+  const visibleItems = useMemo(
+    () =>
+      searchQuery
+        ? items.filter(i => i.title.toLowerCase().includes(searchQuery))
+        : items,
+    [items, searchQuery]
+  );
 
   const loadCatalog = async () => {
     setLoading(true);
@@ -48,7 +73,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
   const handleRedeem = async (item: CatalogItem) => {
     if (previewMode) return;
     setFeedback(null);
-    setPurchasing(item.itemId);
+    setPurchasing(item.item_id);
     try {
       const res = await api.post<{
         message: string;
@@ -59,13 +84,13 @@ export function DriverCatalog({ previewMode = false }: Props) {
       setPoints(res.new_points_balance);
       setItems(prev =>
         prev.map(i =>
-          i.itemId === item.itemId ? { ...i, stock_quantity: res.remaining_stock } : i
+          i.item_id === item.item_id ? { ...i, stock_quantity: res.remaining_stock } : i
         )
       );
       setFeedback({ type: 'success', msg: res.message });
     } catch (err: any) {
       // US-38: backend sends detailed message when points are insufficient
-      const detail = err?.response?.data?.detail ?? err?.message ?? 'Purchase failed.';
+      const detail = err?.detail ?? err?.message ?? 'Purchase failed.';
       setFeedback({ type: 'error', msg: detail });
     } finally {
       setPurchasing(null);
@@ -80,6 +105,20 @@ export function DriverCatalog({ previewMode = false }: Props) {
           <p className="text-sm text-gray-500">Sponsor Preview — Purchase Disabled</p>
         )}
       </div>
+      
+      {/* search bar */}
+      {!previewMode && (
+        <div style={{ marginBottom: '1rem' }}>
+          <input
+            type="search"
+            placeholder="Search catalog…"
+            value={searchInput}
+            onChange={e => handleSearchChange(e.target.value)}
+            aria-label="Search catalog"
+            style={{ width: '100%', maxWidth: 360, padding: '0.4rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--color-border)' }}
+          />
+        </div>
+      )}
 
       {feedback && (
         <div role="alert" style={{
@@ -98,16 +137,16 @@ export function DriverCatalog({ previewMode = false }: Props) {
         <p>Loading catalog...</p>
       ) : (
         <div className="catalog-grid">
-          {items.length === 0 ? (
-            <p>No sponsor products available.</p>
+          {visibleItems.length === 0 ? (
+            <p>{searchQuery ? 'No products match your search.' : 'No sponsor products available.'}</p>
           ) : (
-            items.map(item => {
+            visibleItems.map(item => {
               const canAfford = points >= item.points_cost;
               const inStock = item.stock_quantity > 0;
-              const isLoading = purchasing === item.itemId;
+              const isLoading = purchasing === item.item_id;
 
               return (
-                <div key={item.itemId} className="product-card" style={{ opacity: inStock ? 1 : 0.6 }}>
+                <div key={item.item_id} className="product-card" style={{ opacity: inStock ? 1 : 0.6 }}>
                   {item.image_url ? (
                     <img src={item.image_url} alt={item.title} />
                   ) : (
@@ -138,6 +177,16 @@ export function DriverCatalog({ previewMode = false }: Props) {
                     <p style={{ fontSize: '0.78rem', color: '#9ca3af', marginBottom: '0.4rem' }}>
                       Need {(item.points_cost - points).toLocaleString()} more pts
                     </p>
+                  )}
+
+                  {/* link to product details page */}
+                  {!previewMode && (
+                    <Link
+                      to={`/driver/catalog/${item.item_id}`}
+                      style={{ display: 'block', fontSize: '0.82rem', marginBottom: '0.4rem', color: 'var(--color-primary)' }}
+                    >
+                      View Details
+                    </Link>
                   )}
 
                   <button

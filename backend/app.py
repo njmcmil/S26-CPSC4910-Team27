@@ -64,7 +64,7 @@ from profiles.points import router as points_router
 from users.admin_routes import router as admin_router
 from shared.scheduler import scheduler
 
-from services.catalog.catalog_service import get_sponsor_catalog, add_to_catalog
+from services.catalog.catalog_service import get_sponsor_catalog, add_to_catalog, remove_from_catalog
 
 # --- App Initialization ---
 INACTIVITY_LIMIT_MINUTES = 30 # set inactivity to 30 min
@@ -531,6 +531,19 @@ def add_product_to_catalog(
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"message": "Product added to catalog"}
+
+@app.delete("/api/sponsor/catalog/{item_id}")
+def delete_product_from_catalog(
+    item_id: str,
+    current_user=Depends(get_current_user)
+):
+    if current_user["role"] != "sponsor":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    try:
+        remove_from_catalog(current_user["user_id"], item_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"message": "Product removed from catalog"}
 # ==============================================================================
 # PROTECTED ENDPOINTS
 # ==============================================================================
@@ -576,6 +589,65 @@ def get_driver_catalog(current_user: dict = Depends(get_current_user)):
         cursor.close()
         conn.close()
 
+@app.get("/api/driver/catalog/{item_id}")
+def get_driver_catalog_item(item_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Task 15510: sponsor-scoped product detail for a driver.
+    Returns SponsorCatalog row merged with eBay extended details.
+    """
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    driver_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT sponsor_user_id FROM SponsorDrivers WHERE driver_user_id = %s",
+            (driver_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="No sponsor relationship found")
+        sponsor_id = row["sponsor_user_id"]
+        cursor.execute(
+            """
+            SELECT item_id, title, price_value, price_currency,
+                   image_url, rating, stock_quantity, points_cost
+            FROM SponsorCatalog
+            WHERE item_id = %s AND sponsor_user_id = %s
+            """,
+            (item_id, sponsor_id)
+        )
+        item = cursor.fetchone()
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found in your sponsor's catalog")
+    finally:
+        cursor.close()
+        conn.close()
+
+    # Fetch extended eBay details (non-fatal if unavailable)
+    try:
+        ebay_detail = get_product_details(item_id) or {}
+    except Exception:
+        ebay_detail = {}
+
+    return {
+        "item_id": item["item_id"],
+        "title": item["title"],
+        "price_value": item["price_value"],
+        "price_currency": item["price_currency"],
+        "image_url": item["image_url"],
+        "rating": item["rating"],
+        "stock_quantity": item["stock_quantity"],
+        "points_cost": item["points_cost"],
+        "description": ebay_detail.get("shortDescription") or ebay_detail.get("description"),
+        "condition": ebay_detail.get("condition"),
+        "additional_images": [
+            img.get("imageUrl") for img in ebay_detail.get("additionalImages", [])
+            if img.get("imageUrl")
+        ],
+        "item_specifics": ebay_detail.get("localizedAspects", []),
+    }
 
 @app.post("/api/driver/catalog/purchase")
 def purchase_catalog_item(body: dict, current_user: dict = Depends(get_current_user)):
@@ -616,9 +688,18 @@ def purchase_catalog_item(body: dict, current_user: dict = Depends(get_current_u
             "UPDATE SponsorCatalog SET stock_quantity = stock_quantity - 1 WHERE item_id = %s AND sponsor_user_id = %s",
             (item_id, sponsor_id)
         )
+        now = datetime.utcnow()
         cursor.execute(
             "INSERT INTO audit_log (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id) VALUES ('point_change', %s, %s, %s, %s, %s, %s)",
-            (datetime.utcnow(), sponsor_id, driver_id, -item["points_cost"], f"Redeemed: {item['title']}", driver_id)
+            (now, sponsor_id, driver_id, -item["points_cost"], f"Redeemed: {item['title']}", driver_id)
+        )
+        # create Order record for status tracking
+        cursor.execute(
+            """
+            INSERT INTO Orders (driver_user_id, sponsor_user_id, item_id, item_title, points_cost, status, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
+            """,
+            (driver_id, sponsor_id, item_id, item["title"], item["points_cost"], now, now)
         )
         conn.commit()
         cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (driver_id,))
@@ -635,3 +716,234 @@ def purchase_catalog_item(body: dict, current_user: dict = Depends(get_current_u
     finally:
         cursor.close()
         conn.close()
+
+
+# ==============================================================================
+# ORDERS: DRIVER ENDPOINTS 
+# ==============================================================================
+
+@app.get("/api/driver/orders")
+def get_driver_orders(current_user: dict = Depends(get_current_user)):
+    """Task 15492: return driver's orders so they can see/cancel pending ones."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT order_id, item_id, item_title, points_cost, status,
+                   created_at, updated_at
+            FROM Orders
+            WHERE driver_user_id = %s
+            ORDER BY created_at DESC
+            """,
+            (current_user["user_id"],)
+        )
+        orders = cursor.fetchall()
+        for o in orders:
+            if o.get("created_at"):
+                o["created_at"] = o["created_at"].isoformat()
+            if o.get("updated_at"):
+                o["updated_at"] = o["updated_at"].isoformat()
+        return {"orders": orders}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/driver/orders/{order_id}/cancel")
+def cancel_driver_order(order_id: int, current_user: dict = Depends(get_current_user)):
+    """
+    Task 15507: cancel a pending order.
+    - Only the owning driver may cancel.
+    - Only 'pending' orders are cancellable.
+    - Refunds points to SponsorDrivers and restores stock.
+    - Logs refund to audit_log.
+    """
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    driver_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT order_id, driver_user_id, sponsor_user_id, item_id, item_title, points_cost, status FROM Orders WHERE order_id = %s",
+            (order_id,)
+        )
+        order = cursor.fetchone()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order["driver_user_id"] != driver_id:
+            raise HTTPException(status_code=403, detail="Not your order")
+        if order["status"] != "pending":
+            raise HTTPException(status_code=400, detail=f"Only pending orders can be cancelled (current status: {order['status']})")
+
+        now = datetime.utcnow()
+        sponsor_id = order["sponsor_user_id"]
+
+        # Refund points
+        cursor.execute(
+            "UPDATE SponsorDrivers SET total_points = total_points + %s WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (order["points_cost"], driver_id, sponsor_id)
+        )
+        # Restore stock
+        cursor.execute(
+            "UPDATE SponsorCatalog SET stock_quantity = stock_quantity + 1 WHERE item_id = %s AND sponsor_user_id = %s",
+            (order["item_id"], sponsor_id)
+        )
+        # Update order status
+        cursor.execute(
+            "UPDATE Orders SET status = 'cancelled', updated_at = %s WHERE order_id = %s",
+            (now, order_id)
+        )
+        # Audit log — point refund
+        cursor.execute(
+            "INSERT INTO audit_log (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id) VALUES ('point_change', %s, %s, %s, %s, %s, %s)",
+            (now, sponsor_id, driver_id, order["points_cost"], f"Cancelled order #{order_id}: {order['item_title']}", driver_id)
+        )
+        conn.commit()
+
+        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s", (driver_id, sponsor_id))
+        new_balance = cursor.fetchone()["total_points"]
+        return {"message": f"Order #{order_id} cancelled. {order['points_cost']} pts refunded.", "new_points_balance": new_balance}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ==============================================================================
+# ORDERS: SPONSOR ENDPOINT 
+# ==============================================================================
+
+@app.get("/api/sponsor/orders")
+def get_sponsor_orders(
+    driver_name: str = "",
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Task 15503: sponsor views all orders for their drivers.
+    Optional ?driver_name= filter (matches username, first_name, or last_name).
+    Only returns orders for drivers in this sponsor's org.
+    """
+    if current_user["role"] != "sponsor":
+        raise HTTPException(status_code=403, detail="Sponsor access required")
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT
+                o.order_id, o.item_id, o.item_title, o.points_cost, o.status,
+                o.created_at, o.updated_at,
+                u.username,
+                COALESCE(p.first_name, '') AS first_name,
+                COALESCE(p.last_name, '')  AS last_name
+            FROM Orders o
+            JOIN Users u   ON u.user_id = o.driver_user_id
+            LEFT JOIN Profiles p ON p.user_id = o.driver_user_id
+            WHERE o.sponsor_user_id = %s
+            ORDER BY o.created_at DESC
+            """,
+            (sponsor_id,)
+        )
+        orders = cursor.fetchall()
+        # Apply driver_name filter in Python (case-insensitive substring match)
+        if driver_name.strip():
+            q = driver_name.strip().lower()
+            orders = [
+                o for o in orders
+                if q in o["username"].lower()
+                or q in o["first_name"].lower()
+                or q in o["last_name"].lower()
+                or q in f"{o['first_name']} {o['last_name']}".lower()
+            ]
+        for o in orders:
+            if o.get("created_at"):
+                o["created_at"] = o["created_at"].isoformat()
+            if o.get("updated_at"):
+                o["updated_at"] = o["updated_at"].isoformat()
+        return {"orders": orders}
+    finally:
+        cursor.close()
+        conn.close()
+
+# ==============================================================================
+# ERROR LOG ENDPOINTS 
+# ==============================================================================
+
+@app.get("/api/sponsor/error-logs")
+def get_sponsor_error_logs(
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Task 15515: sponsor views API error log entries scoped to their org
+    or unscoped global eBay failures.
+    """
+    if current_user["role"] != "sponsor":
+        raise HTTPException(status_code=403, detail="Sponsor access required")
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT error_id, occurred_at, operation, endpoint,
+                   error_message, status_code, request_id
+            FROM APIErrorLog
+            WHERE sponsor_id = %s OR sponsor_id IS NULL
+            ORDER BY occurred_at DESC
+            LIMIT %s
+            """,
+            (sponsor_id, min(limit, 500))
+        )
+        rows = cursor.fetchall()
+        for r in rows:
+            if r.get("occurred_at"):
+                r["occurred_at"] = r["occurred_at"].isoformat()
+        return {"errors": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/api/admin/error-logs")
+def get_admin_error_logs(
+    limit: int = 200,
+    current_user: dict = Depends(get_current_user)
+):
+    """Task 15515: admin views all API error log entries across all sponsors."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT e.error_id, e.occurred_at, e.sponsor_id, e.operation,
+                   e.endpoint, e.error_message, e.status_code, e.request_id,
+                   sp.company_name
+            FROM APIErrorLog e
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = e.sponsor_id
+            ORDER BY e.occurred_at DESC
+            LIMIT %s
+            """,
+            (min(limit, 1000),)
+        )
+        rows = cursor.fetchall()
+        for r in rows:
+            if r.get("occurred_at"):
+                r["occurred_at"] = r["occurred_at"].isoformat()
+        return {"errors": rows}
+    finally:
+        cursor.close()
+        conn.close()
+

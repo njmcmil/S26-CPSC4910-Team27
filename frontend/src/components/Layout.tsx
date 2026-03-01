@@ -80,7 +80,10 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
       {
         label: 'Reporting',
         defaultOpen: true,
-        items: [{ to: '/sponsor/reports', label: 'Reports' }],
+        items: [
+          { to: '/sponsor/purchase-history', label: 'Purchase History' },
+          { to: '/sponsor/error-logs', label: 'Error Logs' },
+        ],
       },
       {
         label: 'Organization',

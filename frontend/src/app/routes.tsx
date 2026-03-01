@@ -14,7 +14,8 @@ import { DriverDashboardPage } from '../features/driver/DriverDashboard';
 import { DriverProfilePage } from '../features/driver/DriverProfile';
 import { PointsPage } from '../pages/pointsPage';
 import { DriverCatalog } from '../features/driver/DriverCatalog';
-
+import { DriverProductDetail } from '../features/driver/DriverProductDetail';
+import { DriverOrdersPage } from '../features/driver/DriverOrders';
 
 import { SponsorDashboardPage } from '../features/sponsor/SponsorDashboard';
 import { SponsorProfileFormPage } from '../features/sponsor/SponsorProfileForm';
@@ -23,6 +24,8 @@ import { SponsorDriversPage } from '../features/sponsor/SponsorDrivers';
 import { SponsorPointsPage } from '../features/sponsor/SponsorPoints';
 import { SponsorRewardSettingsPage } from '../features/sponsor/SponsorRewardSettings';
 import { SponsorCatalog } from '../features/sponsor/SponsorCatalog';
+import { SponsorPurchaseHistory } from '../features/sponsor/SponsorPurchaseHistory';
+import { SponsorErrorLogs } from '../features/sponsor/SponsorErrorLogs';
 
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
 
@@ -62,7 +65,9 @@ export const router = createBrowserRouter([
               { path: '/driver/dashboard', element: <DriverDashboardPage /> },
               { path: '/driver/profile', element: <DriverProfilePage /> },
               { path: '/driver/points', element: <PointsPage /> },
-              { path: '/driver/catalog', element: <DriverCatalog /> }
+              { path: '/driver/catalog', element: <DriverCatalog /> },
+              { path: '/driver/catalog/:itemId', element: <DriverProductDetail /> },
+              { path: '/driver/orders', element: <DriverOrdersPage /> },
             ],
           },
 
@@ -76,8 +81,9 @@ export const router = createBrowserRouter([
               { path: '/sponsor/drivers', element: <SponsorDriversPage /> },
               { path: '/sponsor/points', element: <SponsorPointsPage /> },
               { path: '/sponsor/reward-settings', element: <SponsorRewardSettingsPage /> },
-
-              { path: '/sponsor/catalog', element: <SponsorCatalog /> }
+              { path: '/sponsor/catalog', element: <SponsorCatalog /> },
+              { path: '/sponsor/purchase-history', element: <SponsorPurchaseHistory /> },
+              { path: '/sponsor/error-logs', element: <SponsorErrorLogs /> },
             ],
           },
 

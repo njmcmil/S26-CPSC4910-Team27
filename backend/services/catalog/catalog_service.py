@@ -60,11 +60,19 @@ def add_to_catalog(sponsor_user_id: int, product: dict):
     try:
         price = product.get("price") or {}
         image = product.get("image") or {}
+        points_cost = int(product.get("points_cost") or 0)
 
         cursor.execute("""
             INSERT INTO SponsorCatalog
-            (sponsor_user_id, item_id, title, price_value, price_currency, image_url, rating)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (sponsor_user_id, item_id, title, price_value, price_currency, image_url, rating, points_cost)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                title = VALUES(title),
+                price_value = VALUES(price_value),
+                price_currency = VALUES(price_currency),
+                image_url = VALUES(image_url),
+                rating = VALUES(rating),
+                points_cost = VALUES(points_cost)
         """, (
             sponsor_user_id,
             product["itemId"],
@@ -72,11 +80,25 @@ def add_to_catalog(sponsor_user_id: int, product: dict):
             price.get("value"),
             price.get("currency"),
             image.get("imageUrl"),
-            product.get("rating")
+            product.get("rating"),
+            points_cost
         ))
 
         conn.commit()
 
+    finally:
+        cursor.close()
+        conn.close()
+
+def remove_from_catalog(sponsor_user_id: int, item_id: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s",
+            (item_id, sponsor_user_id)
+        )
+        conn.commit()
     finally:
         cursor.close()
         conn.close()

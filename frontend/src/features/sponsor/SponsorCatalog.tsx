@@ -15,6 +15,8 @@ export function SponsorCatalog() {
 
   // Store rating without mutating product object
   const [ratings, setRatings] = useState<Record<string, 'G' | 'PG'>>({});
+  const [pointsCosts, setPointsCosts] = useState<Record<string, number>>({});
+  // points_cost set by sponsor per product before adding to catalog
 
   /* ===================================================== */
   /* =============== LOAD EBAY SEARCH (Sponsor Mode) ===== */
@@ -103,10 +105,16 @@ export function SponsorCatalog() {
   /* ===================================================== */
 
   const handleAddToCatalog = async (product: Product) => {
+    const points_cost = pointsCosts[product.itemId] ?? 0;
+    if (points_cost < 0) {
+      alert('Point cost must be 0 or greater');
+      return;
+    }
     try {
       await sponsorService.addToCatalog({
         ...product,
         rating: ratings[product.itemId] || 'G',
+        points_cost,
       });
 
       alert('Product added to sponsor catalog!');
@@ -201,6 +209,24 @@ export function SponsorCatalog() {
                       <option value="G">G</option>
                       <option value="PG">PG</option>
                     </select>
+
+                    {/*sponsor sets point cost before adding */}
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.82rem' }}>
+                      Point Cost
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={pointsCosts[product.itemId] ?? 0}
+                        onChange={(e) =>
+                          setPointsCosts(prev => ({
+                            ...prev,
+                            [product.itemId]: Math.max(0, parseInt(e.target.value, 10) || 0),
+                          }))
+                        }
+                        style={{ width: '90px', padding: '2px 6px' }}
+                      />
+                    </label>
 
                     <button onClick={() => handleAddToCatalog(product)}>
                       Add to Catalog
