@@ -17,6 +17,10 @@ import { DriverCatalog } from '../features/driver/DriverCatalog';
 import { DriverProductDetail } from '../features/driver/DriverProductDetail';
 import { DriverOrdersPage } from '../features/driver/DriverOrders';
 
+import { CartPage } from '../features/driver/CartPage';
+import { CheckoutPage } from '../features/driver/CheckoutPage';
+import { OrderConfirmationPage } from '../features/driver/OrderConfirmationPage';
+
 import { SponsorDashboardPage } from '../features/sponsor/SponsorDashboard';
 import { SponsorProfileFormPage } from '../features/sponsor/SponsorProfileForm';
 import { SponsorApplicationsPage } from '../pages/SponsorApplicationsPage';
@@ -68,6 +72,9 @@ export const router = createBrowserRouter([
               { path: '/driver/catalog', element: <DriverCatalog /> },
               { path: '/driver/catalog/:itemId', element: <DriverProductDetail /> },
               { path: '/driver/orders', element: <DriverOrdersPage /> },
+              { path: '/driver/cart', element: <CartPage /> },
+              { path: '/driver/checkout', element: <CheckoutPage /> },
+              { path: '/driver/order-confirmation', element: <OrderConfirmationPage /> },
             ],
           },
 
