@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../../services/apiClient';
+import { useCart } from '../../auth/CartContext';
+import type { CartItem } from '../../auth/CartContext';
 
 interface CatalogItem {
   item_id: string;
@@ -18,6 +20,7 @@ interface Props {
 }
 
 const DEBOUNCE_MS = 250;
+const POLL_INTERVAL_MS = 30_000;
 
 export function DriverCatalog({ previewMode = false }: Props) {
   const [items, setItems] = useState<CatalogItem[]>([]);
@@ -25,12 +28,15 @@ export function DriverCatalog({ previewMode = false }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-  const [purchasing, setPurchasing] = useState<string | null>(null);
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const { addItem, items: cartItems, totalCount } = useCart();
+  const navigate = useNavigate();
 
   // client-side search
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null); 
 
   const handleSearchChange = (value: string) => {
     setSearchInput(value);
@@ -47,8 +53,8 @@ export function DriverCatalog({ previewMode = false }: Props) {
     [items, searchQuery]
   );
 
-  const loadCatalog = async () => {
-    setLoading(true);
+  const loadCatalog = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       // US-38: returns current_points for balance check
@@ -60,47 +66,82 @@ export function DriverCatalog({ previewMode = false }: Props) {
       setItems(res.items);
     } catch (err) {
       console.error('Failed to load catalog', err);
-      setError('Failed to load catalog.');
+      if (!silent) setError('Failed to load catalog.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadCatalog();
-  }, []);
+    if (!previewMode) {
+      pollRef.current = setInterval(() => loadCatalog(true), POLL_INTERVAL_MS);
+    }
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [previewMode]);
 
-  const handleRedeem = async (item: CatalogItem) => {
+  const handleAddToCart = (item: CatalogItem) => {
     if (previewMode) return;
     setFeedback(null);
-    setPurchasing(item.item_id);
-    try {
-      const res = await api.post<{
-        message: string;
-        new_points_balance: number;
-        remaining_stock: number;
-      }>('/api/driver/catalog/purchase', { item_id: item.item_id });
 
-      setPoints(res.new_points_balance);
-      setItems(prev =>
-        prev.map(i =>
-          i.item_id === item.item_id ? { ...i, stock_quantity: res.remaining_stock } : i
-        )
-      );
-      setFeedback({ type: 'success', msg: res.message });
-    } catch (err: any) {
-      // US-38: backend sends detailed message when points are insufficient
-      const detail = err?.detail ?? err?.message ?? 'Purchase failed.';
-      setFeedback({ type: 'error', msg: detail });
-    } finally {
-      setPurchasing(null);
+    const alreadyInCart = cartItems.some(i => i.item_id === item.item_id);
+    if (alreadyInCart) {
+      setFeedback({ type: 'error', msg: `'${item.title}' is already in your cart.` });
+      return;
     }
+
+    const cartItem: Omit<CartItem, 'quantity'> = {
+      item_id: item.item_id,
+      title: item.title,
+      points_cost: item.points_cost,
+      image_url: item.image_url,
+      stock_quantity: item.stock_quantity,
+    };
+    addItem(cartItem);
+
+    setAddedIds(prev => new Set(prev).add(item.item_id));
+    setFeedback({ type: 'success', msg: `'${item.title}' added to cart.` });
+
+    setTimeout(() => {
+      setAddedIds(prev => {
+        const next = new Set(prev);
+        next.delete(item.item_id);
+        return next;
+      });
+    }, 2000);
   };
+
+  const isInCart = (item_id: string) => cartItems.some(i => i.item_id === item_id);
 
   return (
     <div>
-      <div className="points-banner">
+      <div className="points-banner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
         <h2>Your Available Points: {points.toLocaleString()}</h2>
+
+        {!previewMode && (
+          <button
+            onClick={() => navigate('/driver/cart')}
+            style={{
+              background: '#2563eb', color: '#fff', border: 'none',
+              borderRadius: 8, padding: '0.5rem 1.2rem', fontWeight: 600,
+              cursor: 'pointer', fontSize: '0.95rem', display: 'flex',
+              alignItems: 'center', gap: '0.5rem',
+            }}
+          >
+            View Cart
+            {totalCount > 0 && (
+              <span style={{
+                background: '#ef4444', color: '#fff', borderRadius: '9999px',
+                fontSize: '0.75rem', fontWeight: 700, padding: '1px 7px',
+              }}>
+                {totalCount}
+              </span>
+            )}
+          </button>
+        )}
+
         {previewMode && (
           <p className="text-sm text-gray-500">Sponsor Preview — Purchase Disabled</p>
         )}
@@ -143,7 +184,8 @@ export function DriverCatalog({ previewMode = false }: Props) {
             visibleItems.map(item => {
               const canAfford = points >= item.points_cost;
               const inStock = item.stock_quantity > 0;
-              const isLoading = purchasing === item.item_id;
+              const inCart = isInCart(item.item_id);
+              const justAdded = addedIds.has(item.item_id);
 
               return (
                 <div key={item.item_id} className="product-card" style={{ opacity: inStock ? 1 : 0.6 }}>
@@ -190,14 +232,14 @@ export function DriverCatalog({ previewMode = false }: Props) {
                   )}
 
                   <button
-                    disabled={previewMode || !canAfford || !inStock || isLoading}
-                    onClick={() => handleRedeem(item)}
+                    disabled={previewMode || !inStock}
+                    onClick={() => handleAddToCart(item)}
                   >
                     {previewMode ? 'Preview Only'
-                      : isLoading ? 'Redeeming…'
                       : !inStock ? 'Out of Stock'
-                      : !canAfford ? 'Not Enough Points'
-                      : 'Redeem'}
+                      : justAdded ? '✓ Added!'
+                      : inCart ? 'In Cart'
+                      : 'Add to Cart'}
                   </button>
                 </div>
               );
