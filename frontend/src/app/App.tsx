@@ -8,7 +8,7 @@ export function App() {
     <AuthProvider>
       <CartProvider>
         <RouterProvider router={router} />
-      </CartProvider>CartProvider>
+      </CartProvider>
     </AuthProvider>
   );
 }
