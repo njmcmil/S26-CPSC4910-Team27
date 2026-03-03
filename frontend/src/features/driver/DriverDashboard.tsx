@@ -1,4 +1,5 @@
 import { useAuth } from '../../auth/AuthContext';
+import DriverTips from '../../components/DriverTips';
 
 export function DriverDashboardPage() {
   const { user } = useAuth();
@@ -14,15 +15,25 @@ export function DriverDashboardPage() {
           <p className="placeholder-value">--</p>
           <p className="helper-text">Coming soon</p>
         </div>
+
         <div className="card">
           <h3>Recent Orders</h3>
           <p className="placeholder-value">--</p>
           <p className="helper-text">Coming soon</p>
         </div>
+
         <div className="card">
           <h3>Sponsor</h3>
           <p className="placeholder-value">--</p>
           <p className="helper-text">Coming soon</p>
+        </div>
+      </div>
+
+      {/* Tips Section */}
+      <div className="mt-3">
+        <div className="card">
+          <h3>Driving Tips</h3>
+          <DriverTips />
         </div>
       </div>
     </section>

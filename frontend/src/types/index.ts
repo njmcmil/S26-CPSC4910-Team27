@@ -185,14 +185,25 @@ export interface PointValueHistoryResponse {
 export interface Product {
   itemId: string;
   title: string;
-  price: {
-    value: string;
-    currency: string;
+
+  price?: {
+    value?: string;
+    currency?: string;
   };
+
   image?: {
-    imageUrl: string;
+    imageUrl?: string;
   };
+
   rating?: 'G' | 'PG';
+
+  points_cost?: number;
+
+  /**
+   * Controls whether the item is visible to drivers.
+   * Comes from SponsorCatalog.is_active
+   */
+  is_active?: boolean;
 }
 
 

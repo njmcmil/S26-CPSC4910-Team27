@@ -993,7 +993,7 @@ async def create_tip(tip_data: TipCreate, current_user: dict = Depends(verify_sp
 
 
 
-# Get all active tips (with dynamic min points and cycling)
+# Get all active, unviewed tips (with dynamic min points threshold)
 @router.get("/tips", response_model=list[Tip])
 async def get_all_tips(current_user: dict = Depends(get_current_user), session_index: int = Cookie(default=0)):
     """
@@ -1032,10 +1032,20 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
         if driver['points_paused'] or driver['total_points'] >= min_points_threshold:
             return []
 
-        # Fetch active tips **for this sponsor only**
+        # Fetch active tips for this sponsor that this driver has not viewed yet
         cursor.execute(
-            "SELECT * FROM DriverTips WHERE active = TRUE AND sponsor_id = %s ORDER BY created_at DESC",
-            (sponsor_id,)
+            """
+            SELECT t.*
+            FROM DriverTips t
+            LEFT JOIN DriverTipViews v
+              ON v.tip_id = t.tip_id
+             AND v.driver_id = %s
+            WHERE t.active = TRUE
+              AND t.sponsor_id = %s
+              AND v.tip_id IS NULL
+            ORDER BY t.created_at DESC
+            """,
+            (driver_id, sponsor_id)
         )
         tips = cursor.fetchall()
         if not tips:
