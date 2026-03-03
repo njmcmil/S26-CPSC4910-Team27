@@ -105,6 +105,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 def create_access_token(data: dict) -> str:
     #"key": value
     to_encode = data.copy()
+    #ADD impersonation metadata if present
+    if impersonation:
+        to_encode["impersonation"] = impersonation
     # if current time > exp -> token invalid
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     #"key": value
@@ -153,6 +156,13 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    # Attach impersonation context if present
+    impersonation = payload.get("impersonation")
+    if impersonation:
+        user["is_impersonating"] = True
+        user["impersonated_by"] = impersonation.get("sponsor_user_id")
+    else:
+        user["is_impersonating"] = False
 
     return user
 
