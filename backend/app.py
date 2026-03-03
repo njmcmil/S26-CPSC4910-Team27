@@ -774,6 +774,115 @@ def purchase_catalog_item(body: dict, current_user: dict = Depends(get_current_u
         cursor.close()
         conn.close()
 
+@app.post("/api/sponsor/catalog/purchase")
+def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "sponsor":
+        raise HTTPException(status_code=403, detail="Sponsor access required")
+
+    sponsor_id = current_user["user_id"]
+    item_id = body.get("item_id")
+    driver_id = body.get("driver_user_id")
+
+    if not item_id:
+        raise HTTPException(status_code=400, detail="item_id required")
+    if not driver_id:
+        raise HTTPException(status_code=400, detail="driver_user_id required")
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            """
+            SELECT total_points
+            FROM SponsorDrivers
+            WHERE driver_user_id = %s AND sponsor_user_id = %s
+            """,
+            (driver_id, sponsor_id)
+        )
+        driver_row = cursor.fetchone()
+        if not driver_row:
+            raise HTTPException(status_code=404, detail="Driver not found in your organization")
+
+        current_points = driver_row["total_points"] or 0
+
+        cursor.execute(
+            """
+            SELECT item_id, title, points_cost, stock_quantity
+            FROM SponsorCatalog
+            WHERE item_id = %s AND sponsor_user_id = %s
+              AND is_active = TRUE AND is_published = TRUE
+            """,
+            (item_id, sponsor_id)
+        )
+        item = cursor.fetchone()
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not available for purchase")
+
+        if current_points < item["points_cost"]:
+            needed = item["points_cost"] - current_points
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient driver points. '{item['title']}' costs {item['points_cost']} pts; driver has {current_points} pts (needs {needed} more).",
+            )
+
+        if item["stock_quantity"] <= 0:
+            raise HTTPException(status_code=400, detail="This item is out of stock.")
+
+        cursor.execute(
+            "UPDATE SponsorDrivers SET total_points = total_points - %s WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (item["points_cost"], driver_id, sponsor_id)
+        )
+        cursor.execute(
+            "UPDATE SponsorCatalog SET stock_quantity = stock_quantity - 1 WHERE item_id = %s AND sponsor_user_id = %s",
+            (item_id, sponsor_id)
+        )
+
+        now = datetime.utcnow()
+        cursor.execute(
+            """
+            INSERT INTO audit_log (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES ('point_change', %s, %s, %s, %s, %s, %s)
+            """,
+            (now, sponsor_id, driver_id, -item["points_cost"], f"Sponsor redeemed for driver: {item['title']}", sponsor_id)
+        )
+        cursor.execute(
+            """
+            INSERT INTO Orders (driver_user_id, sponsor_user_id, item_id, item_title, points_cost, status, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
+            """,
+            (driver_id, sponsor_id, item_id, item["title"], item["points_cost"], now, now)
+        )
+
+        conn.commit()
+
+        cursor.execute(
+            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (driver_id, sponsor_id)
+        )
+        new_balance = cursor.fetchone()["total_points"]
+        cursor.execute(
+            "SELECT stock_quantity FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s",
+            (item_id, sponsor_id)
+        )
+        new_stock = cursor.fetchone()["stock_quantity"]
+
+        return {
+            "message": f"Purchased '{item['title']}' for driver #{driver_id}",
+            "points_spent": item["points_cost"],
+            "driver_new_points_balance": new_balance,
+            "remaining_stock": new_stock,
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Failed to complete sponsor purchase")
+    finally:
+        cursor.close()
+        conn.close()
+
 
 # ==============================================================================
 # ORDERS: DRIVER ENDPOINTS 
@@ -1030,6 +1139,36 @@ def disable_catalog_item(
         conn.commit()
 
         return {"message": "Product disabled successfully"}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.put("/api/sponsor/catalog/{item_id}/enable")
+def enable_catalog_item(
+    item_id: str,
+    current_user=Depends(get_current_user)
+):
+    if current_user["role"] != "sponsor":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    sponsor_id = current_user["user_id"]
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE SponsorCatalog
+            SET is_active = TRUE
+            WHERE item_id = %s AND sponsor_user_id = %s
+            """,
+            (item_id, sponsor_id)
+        )
+
+        conn.commit()
+
+        return {"message": "Product enabled successfully"}
     finally:
         cursor.close()
         conn.close()
