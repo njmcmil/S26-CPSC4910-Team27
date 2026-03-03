@@ -89,6 +89,15 @@ class TipView(BaseModel):
         from_attributes = True
 
 class TipViewCreate(BaseModel):
-    """Schema for creatging a record when a driver views a tip"""
-    driver_id: int
     tip_id: int
+
+class Tip(TipBase):
+    """Schema for returning a tip from the database"""
+
+    tip_id: int
+    sponsor_user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
