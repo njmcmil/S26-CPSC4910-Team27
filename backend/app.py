@@ -59,10 +59,12 @@ from shared.db import get_connection
 # --- Routers (Feature Modules) ---
 from profiles.driver_profile import router as driver_profile_router
 from profiles.sponsor_profile import router as sponsor_profile_router
+from profiles.sponsor_impersonation import router as sponsor_impersonation_router
 from profiles.trusted_devices import router as trusted_devices_router
 from profiles.points import router as points_router 
 from users.admin_routes import router as admin_router
 from shared.scheduler import scheduler
+
 
 from services.catalog.catalog_service import get_sponsor_catalog, add_to_catalog, remove_from_catalog
 
@@ -116,6 +118,7 @@ app.include_router(sponsor_profile_router)
 app.include_router(trusted_devices_router)
 app.include_router(admin_router)
 app.include_router(points_router, prefix="/api", tags=["points"])
+app.include_router(sponsor_impersonation_router)
 
 # ==============================================================================
 # PUBLIC ENDPOINTS (No Auth Required)
