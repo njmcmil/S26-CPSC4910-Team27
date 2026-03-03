@@ -198,6 +198,7 @@ export interface Product {
   rating?: 'G' | 'PG';
 
   points_cost?: number;
+  stock_quantity?: number;
 
   /**
    * Controls whether the item is visible to drivers.
@@ -215,4 +216,3 @@ export interface ApiError {
   detail?: string;
   fieldErrors?: Record<string, string>;
 }
-

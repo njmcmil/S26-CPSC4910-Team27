@@ -72,6 +72,7 @@ class TipCreate(TipBase):
 class Tip(TipBase):
     """Schema for returning a tip from the database"""
     tip_id: int
+    sponsor_user_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -90,14 +91,3 @@ class TipView(BaseModel):
 
 class TipViewCreate(BaseModel):
     tip_id: int
-
-class Tip(TipBase):
-    """Schema for returning a tip from the database"""
-
-    tip_id: int
-    sponsor_user_id: int
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
