@@ -519,7 +519,7 @@ def add_product_to_catalog(
     current_user=Depends(get_current_user)
 ):
 
-    print("🔥 RECEIVED PRODUCT:", product)
+    print("RECEIVED PRODUCT:", product)
 
     if current_user["role"] != "sponsor":
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -527,7 +527,7 @@ def add_product_to_catalog(
     try:
         add_to_catalog(current_user["user_id"], product)
     except Exception as e:
-        print("❌ DB ERROR:", str(e))
+        print("DB ERROR:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"message": "Product added to catalog"}
@@ -579,6 +579,7 @@ def get_driver_catalog(current_user: dict = Depends(get_current_user)):
                    image_url, rating, stock_quantity, points_cost
             FROM SponsorCatalog
             WHERE sponsor_user_id = %s
+            AND is_active = TRUE
             ORDER BY title ASC
             """,
             (row["sponsor_user_id"],)
@@ -614,7 +615,7 @@ def get_driver_catalog_item(item_id: str, current_user: dict = Depends(get_curre
             SELECT item_id, title, price_value, price_currency,
                    image_url, rating, stock_quantity, points_cost
             FROM SponsorCatalog
-            WHERE item_id = %s AND sponsor_user_id = %s
+            WHERE item_id = %s AND sponsor_user_id = %s AND is_active = TRUE
             """,
             (item_id, sponsor_id)
         )

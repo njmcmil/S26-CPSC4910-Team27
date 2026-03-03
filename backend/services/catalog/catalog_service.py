@@ -13,20 +13,23 @@ def get_sponsor_catalog(sponsor_user_id: int):
     cursor = conn.cursor(dictionary=True)
 
     try:
-        cursor.execute(
-            """
-            SELECT 
-                item_id,
-                title,
-                price_value,
-                price_currency,
-                image_url,
-                rating
-            FROM SponsorCatalog
-            WHERE sponsor_user_id = %s
-            """,
-            (sponsor_user_id,)
-        )
+        formatted_items = [
+    {
+        "itemId": item["item_id"],
+        "title": item["title"],
+        "price": {
+            "value": item["price_value"],
+            "currency": item["price_currency"],
+        } if item["price_value"] else None,
+        "image": {
+            "imageUrl": item["image_url"]
+        } if item["image_url"] else None,
+        "rating": item["rating"],
+        "points_cost": item["points_cost"],
+        "is_active": item["is_active"]
+    }
+    for item in items
+]
 
         items = cursor.fetchall()
 
@@ -97,6 +100,23 @@ def remove_from_catalog(sponsor_user_id: int, item_id: str):
         cursor.execute(
             "DELETE FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s",
             (item_id, sponsor_user_id)
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def toggle_catalog_visibility(sponsor_user_id: int, item_id: str, is_active: bool):
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE SponsorCatalog
+            SET is_active = %s
+            WHERE item_id = %s AND sponsor_user_id = %s
+            """,
+            (is_active, item_id, sponsor_user_id)
         )
         conn.commit()
     finally:
