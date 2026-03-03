@@ -507,11 +507,38 @@ def ebay_product(item_id: str):
 def sponsor_catalog(current_user: dict = Depends(get_current_user)):
     """
     Returns sponsor catalog items.
+    Includes draft + published items for preview.
     """
+
     if current_user["role"] != "sponsor":
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    return get_sponsor_catalog(current_user["user_id"])
+    sponsor_id = current_user["user_id"]
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            """
+            SELECT *
+            FROM SponsorCatalog
+            WHERE sponsor_user_id = %s
+            ORDER BY created_at DESC
+            """,
+            (sponsor_id,)
+        )
+
+        items = cursor.fetchall()
+
+        return {
+            "items": items
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
+    
 
 @app.post("/api/sponsor/catalog")
 def add_product_to_catalog(
@@ -544,6 +571,34 @@ def delete_product_from_catalog(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"message": "Product removed from catalog"}
+@app.put("/api/sponsor/catalog/publish")
+def publish_catalog(current_user=Depends(get_current_user)):
+
+    sponsor_id = current_user["user_id"]
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE SponsorCatalog
+            SET is_published = TRUE,
+                is_draft = FALSE,
+                is_active = TRUE
+            WHERE sponsor_user_id = %s
+            AND is_draft = TRUE
+            """,
+            (sponsor_id,)
+        )
+
+        conn.commit()
+
+        return {"message": "Catalog published"}
+    finally:
+        cursor.close()
+        conn.close()
+        
 # ==============================================================================
 # PROTECTED ENDPOINTS
 # ==============================================================================
@@ -579,6 +634,7 @@ def get_driver_catalog(current_user: dict = Depends(get_current_user)):
                    image_url, rating, stock_quantity, points_cost
             FROM SponsorCatalog
             WHERE sponsor_user_id = %s
+            AND is_published = TRUE
             AND is_active = TRUE
             ORDER BY title ASC
             """,
@@ -948,3 +1004,32 @@ def get_admin_error_logs(
         cursor.close()
         conn.close()
 
+@app.put("/api/sponsor/catalog/{item_id}/disable")
+def disable_catalog_item(
+    item_id: str,
+    current_user=Depends(get_current_user)
+):
+    if current_user["role"] != "sponsor":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    sponsor_id = current_user["user_id"]
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE SponsorCatalog
+            SET is_active = FALSE
+            WHERE item_id = %s AND sponsor_user_id = %s
+            """,
+            (item_id, sponsor_id)
+        )
+
+        conn.commit()
+
+        return {"message": "Product disabled successfully"}
+    finally:
+        cursor.close()
+        conn.close()

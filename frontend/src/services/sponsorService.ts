@@ -76,5 +76,14 @@ export const sponsorService = {
 
   removeFromCatalog(itemId: string) {
     return api.delete(`${CATALOG_BASE}/${itemId}`);
+  },
+
+  disableProduct(itemId: string) {
+  return api.put(`/api/sponsor/catalog/${itemId}/disable`);
+  },
+
+  publishCatalog() {
+  return api.put("/api/sponsor/catalog/publish");
   }
 };
+
