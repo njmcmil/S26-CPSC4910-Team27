@@ -10,6 +10,7 @@ interface SponsorCatalogItemRow {
   price_value: string | null;
   price_currency: string | null;
   image_url: string | null;
+  stock_quantity?: number;
   is_active?: boolean;
 }
 
@@ -73,6 +74,7 @@ export function SponsorCatalog() {
             }
           : undefined,
         is_active: item.is_active,
+        stock_quantity: item.stock_quantity ?? 0,
       }));
 
       setProducts(items);
@@ -346,6 +348,33 @@ export function SponsorCatalog() {
                     : 'Price N/A'}
                 </p>
 
+                {product.stock_quantity !== undefined && (
+                  <p style={{
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: 9999,
+                    marginBottom: '0.5rem',
+                    color: product.stock_quantity <= 0
+                      ? '#b91c1c'
+                      : product.stock_quantity <= 3
+                        ? '#92400e'
+                        : '#065f46',
+                    background: product.stock_quantity <= 0
+                      ? '#fee2e2'
+                      : product.stock_quantity <= 3
+                        ? '#fef3c7'
+                        : '#d1fae5',
+                  }}>
+                    {product.stock_quantity <= 0
+                      ? 'Out of Stock'
+                      : product.stock_quantity <= 3
+                        ? `Only ${product.stock_quantity} left!`
+                        : `${product.stock_quantity} in stock`}
+                  </p>
+                )}
+
                 {product.is_active !== undefined && (
                   <p
                     style={{
@@ -456,7 +485,7 @@ export function SponsorCatalog() {
                         color: 'white',
                         marginLeft: '0.5rem',
                       }}
-                      disabled={!selectedDriverId || purchasingItemId === product.itemId}
+                      disabled={!selectedDriverId || purchasingItemId === product.itemId || (product.stock_quantity ?? 0) <= 0}
                       onClick={() => handleSponsorPurchase(product.itemId, product.title)}
                     >
                       {purchasingItemId === product.itemId ? 'Purchasing...' : 'Purchase for Driver'}

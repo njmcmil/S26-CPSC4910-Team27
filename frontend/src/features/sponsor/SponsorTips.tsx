@@ -28,7 +28,8 @@ export default function SponsorTips() {
       setActive(true);
     } catch (err) {
       console.error('Failed to create tip', err);
-      setMessage('Failed to create tip');
+      const apiErr = err as { message?: string; detail?: string };
+      setMessage(apiErr?.message || apiErr?.detail || 'Failed to create tip');
     } finally {
       setLoading(false);
     }

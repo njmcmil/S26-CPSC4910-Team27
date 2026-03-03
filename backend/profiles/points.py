@@ -5,7 +5,7 @@ from auth.auth import get_current_user
 
 from schemas.points import (
     PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest,
-    TipCreate, Tip, TipView, TipViewCreate, AccrualStatusUpdate, BulkPointUpdateRequest,
+    TipCreate, Tip, TipViewCreate, AccrualStatusUpdate, BulkPointUpdateRequest,
     SponsorRewardDefaults, PointHistoryItem, PointHistoryResponse,
 )
 from typing import Optional
@@ -966,27 +966,30 @@ async def create_tip(tip_data: TipCreate, current_user: dict = Depends(verify_sp
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Insert tip into DB with sponsor_id (user_id of sponsor)
+        # Insert tip into DB with sponsor_id
         cursor.execute("""
             INSERT INTO DriverTips (tip_text, category, active, sponsor_id)
             VALUES (%s, %s, %s, %s)
         """, (tip_data.tip_text, tip_data.category, tip_data.active, user_id))
 
-        # Get the ID of the newly created tip
         tip_id = cursor.lastrowid
         conn.commit()
 
-        # Return the newly created tip as response
-        return Tip(
-            tip_id=tip_id,
-            tip_text=tip_data.tip_text,
-            category=tip_data.category,
-            active=tip_data.active,
-            sponsor_id=user_id,  # Include sponsor_id in response
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-
+        cursor.execute("""
+            SELECT tip_id, sponsor_id AS sponsor_user_id, tip_text, category, active, created_at, updated_at
+            FROM DriverTips
+            WHERE tip_id = %s
+        """, (tip_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=500, detail="Tip created but could not be loaded")
+        return row
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create tip: {str(e)}")
     finally:
         cursor.close()
         conn.close()
@@ -1035,7 +1038,7 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
         # Fetch active tips for this sponsor that this driver has not viewed yet
         cursor.execute(
             """
-            SELECT t.*
+            SELECT t.tip_id, t.sponsor_id AS sponsor_user_id, t.tip_text, t.category, t.active, t.created_at, t.updated_at
             FROM DriverTips t
             LEFT JOIN DriverTipViews v
               ON v.tip_id = t.tip_id
@@ -1061,17 +1064,17 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
 
 
 # Record tip view
-@router.post("/tips/view", response_model=TipView)
+@router.post("/tips/view")
 async def record_tip_view(view_data: TipViewCreate, current_user: dict = Depends(get_current_user)):
     """
     Record that a driver has viewed a tip.
     
-    view_data: TipViewCreate schema containing driver_id and tip_id
+    view_data: TipViewCreate schema containing tip_id
     """
     driver_id = current_user['user_id']
     tip_id = view_data.tip_id
     conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     try:
         # Insert or update the tip view for this driver
@@ -1083,12 +1086,7 @@ async def record_tip_view(view_data: TipViewCreate, current_user: dict = Depends
 
         conn.commit()
 
-        return TipView(
-            view_id=cursor.lastrowid,
-            driver_id=driver_id,
-            tip_id=tip_id,
-            last_viewed=datetime.now()
-        )
+        return {"success": True}
 
     finally:
         cursor.close()
