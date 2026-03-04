@@ -174,7 +174,7 @@ def get_about_public():
         cursor.execute(
             """
             SELECT u.username AS sponsor_name, COUNT(sd.driver_user_id) AS driver_count
-            FROM users u
+            FROM Users u
             LEFT JOIN SponsorDrivers sd ON sd.sponsor_user_id = u.user_id
             WHERE u.role = 'sponsor'
             GROUP BY u.user_id, u.username
