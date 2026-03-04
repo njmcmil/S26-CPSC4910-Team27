@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/apiClient';
-import type { Product } from '../../types';
 
-interface CatalogItem extends Product {
-  stock_quantity: number;
+interface CatalogItem {
+  itemId: string;
+  title: string;
   points_cost: number;
+  stock_quantity: number;
+  image?: { imageUrl: string };
+  description?: string;
 }
 
 interface Props {
