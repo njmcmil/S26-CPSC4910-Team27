@@ -18,6 +18,7 @@ from auth.auth import get_current_user, require_role
 from shared.db import get_connection
 from users.email_service import send_driver_application_rejection_email, send_driver_application_approval_email
 from typing import List
+from users.email_service import send_dropped_by_sponsor_email
 
 from schemas.sponsor import SponsorProfile, CreateSponsorProfileRequest, UpdateSponsorProfileRequest, DriverApplication, RejectDriverApplicationRequest, SponsorDriver
 
@@ -577,6 +578,66 @@ def get_sponsor_drivers(current_user: dict = Depends(require_role("sponsor"))):
             for row in rows
         ]
 
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.delete("/drivers/{driver_id}")
+def drop_driver(
+    driver_id: int,
+    current_user: dict = Depends(require_role("sponsor"))
+):
+    """Sponsor drops a driver. Sends mandatory email to driver."""
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Verify driver belongs to this sponsor
+        cursor.execute(
+            """
+            SELECT sd.driver_user_id, u.email, u.username,
+                   sp.company_name
+            FROM SponsorDrivers sd
+            JOIN Users u ON sd.driver_user_id = u.user_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = %s
+            WHERE sd.driver_user_id = %s AND sd.sponsor_user_id = %s
+            """,
+            (sponsor_id, driver_id, sponsor_id)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Driver not found or not your driver")
+
+        # Remove from SponsorDrivers
+        cursor.execute(
+            "DELETE FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (driver_id, sponsor_id)
+        )
+
+        # Log in audit
+        cursor.execute(
+            """
+            INSERT INTO audit_log (category, date, sponsor_id, driver_id, reason, changed_by_user_id)
+            VALUES ('driver_dropped', %s, %s, %s, %s, %s)
+            """,
+            (datetime.utcnow(), sponsor_id, driver_id, "Driver removed by sponsor", sponsor_id)
+        )
+
+        conn.commit()
+
+        # Send mandatory email (cannot be disabled)
+        send_dropped_by_sponsor_email(
+            to_email=row["email"],
+            username=row["username"],
+            sponsor_name=row.get("company_name")
+        )
+
+        return {"message": "Driver removed successfully", "driver_id": driver_id}
+
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         cursor.close()
         conn.close()
