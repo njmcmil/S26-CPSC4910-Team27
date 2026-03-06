@@ -106,6 +106,7 @@ def create_access_token(data: dict) -> str:
     #"key": value
     to_encode = data.copy()
     #ADD impersonation metadata if present
+    impersonation = data.get("impersonation")
     if impersonation:
         to_encode["impersonation"] = impersonation
     # if current time > exp -> token invalid
