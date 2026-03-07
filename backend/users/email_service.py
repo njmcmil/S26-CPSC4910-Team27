@@ -294,3 +294,66 @@ def send_driver_application_approval_email(
 
     print(email_content)
     return True
+
+def send_points_notification(
+    to_email: str,
+    username: str,
+    points_changed: int,
+    reason: str,
+    new_total: int
+) -> bool:
+    """Send email notification when points are added or removed."""
+    action = "added to" if points_changed > 0 else "deducted from"
+    sign = "+" if points_changed > 0 else ""
+
+    email_content = f"""
+    ╔══════════════════════════════════════════════════════════════╗
+    ║           POINTS UPDATE NOTIFICATION                         ║
+    ╚══════════════════════════════════════════════════════════════╝
+
+    To: {to_email}
+    Subject: Points Update - Good Driver Incentive Program
+
+    Hello {username},
+
+    {sign}{points_changed} points have been {action} your account.
+
+    Reason: {reason}
+    New Balance: {new_total} points
+
+    Log in to view your full points history.
+
+    - Good Driver Incentive Program Team
+    ╚══════════════════════════════════════════════════════════════╝
+    """
+    print(email_content)
+    return True
+
+
+def send_dropped_by_sponsor_email(
+    to_email: str,
+    username: str,
+    sponsor_name: str | None = None
+) -> bool:
+    """Send mandatory email when a driver is dropped by a sponsor."""
+    sponsor_text = f" by {sponsor_name}" if sponsor_name else ""
+
+    email_content = f"""
+    ╔══════════════════════════════════════════════════════════════╗
+    ║           SPONSOR RELATIONSHIP UPDATE                        ║
+    ╚══════════════════════════════════════════════════════════════╝
+
+    To: {to_email}
+    Subject: Sponsor Update - Good Driver Incentive Program
+
+    Hello {username},
+
+    You have been removed from the program{sponsor_text}.
+
+    If you have questions, please contact support.
+
+    - Good Driver Incentive Program Team
+    ╚══════════════════════════════════════════════════════════════╝
+    """
+    print(email_content)
+    return True
