@@ -1123,12 +1123,21 @@ async def record_tip_view(view_data: TipViewCreate, current_user: dict = Depends
     cursor = conn.cursor()
 
     try:
+        cursor.execute(
+            "SELECT driver_profile_id FROM DriverProfiles WHERE user_id = %s",
+            (driver_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Driver profile not found")
+        driver_profile_id = row[0]
+
         # Insert or update the tip view for this driver
         cursor.execute("""
             INSERT INTO DriverTipViews (driver_id, tip_id, last_viewed)
             VALUES (%s, %s, %s)
             ON DUPLICATE KEY UPDATE last_viewed = VALUES(last_viewed)
-        """, (driver_id, tip_id, datetime.now()))
+        """, (driver_profile_id, tip_id, datetime.now()))
 
         conn.commit()
 
