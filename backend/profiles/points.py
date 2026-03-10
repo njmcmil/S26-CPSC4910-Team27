@@ -384,7 +384,29 @@ async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_use
             """, (datetime.now(), user_id, driver_id, request.points, request.reason, current_user['user_id']))
             updated_drivers.append({"driver_id": driver_id, "new_total": new_total})
 
-        conn.commit()
+        cursor.execute(
+            "SELECT email, username FROM Users WHERE user_id = %s",
+            (driver_id,)
+        )
+        driver_user = cursor.fetchone()
+
+        if driver_user:
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (driver_id,)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver_user["email"],
+                    username=driver_user["username"],
+                    points_changed=request.points,
+                    reason=request.reason,
+                    new_total=new_total
+                )
+
+        conn.commit()        
+        
         return {"success": True, "updated_drivers": updated_drivers}
 
     finally:
