@@ -130,10 +130,9 @@ app.include_router(sponsor_impersonation_router)
 def root():
     return {"message": "Good Driver Incentive Program API is running!"}
 
-# About endpoint
-@app.get("/about")
-def get_about():
-    """Public endpoint — returns project metadata for the About page."""
+@app.get("/about/public")
+def get_about_public():
+    """Public endpoint — returns project metadata + sponsor stats."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -151,7 +150,126 @@ def get_about():
             raise HTTPException(status_code=404, detail="About information not found")
         if row.get("release_date"):
             row["release_date"] = str(row["release_date"])
+
+        cursor.execute(
+            """
+            SELECT u.username AS sponsor_name, COUNT(sd.driver_user_id) AS driver_count
+            FROM Users u
+            LEFT JOIN SponsorDrivers sd ON sd.sponsor_user_id = u.user_id
+            WHERE u.role = 'sponsor'
+            GROUP BY u.user_id, u.username
+            ORDER BY u.username
+            """
+        )
+        sponsors = cursor.fetchall()
+        row["sponsors"] = [
+            {"name": s["sponsor_name"], "driver_count": int(s["driver_count"])}
+            for s in sponsors
+        ]
         return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/api/driver/notification-preferences")
+def get_notification_preferences(current_user: dict = Depends(get_current_user)):
+    """Get notification preferences for the logged-in driver."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT points_email_enabled, orders_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+            (current_user["user_id"],)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return {"points_email_enabled": True, "orders_email_enabled": True}
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.put("/api/driver/notification-preferences")
+def update_notification_preferences(
+    prefs: NotificationPreferences,
+    current_user: dict = Depends(get_current_user)
+):
+    """Save notification preferences for the logged-in driver."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO NotificationPreferences (user_id, points_email_enabled, orders_email_enabled)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                points_email_enabled = VALUES(points_email_enabled),
+                orders_email_enabled = VALUES(orders_email_enabled)
+            """,
+            (current_user["user_id"], prefs.points_email_enabled, prefs.orders_email_enabled)
+        )
+        conn.commit()
+        return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/api/driver/notifications")
+def get_driver_notifications(current_user: dict = Depends(get_current_user)):
+    """Story 5431/5448: Return in-app notifications for the logged-in driver."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT notification_id, message, is_read, created_at
+            FROM Notifications
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT 50
+            """,
+            (current_user["user_id"],)
+        )
+        rows = cursor.fetchall()
+        for r in rows:
+            if r.get("created_at"):
+                r["created_at"] = r["created_at"].isoformat()
+        return {"notifications": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/driver/notifications/{notification_id}/dismiss")
+def dismiss_driver_notification(notification_id: int, current_user: dict = Depends(get_current_user)):
+    """Story 5448: Mark a driver notification as read (dismissed)."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT user_id FROM Notifications WHERE notification_id = %s",
+            (notification_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        if row["user_id"] != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Not your notification")
+        cursor.execute(
+            "UPDATE Notifications SET is_read = TRUE WHERE notification_id = %s",
+            (notification_id,)
+        )
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
     finally:
         cursor.close()
         conn.close()
