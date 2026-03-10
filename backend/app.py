@@ -219,9 +219,6 @@ def get_about():
 @app.get("/about/public")
 def get_about_public():
     """Public endpoint — returns project metadata + sponsor stats."""
-@app.get("/api/driver/notification-preferences")
-def get_notification_preferences(current_user: dict = Depends(get_current_user)):
-    """Get notification preferences for the logged-in driver."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -256,6 +253,17 @@ def get_notification_preferences(current_user: dict = Depends(get_current_user))
             for s in sponsors
         ]
         return row
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/driver/notification-preferences")
+def get_notification_preferences(current_user: dict = Depends(get_current_user)):
+    """Get notification preferences for the logged-in driver."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
             "SELECT points_email_enabled, orders_email_enabled FROM NotificationPreferences WHERE user_id = %s",
             (current_user["user_id"],)
         )
