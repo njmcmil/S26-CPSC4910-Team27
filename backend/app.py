@@ -52,7 +52,11 @@ from users.users import (
 from auth.auth import get_current_user, create_access_token
 from audit.login_audit import log_login_attempt
 from users.password_reset import generate_reset_token
-from users.email_service import send_password_reset_email, send_login_notification_email
+from users.email_service import (
+    send_password_reset_email,
+    send_login_notification_email,
+    send_failed_login_alert_email,
+)
 
 # --- Database & Config ---
 from shared.db import get_connection
@@ -289,14 +293,27 @@ def login_endpoint(request: LoginRequest, http_request: Request):
 
     ip = get_request_ip(http_request)
     agent = http_request.headers.get("User-Agent")
+    device_name, browser_name, os_name = parse_login_device_details(agent)
 
     if not user:
+        attempted_user = get_user_by_username(request.username)
         log_login_attempt(
             username=request.username,
             success=False,
             ip_address=ip,
             user_agent=agent
         )
+        if attempted_user and attempted_user.get("role") == "driver" and attempted_user.get("email"):
+            send_failed_login_alert_email(
+                to_email=attempted_user["email"],
+                username=attempted_user["username"],
+                attempted_username=request.username,
+                attempt_time=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+                ip_address=ip,
+                device_name=device_name,
+                browser_name=browser_name,
+                os_name=os_name,
+            )
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     log_login_attempt(
@@ -311,7 +328,6 @@ def login_endpoint(request: LoginRequest, http_request: Request):
 
     # Notification failures should not block a successful login.
     if user.get("role") == "driver" and user.get("email"):
-        device_name, browser_name, os_name = parse_login_device_details(agent)
         send_login_notification_email(
             to_email=user["email"],
             username=user["username"],
