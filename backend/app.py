@@ -798,6 +798,85 @@ def read_users(current_user: dict = Depends(get_current_user)):
     return [{"username": u[0], "role": u[1]} for u in users]
 
 # ==============================================================================
+# SAVED PRODUCTS: DRIVER ENDPOINTS (Story 5492)
+# ==============================================================================
+
+@app.get("/api/driver/saved-products")
+def get_saved_products(current_user: dict = Depends(get_current_user)):
+    """Return item_ids the driver has saved."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT item_id FROM SavedProducts WHERE driver_user_id = %s",
+            (current_user["user_id"],)
+        )
+        rows = cursor.fetchall()
+        return {"saved_item_ids": [r["item_id"] for r in rows]}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/driver/saved-products")
+def save_product(body: dict, current_user: dict = Depends(get_current_user)):
+    """Save a catalog item for the driver."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    item_id = body.get("item_id")
+    if not item_id:
+        raise HTTPException(status_code=400, detail="item_id required")
+
+    driver_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT sponsor_user_id FROM SponsorDrivers WHERE driver_user_id = %s",
+            (driver_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="No sponsor found for driver")
+        sponsor_id = row["sponsor_user_id"]
+
+        cursor.execute(
+            """
+            INSERT IGNORE INTO SavedProducts (driver_user_id, sponsor_user_id, item_id)
+            VALUES (%s, %s, %s)
+            """,
+            (driver_id, sponsor_id, item_id)
+        )
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.delete("/api/driver/saved-products/{item_id}")
+def unsave_product(item_id: str, current_user: dict = Depends(get_current_user)):
+    """Remove a saved catalog item for the driver."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM SavedProducts WHERE driver_user_id = %s AND item_id = %s",
+            (current_user["user_id"], item_id)
+        )
+        conn.commit()
+        return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
+
+# ==============================================================================
 # CATALOG: DRIVER ENDPOINTS (US-38, US-39)
 # ==============================================================================
 

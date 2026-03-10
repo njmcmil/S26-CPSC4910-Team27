@@ -118,7 +118,55 @@ def notify_successful_orders():
         cursor.close()
         conn.close()
 
+def check_low_stock_saved_products():
+    """Story 5492: notify drivers when a saved product drops below 3 in stock."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Find saved products with stock < 3 that haven't been notified yet
+        cursor.execute(
+            """
+            SELECT sp.id, sp.driver_user_id, sp.item_id, sc.stock_quantity, sc.title
+            FROM SavedProducts sp
+            JOIN SponsorCatalog sc
+              ON sc.item_id = sp.item_id AND sc.sponsor_user_id = sp.sponsor_user_id
+            WHERE sc.stock_quantity < 3 AND sp.notified_low_stock = FALSE
+            """
+        )
+        low_stock_rows = cursor.fetchall()
+
+        for row in low_stock_rows:
+            qty = row["stock_quantity"]
+            msg = (
+                f"Low stock alert: '{row['title']}' has only {qty} left in stock. "
+                "Order soon before it sells out!"
+            )
+            cursor.execute(
+                "INSERT INTO Notifications (user_id, message) VALUES (%s, %s)",
+                (row["driver_user_id"], msg)
+            )
+            cursor.execute(
+                "UPDATE SavedProducts SET notified_low_stock = TRUE WHERE id = %s",
+                (row["id"],)
+            )
+
+        # Reset flag for saved products whose stock has recovered to >= 3
+        cursor.execute(
+            """
+            UPDATE SavedProducts sp
+            JOIN SponsorCatalog sc
+              ON sc.item_id = sp.item_id AND sc.sponsor_user_id = sp.sponsor_user_id
+            SET sp.notified_low_stock = FALSE
+            WHERE sc.stock_quantity >= 3 AND sp.notified_low_stock = TRUE
+            """
+        )
+
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
 
 # Schedule daily at midnight
 scheduler.add_job(award_daily_points, 'interval', days=1)
 scheduler.add_job(notify_successful_orders, 'interval', minutes=1)
+scheduler.add_job(check_low_stock_saved_products, 'interval', minutes=5)
