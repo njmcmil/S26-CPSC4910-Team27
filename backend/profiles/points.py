@@ -99,7 +99,7 @@ async def get_sponsor_reward_defaults(
     try:
         cursor.execute("""
             SELECT dollar_per_point, earn_rate, expiration_days,
-                   max_points_per_day, max_points_per_month
+                   max_points_per_day, max_points_per_month, order_success_delay_minutes
             FROM SponsorProfiles
             WHERE user_id = %s
         """, (user_id,))
@@ -115,6 +115,7 @@ async def get_sponsor_reward_defaults(
             "expiration_days": row['expiration_days'],
             "max_points_per_day": row['max_points_per_day'],
             "max_points_per_month": row['max_points_per_month'],
+            "order_success_delay_minutes": row['order_success_delay_minutes'] or 60,
         }
     finally:
         cursor.close()
@@ -142,15 +143,16 @@ async def update_sponsor_reward_defaults(
         
         cursor.execute("""
             INSERT INTO SponsorProfiles
-                (user_id, dollar_per_point, earn_rate, expiration_days, max_points_per_day, max_points_per_month)
+                (user_id, dollar_per_point, earn_rate, expiration_days, max_points_per_day, max_points_per_month, order_success_delay_minutes)
             VALUES
-                (%s, %s, %s, %s, %s, %s)
+                (%s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 dollar_per_point = VALUES(dollar_per_point),
                 earn_rate = VALUES(earn_rate),
                 expiration_days = VALUES(expiration_days),
                 max_points_per_day = VALUES(max_points_per_day),
-                max_points_per_month = VALUES(max_points_per_month)
+                max_points_per_month = VALUES(max_points_per_month),
+                order_success_delay_minutes = VALUES(order_success_delay_minutes)
         """, (
             user_id,
             defaults.dollar_per_point,
@@ -158,6 +160,7 @@ async def update_sponsor_reward_defaults(
             defaults.expiration_days,
             defaults.max_points_per_day,
             defaults.max_points_per_month,
+            defaults.order_success_delay_minutes,
         ))
 
         # Log history if dollar_per_point actually changed

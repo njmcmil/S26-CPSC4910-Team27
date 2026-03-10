@@ -40,6 +40,7 @@ class SponsorRewardDefaults(BaseModel):
     expiration_days: Optional[int] = Field(default=None, ge=1, description="Days until points expire; null = no expiration")
     max_points_per_day: Optional[int] = Field(default=None, ge=1, description="Daily point cap; null = unlimited")
     max_points_per_month: Optional[int] = Field(default=None, ge=1, description="Monthly point cap; null = unlimited")
+    order_success_delay_minutes: int = Field(default=60, ge=1, description="Minutes before a pending order is marked successful")
 
 class PointHistoryItem(BaseModel):
     """single entry in a drivers point history"""

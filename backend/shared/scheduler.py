@@ -1,7 +1,7 @@
-# shared/tasks.py
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 from shared.db import get_connection
+from users.email_service import send_order_success_email
 
 scheduler = BackgroundScheduler()
 
@@ -51,5 +51,74 @@ def award_daily_points():
         conn.close()
 
 
+def notify_successful_orders():
+    """Promote eligible pending orders to shipped and notify the driver once."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT
+                o.order_id,
+                o.driver_user_id,
+                o.item_title,
+                o.points_cost,
+                o.created_at,
+                o.purchase_ip_address,
+                o.purchase_device_name,
+                o.purchase_browser_name,
+                o.purchase_os_name,
+                u.username,
+                u.email,
+                COALESCE(sp.order_success_delay_minutes, 60) AS order_success_delay_minutes
+            FROM Orders o
+            JOIN Users u ON u.user_id = o.driver_user_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = o.sponsor_user_id
+            WHERE o.status = 'pending'
+            """
+        )
+        orders = cursor.fetchall()
+        now = datetime.utcnow()
+
+        for order in orders:
+            created_at = order["created_at"]
+            delay_minutes = order["order_success_delay_minutes"] or 60
+            if not created_at:
+                continue
+            if (now - created_at).total_seconds() < delay_minutes * 60:
+                continue
+
+            cursor.execute(
+                "SELECT orders_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (order["driver_user_id"],)
+            )
+            pref_row = cursor.fetchone()
+            orders_email_enabled = True if not pref_row else bool(pref_row["orders_email_enabled"])
+
+            cursor.execute(
+                "UPDATE Orders SET status = 'shipped', updated_at = %s WHERE order_id = %s",
+                (now, order["order_id"])
+            )
+
+            if orders_email_enabled and order.get("email"):
+                send_order_success_email(
+                    to_email=order["email"],
+                    username=order["username"],
+                    item_title=order["item_title"],
+                    points_cost=order["points_cost"],
+                    placed_at=created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    purchase_ip_address=order.get("purchase_ip_address") or "Unknown",
+                    purchase_device_name=order.get("purchase_device_name") or "Unknown Device",
+                    purchase_browser_name=order.get("purchase_browser_name") or "Unknown Browser",
+                    purchase_os_name=order.get("purchase_os_name") or "Unknown OS",
+                )
+
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # Schedule daily at midnight
 scheduler.add_job(award_daily_points, 'interval', days=1)
+scheduler.add_job(notify_successful_orders, 'interval', minutes=1)
