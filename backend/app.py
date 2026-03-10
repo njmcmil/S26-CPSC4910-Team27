@@ -52,7 +52,7 @@ from users.users import (
 from auth.auth import get_current_user, create_access_token
 from audit.login_audit import log_login_attempt
 from users.password_reset import generate_reset_token
-from users.email_service import send_password_reset_email
+from users.email_service import send_password_reset_email, send_login_notification_email
 
 # --- Database & Config ---
 from shared.db import get_connection
@@ -88,6 +88,59 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def get_request_ip(http_request: Request) -> str:
+    """Prefer proxy-forwarded IPs when present; otherwise use the direct client IP."""
+    forwarded_for = http_request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return http_request.client.host if http_request.client else "Unknown"
+
+
+def parse_login_device_details(user_agent: str | None) -> tuple[str, str, str]:
+    agent = (user_agent or "").lower()
+
+    if "iphone" in agent:
+        device_name = "iPhone"
+    elif "ipad" in agent:
+        device_name = "iPad"
+    elif "android" in agent:
+        device_name = "Android Device"
+    elif "macintosh" in agent or "mac os x" in agent:
+        device_name = "Mac"
+    elif "windows" in agent:
+        device_name = "Windows PC"
+    elif "linux" in agent:
+        device_name = "Linux Device"
+    else:
+        device_name = "Unknown Device"
+
+    if "edg/" in agent:
+        browser_name = "Microsoft Edge"
+    elif "chrome/" in agent and "edg/" not in agent:
+        browser_name = "Google Chrome"
+    elif "firefox/" in agent:
+        browser_name = "Mozilla Firefox"
+    elif "safari/" in agent and "chrome/" not in agent:
+        browser_name = "Safari"
+    else:
+        browser_name = "Unknown Browser"
+
+    if "iphone" in agent or "ipad" in agent or "ios" in agent:
+        os_name = "iOS"
+    elif "android" in agent:
+        os_name = "Android"
+    elif "windows" in agent:
+        os_name = "Windows"
+    elif "mac os x" in agent or "macintosh" in agent:
+        os_name = "macOS"
+    elif "linux" in agent:
+        os_name = "Linux"
+    else:
+        os_name = "Unknown OS"
+
+    return device_name, browser_name, os_name
 
 # Run scheduler on startup
 @app.on_event("startup")
@@ -234,7 +287,7 @@ def create_user_endpoint(request: CreateUserRequest):
 def login_endpoint(request: LoginRequest, http_request: Request):
     user = validate_login(request.username, request.password)
 
-    ip = http_request.client.host
+    ip = get_request_ip(http_request)
     agent = http_request.headers.get("User-Agent")
 
     if not user:
@@ -255,6 +308,19 @@ def login_endpoint(request: LoginRequest, http_request: Request):
     )
 
     token = create_access_token({"user_id": user["user_id"]})
+
+    # Notification failures should not block a successful login.
+    if user.get("role") == "driver" and user.get("email"):
+        device_name, browser_name, os_name = parse_login_device_details(agent)
+        send_login_notification_email(
+            to_email=user["email"],
+            username=user["username"],
+            login_time=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+            ip_address=ip,
+            device_name=device_name,
+            browser_name=browser_name,
+            os_name=os_name,
+        )
     
     return {
         "user_id": user["user_id"],
