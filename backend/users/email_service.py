@@ -67,6 +67,43 @@ def send_password_change_confirmation(to_email: str, username: str) -> bool:
     return _send(to_email, subject, html, plain)
 
 
+def send_login_notification_email(
+    to_email: str,
+    username: str,
+    login_time: str,
+    ip_address: str,
+    device_name: str,
+    browser_name: str,
+    os_name: str,
+) -> bool:
+    subject = "New Login Detected - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        "A login to your account was detected.\n\n"
+        f"Time: {login_time}\n"
+        f"IP Address: {ip_address}\n"
+        f"Device: {device_name}\n"
+        f"Browser: {browser_name}\n"
+        f"Operating System: {os_name}\n\n"
+        "If this was not you, change your password immediately and review your trusted devices."
+    )
+    html = f"""
+        <h2>New Login Detected</h2>
+        <p>Hello {username},</p>
+        <p>A login to your account was detected.</p>
+        <ul>
+            <li><strong>Time:</strong> {login_time}</li>
+            <li><strong>IP Address:</strong> {ip_address}</li>
+            <li><strong>Device:</strong> {device_name}</li>
+            <li><strong>Browser:</strong> {browser_name}</li>
+            <li><strong>Operating System:</strong> {os_name}</li>
+        </ul>
+        <p>If this was not you, change your password immediately and review your trusted devices.</p>
+        <p><a href="{BASE_URL}/account/settings">Review trusted devices</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
 def send_driver_application_rejection_email(
     to_email: str,
     username: str,
