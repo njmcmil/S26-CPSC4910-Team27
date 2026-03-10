@@ -104,6 +104,46 @@ def send_login_notification_email(
     return _send(to_email, subject, html, plain)
 
 
+def send_failed_login_alert_email(
+    to_email: str,
+    username: str,
+    attempt_time: str,
+    attempted_username: str,
+    ip_address: str,
+    device_name: str,
+    browser_name: str,
+    os_name: str,
+) -> bool:
+    subject = "Failed Login Attempt Alert - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        "A failed login attempt was made on your account.\n\n"
+        f"Attempted Username: {attempted_username}\n"
+        f"Time: {attempt_time}\n"
+        f"IP Address: {ip_address}\n"
+        f"Device: {device_name}\n"
+        f"Browser: {browser_name}\n"
+        f"Operating System: {os_name}\n\n"
+        "If this was not you, reset your password and review your trusted devices immediately."
+    )
+    html = f"""
+        <h2>Failed Login Attempt Alert</h2>
+        <p>Hello {username},</p>
+        <p>A failed login attempt was made on your account.</p>
+        <ul>
+            <li><strong>Attempted Username:</strong> {attempted_username}</li>
+            <li><strong>Time:</strong> {attempt_time}</li>
+            <li><strong>IP Address:</strong> {ip_address}</li>
+            <li><strong>Device:</strong> {device_name}</li>
+            <li><strong>Browser:</strong> {browser_name}</li>
+            <li><strong>Operating System:</strong> {os_name}</li>
+        </ul>
+        <p>If this was not you, reset your password and review your trusted devices immediately.</p>
+        <p><a href="{BASE_URL}/account/settings">Review trusted devices</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
 def send_driver_application_rejection_email(
     to_email: str,
     username: str,
