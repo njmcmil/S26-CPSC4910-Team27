@@ -1069,6 +1069,15 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
 
         sponsor_id = driver['sponsor_user_id']
 
+        cursor.execute(
+            "SELECT driver_profile_id FROM DriverProfiles WHERE user_id = %s",
+            (driver_id,)
+        )
+        profile_row = cursor.fetchone()
+        if not profile_row:
+            raise HTTPException(status_code=404, detail="Driver profile not found")
+        driver_profile_id = profile_row['driver_profile_id']
+
         # Get dynamic min points threshold from sponsor settings
         cursor.execute(
             "SELECT min_points_for_tips FROM SponsorProfiles WHERE user_id = %s",
@@ -1094,7 +1103,7 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
               AND v.tip_id IS NULL
             ORDER BY t.created_at DESC
             """,
-            (driver_id, sponsor_id)
+            (driver_profile_id, sponsor_id)
         )
         tips = cursor.fetchall()
         if not tips:
