@@ -216,6 +216,9 @@ def get_about():
         cursor.close()
         conn.close()
 
+@app.get("/about/public")
+def get_about_public():
+    """Public endpoint — returns project metadata + sponsor stats."""
 @app.get("/api/driver/notification-preferences")
 def get_notification_preferences(current_user: dict = Depends(get_current_user)):
     """Get notification preferences for the logged-in driver."""
@@ -223,6 +226,36 @@ def get_notification_preferences(current_user: dict = Depends(get_current_user))
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(
+            """
+            SELECT team_number, version_number, sprint_number,
+                   release_date, product_name, product_description
+            FROM About
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="About information not found")
+        if row.get("release_date"):
+            row["release_date"] = str(row["release_date"])
+
+        cursor.execute(
+            """
+            SELECT u.username AS sponsor_name, COUNT(sd.driver_user_id) AS driver_count
+            FROM Users u
+            LEFT JOIN SponsorDrivers sd ON sd.sponsor_user_id = u.user_id
+            WHERE u.role = 'sponsor'
+            GROUP BY u.user_id, u.username
+            ORDER BY u.username
+            """
+        )
+        sponsors = cursor.fetchall()
+        row["sponsors"] = [
+            {"name": s["sponsor_name"], "driver_count": int(s["driver_count"])}
+            for s in sponsors
+        ]
+        return row
             "SELECT points_email_enabled, orders_email_enabled FROM NotificationPreferences WHERE user_id = %s",
             (current_user["user_id"],)
         )
