@@ -384,7 +384,29 @@ async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_use
             """, (datetime.now(), user_id, driver_id, request.points, request.reason, current_user['user_id']))
             updated_drivers.append({"driver_id": driver_id, "new_total": new_total})
 
-        conn.commit()
+        cursor.execute(
+            "SELECT email, username FROM Users WHERE user_id = %s",
+            (driver_id,)
+        )
+        driver_user = cursor.fetchone()
+
+        if driver_user:
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (driver_id,)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver_user["email"],
+                    username=driver_user["username"],
+                    points_changed=request.points,
+                    reason=request.reason,
+                    new_total=new_total
+                )
+
+        conn.commit()        
+        
         return {"success": True, "updated_drivers": updated_drivers}
 
     finally:
@@ -1069,6 +1091,15 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
 
         sponsor_id = driver['sponsor_user_id']
 
+        cursor.execute(
+            "SELECT driver_profile_id FROM DriverProfiles WHERE user_id = %s",
+            (driver_id,)
+        )
+        profile_row = cursor.fetchone()
+        if not profile_row:
+            raise HTTPException(status_code=404, detail="Driver profile not found")
+        driver_profile_id = profile_row['driver_profile_id']
+
         # Get dynamic min points threshold from sponsor settings
         cursor.execute(
             "SELECT min_points_for_tips FROM SponsorProfiles WHERE user_id = %s",
@@ -1094,7 +1125,7 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
               AND v.tip_id IS NULL
             ORDER BY t.created_at DESC
             """,
-            (driver_id, sponsor_id)
+            (driver_profile_id, sponsor_id)
         )
         tips = cursor.fetchall()
         if not tips:
@@ -1123,12 +1154,21 @@ async def record_tip_view(view_data: TipViewCreate, current_user: dict = Depends
     cursor = conn.cursor()
 
     try:
+        cursor.execute(
+            "SELECT driver_profile_id FROM DriverProfiles WHERE user_id = %s",
+            (driver_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Driver profile not found")
+        driver_profile_id = row[0]
+
         # Insert or update the tip view for this driver
         cursor.execute("""
             INSERT INTO DriverTipViews (driver_id, tip_id, last_viewed)
             VALUES (%s, %s, %s)
             ON DUPLICATE KEY UPDATE last_viewed = VALUES(last_viewed)
-        """, (driver_id, tip_id, datetime.now()))
+        """, (driver_profile_id, tip_id, datetime.now()))
 
         conn.commit()
 

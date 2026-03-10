@@ -50,6 +50,7 @@ from users.users import (
     get_user_by_username
 )
 from auth.auth import get_current_user, create_access_token
+from auth.token_blacklist import blacklist_token
 from audit.login_audit import log_login_attempt
 from users.password_reset import generate_reset_token
 from users.email_service import (
@@ -57,6 +58,7 @@ from users.email_service import (
     send_login_notification_email,
     send_failed_login_alert_email,
     send_order_placed_email,
+    send_sponsor_order_placed_email,
 )
 
 # --- Database & Config ---
@@ -215,6 +217,47 @@ def get_about():
         cursor.close()
         conn.close()
 
+@app.get("/about/public")
+def get_about_public():
+    """Public endpoint — returns project metadata + sponsor stats."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT team_number, version_number, sprint_number,
+                   release_date, product_name, product_description
+            FROM About
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="About information not found")
+        if row.get("release_date"):
+            row["release_date"] = str(row["release_date"])
+
+        cursor.execute(
+            """
+            SELECT u.username AS sponsor_name, COUNT(sd.driver_user_id) AS driver_count
+            FROM Users u
+            LEFT JOIN SponsorDrivers sd ON sd.sponsor_user_id = u.user_id
+            WHERE u.role = 'sponsor'
+            GROUP BY u.user_id, u.username
+            ORDER BY u.username
+            """
+        )
+        sponsors = cursor.fetchall()
+        row["sponsors"] = [
+            {"name": s["sponsor_name"], "driver_count": int(s["driver_count"])}
+            for s in sponsors
+        ]
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.get("/api/driver/notification-preferences")
 def get_notification_preferences(current_user: dict = Depends(get_current_user)):
     """Get notification preferences for the logged-in driver."""
@@ -255,6 +298,63 @@ def update_notification_preferences(
         )
         conn.commit()
         return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/driver/notifications")
+def get_driver_notifications(current_user: dict = Depends(get_current_user)):
+    """Story 5431/5448: Return in-app notifications for the logged-in driver."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT notification_id, message, is_read, created_at
+            FROM Notifications
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT 50
+            """,
+            (current_user["user_id"],)
+        )
+        rows = cursor.fetchall()
+        for r in rows:
+            if r.get("created_at"):
+                r["created_at"] = r["created_at"].isoformat()
+        return {"notifications": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/driver/notifications/{notification_id}/dismiss")
+def dismiss_driver_notification(notification_id: int, current_user: dict = Depends(get_current_user)):
+    """Story 5448: Mark a driver notification as read (dismissed)."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT user_id FROM Notifications WHERE notification_id = %s",
+            (notification_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        if row["user_id"] != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Not your notification")
+        cursor.execute(
+            "UPDATE Notifications SET is_read = TRUE WHERE notification_id = %s",
+            (notification_id,)
+        )
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
     finally:
         cursor.close()
         conn.close()
@@ -740,6 +840,85 @@ def read_users(current_user: dict = Depends(get_current_user)):
     return [{"username": u[0], "role": u[1]} for u in users]
 
 # ==============================================================================
+# SAVED PRODUCTS: DRIVER ENDPOINTS (Story 5492)
+# ==============================================================================
+
+@app.get("/api/driver/saved-products")
+def get_saved_products(current_user: dict = Depends(get_current_user)):
+    """Return item_ids the driver has saved."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT item_id FROM SavedProducts WHERE driver_user_id = %s",
+            (current_user["user_id"],)
+        )
+        rows = cursor.fetchall()
+        return {"saved_item_ids": [r["item_id"] for r in rows]}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/driver/saved-products")
+def save_product(body: dict, current_user: dict = Depends(get_current_user)):
+    """Save a catalog item for the driver."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    item_id = body.get("item_id")
+    if not item_id:
+        raise HTTPException(status_code=400, detail="item_id required")
+
+    driver_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT sponsor_user_id FROM SponsorDrivers WHERE driver_user_id = %s",
+            (driver_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="No sponsor found for driver")
+        sponsor_id = row["sponsor_user_id"]
+
+        cursor.execute(
+            """
+            INSERT IGNORE INTO SavedProducts (driver_user_id, sponsor_user_id, item_id)
+            VALUES (%s, %s, %s)
+            """,
+            (driver_id, sponsor_id, item_id)
+        )
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.delete("/api/driver/saved-products/{item_id}")
+def unsave_product(item_id: str, current_user: dict = Depends(get_current_user)):
+    """Remove a saved catalog item for the driver."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM SavedProducts WHERE driver_user_id = %s AND item_id = %s",
+            (current_user["user_id"], item_id)
+        )
+        conn.commit()
+        return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
+
+# ==============================================================================
 # CATALOG: DRIVER ENDPOINTS (US-38, US-39)
 # ==============================================================================
 
@@ -1014,6 +1193,31 @@ def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_cur
             (driver_id, sponsor_id, item_id, item["title"], item["points_cost"], now, now)
         )
 
+         # build notification before commit so it's part of the same transaction
+        cursor.execute(
+            """
+            SELECT COALESCE(sp.company_name, u.username) AS sponsor_label
+            FROM Users u
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id
+            WHERE u.user_id = %s
+            """,
+            (sponsor_id,)
+        )
+        sponsor_row = cursor.fetchone()
+        sponsor_label = sponsor_row["sponsor_label"] if sponsor_row else "Your sponsor"
+
+        cursor.execute("SELECT username, email FROM Users WHERE user_id = %s", (driver_id,))
+        driver_user = cursor.fetchone()
+
+        notification_msg = (
+            f"{sponsor_label} placed an order for '{item['title']}' "
+            f"using {item['points_cost']} of your points."
+        )
+        cursor.execute(
+            "INSERT INTO Notifications (user_id, message) VALUES (%s, %s)",
+            (driver_id, notification_msg)
+        )
+
         conn.commit()
 
         cursor.execute(
@@ -1026,6 +1230,24 @@ def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_cur
             (item_id, sponsor_id)
         )
         new_stock = cursor.fetchone()["stock_quantity"]
+
+        # Send email if driver has orders notifications enabled
+        cursor.execute(
+            "SELECT orders_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+            (driver_id,)
+        )
+        pref_row = cursor.fetchone()
+        orders_email_enabled = True if not pref_row else bool(pref_row["orders_email_enabled"])
+
+        if orders_email_enabled and driver_user and driver_user.get("email"):
+            send_sponsor_order_placed_email(
+                to_email=driver_user["email"],
+                username=driver_user["username"],
+                item_title=item["title"],
+                points_cost=item["points_cost"],
+                placed_at=now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                sponsor_name=sponsor_label,
+            )
 
         return {
             "message": f"Purchased '{item['title']}' for driver #{driver_id}",
