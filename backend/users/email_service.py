@@ -261,3 +261,44 @@ def send_order_placed_email(
         <p><a href="{BASE_URL}/driver/catalog">Browse more items</a></p>
     """
     return _send(to_email, subject, html, plain)
+
+
+def send_order_success_email(
+    to_email: str,
+    username: str,
+    item_title: str,
+    points_cost: int,
+    placed_at: str,
+    purchase_ip_address: str,
+    purchase_device_name: str,
+    purchase_browser_name: str,
+    purchase_os_name: str,
+) -> bool:
+    subject = "Order Successful - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        "Your order is now successful.\n\n"
+        f"Item: {item_title}\n"
+        f"Points Used: {points_cost}\n"
+        f"Original Purchase Time: {placed_at}\n"
+        f"IP Address: {purchase_ip_address}\n"
+        f"Device: {purchase_device_name}\n"
+        f"Browser: {purchase_browser_name}\n"
+        f"Operating System: {purchase_os_name}\n"
+    )
+    html = f"""
+        <h2>Order Successful</h2>
+        <p>Hello {username},</p>
+        <p>Your order is now marked successful.</p>
+        <ul>
+            <li><strong>Item:</strong> {item_title}</li>
+            <li><strong>Points Used:</strong> {points_cost}</li>
+            <li><strong>Original Purchase Time:</strong> {placed_at}</li>
+            <li><strong>IP Address:</strong> {purchase_ip_address}</li>
+            <li><strong>Device:</strong> {purchase_device_name}</li>
+            <li><strong>Browser:</strong> {purchase_browser_name}</li>
+            <li><strong>Operating System:</strong> {purchase_os_name}</li>
+        </ul>
+        <p><a href="{BASE_URL}/driver/orders">View your orders</a></p>
+    """
+    return _send(to_email, subject, html, plain)

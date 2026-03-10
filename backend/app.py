@@ -885,10 +885,16 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
         # create Order record for status tracking
         cursor.execute(
             """
-            INSERT INTO Orders (driver_user_id, sponsor_user_id, item_id, item_title, points_cost, status, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
+            INSERT INTO Orders (
+                driver_user_id, sponsor_user_id, item_id, item_title, points_cost, status, created_at, updated_at,
+                purchase_ip_address, purchase_device_name, purchase_browser_name, purchase_os_name
+            )
+            VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s)
             """,
-            (driver_id, sponsor_id, item_id, item["title"], item["points_cost"], now, now)
+            (
+                driver_id, sponsor_id, item_id, item["title"], item["points_cost"], now, now,
+                ip, device_name, browser_name, os_name
+            )
         )
         conn.commit()
         cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (driver_id,))
