@@ -58,6 +58,7 @@ from users.email_service import (
     send_login_notification_email,
     send_failed_login_alert_email,
     send_order_placed_email,
+    send_sponsor_order_placed_email,
 )
 
 # --- Database & Config ---
@@ -255,6 +256,63 @@ def update_notification_preferences(
         )
         conn.commit()
         return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/driver/notifications")
+def get_driver_notifications(current_user: dict = Depends(get_current_user)):
+    """Story 5431/5448: Return in-app notifications for the logged-in driver."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT notification_id, message, is_read, created_at
+            FROM Notifications
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT 50
+            """,
+            (current_user["user_id"],)
+        )
+        rows = cursor.fetchall()
+        for r in rows:
+            if r.get("created_at"):
+                r["created_at"] = r["created_at"].isoformat()
+        return {"notifications": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/driver/notifications/{notification_id}/dismiss")
+def dismiss_driver_notification(notification_id: int, current_user: dict = Depends(get_current_user)):
+    """Story 5448: Mark a driver notification as read (dismissed)."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT user_id FROM Notifications WHERE notification_id = %s",
+            (notification_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        if row["user_id"] != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Not your notification")
+        cursor.execute(
+            "UPDATE Notifications SET is_read = TRUE WHERE notification_id = %s",
+            (notification_id,)
+        )
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
     finally:
         cursor.close()
         conn.close()
@@ -1014,6 +1072,31 @@ def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_cur
             (driver_id, sponsor_id, item_id, item["title"], item["points_cost"], now, now)
         )
 
+         # build notification before commit so it's part of the same transaction
+        cursor.execute(
+            """
+            SELECT COALESCE(sp.company_name, u.username) AS sponsor_label
+            FROM Users u
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id
+            WHERE u.user_id = %s
+            """,
+            (sponsor_id,)
+        )
+        sponsor_row = cursor.fetchone()
+        sponsor_label = sponsor_row["sponsor_label"] if sponsor_row else "Your sponsor"
+
+        cursor.execute("SELECT username, email FROM Users WHERE user_id = %s", (driver_id,))
+        driver_user = cursor.fetchone()
+
+        notification_msg = (
+            f"{sponsor_label} placed an order for '{item['title']}' "
+            f"using {item['points_cost']} of your points."
+        )
+        cursor.execute(
+            "INSERT INTO Notifications (user_id, message) VALUES (%s, %s)",
+            (driver_id, notification_msg)
+        )
+
         conn.commit()
 
         cursor.execute(
@@ -1026,6 +1109,24 @@ def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_cur
             (item_id, sponsor_id)
         )
         new_stock = cursor.fetchone()["stock_quantity"]
+
+        # Send email if driver has orders notifications enabled
+        cursor.execute(
+            "SELECT orders_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+            (driver_id,)
+        )
+        pref_row = cursor.fetchone()
+        orders_email_enabled = True if not pref_row else bool(pref_row["orders_email_enabled"])
+
+        if orders_email_enabled and driver_user and driver_user.get("email"):
+            send_sponsor_order_placed_email(
+                to_email=driver_user["email"],
+                username=driver_user["username"],
+                item_title=item["title"],
+                points_cost=item["points_cost"],
+                placed_at=now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                sponsor_name=sponsor_label,
+            )
 
         return {
             "message": f"Purchased '{item['title']}' for driver #{driver_id}",

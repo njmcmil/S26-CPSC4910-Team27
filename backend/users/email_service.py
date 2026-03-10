@@ -262,6 +262,35 @@ def send_order_placed_email(
     """
     return _send(to_email, subject, html, plain)
 
+def send_sponsor_order_placed_email(
+    to_email: str,
+    username: str,
+    item_title: str,
+    points_cost: int,
+    placed_at: str,
+    sponsor_name: str,
+) -> bool:
+    subject = "Order Placed by Your Sponsor - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        f"Your sponsor ({sponsor_name}) has placed an order using your points.\n\n"
+        f"Item: {item_title}\n"
+        f"Points Used: {points_cost}\n"
+        f"Time: {placed_at}\n\n"
+        "You can view your orders in the portal."
+    )
+    html = f"""
+        <h2>Order Placed by Your Sponsor</h2>
+        <p>Hello {username},</p>
+        <p>Your sponsor (<strong>{sponsor_name}</strong>) has placed an order using your points.</p>
+        <ul>
+            <li><strong>Item:</strong> {item_title}</li>
+            <li><strong>Points Used:</strong> {points_cost}</li>
+            <li><strong>Time:</strong> {placed_at}</li>
+        </ul>
+        <p><a href="{BASE_URL}/driver/orders">View your orders</a></p>
+    """
+    return _send(to_email, subject, html, plain)
 
 def send_order_success_email(
     to_email: str,
