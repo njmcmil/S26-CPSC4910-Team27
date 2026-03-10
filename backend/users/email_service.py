@@ -224,16 +224,38 @@ def send_order_placed_email(
     to_email: str,
     username: str,
     order_items: list,
-    total_points: int
+    total_points: int,
+    placed_at: str,
+    ip_address: str,
+    device_name: str,
+    browser_name: str,
+    os_name: str,
 ) -> bool:
     subject = "Order Confirmation - Good Driver Incentive Program"
     items_plain = "\n".join([f"- {item['title']} ({item['points_cost']} pts)" for item in order_items])
     items_html = "".join([f"<li>{item['title']} — {item['points_cost']} pts</li>" for item in order_items])
-    plain = f"Hello {username},\n\nYour order has been placed!\n\nItems:\n{items_plain}\n\nTotal: {total_points} points"
+    plain = (
+        f"Hello {username},\n\n"
+        "Your order has been placed successfully.\n\n"
+        f"Time: {placed_at}\n"
+        f"IP Address: {ip_address}\n"
+        f"Device: {device_name}\n"
+        f"Browser: {browser_name}\n"
+        f"Operating System: {os_name}\n\n"
+        f"Items:\n{items_plain}\n\n"
+        f"Total: {total_points} points"
+    )
     html = f"""
         <h2>Order Confirmation 🎉</h2>
         <p>Hello {username},</p>
         <p>Your order has been placed successfully!</p>
+        <ul>
+            <li><strong>Time:</strong> {placed_at}</li>
+            <li><strong>IP Address:</strong> {ip_address}</li>
+            <li><strong>Device:</strong> {device_name}</li>
+            <li><strong>Browser:</strong> {browser_name}</li>
+            <li><strong>Operating System:</strong> {os_name}</li>
+        </ul>
         <ul>{items_html}</ul>
         <p><strong>Total Points Used:</strong> {total_points}</p>
         <p><a href="{BASE_URL}/driver/catalog">Browse more items</a></p>

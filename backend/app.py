@@ -56,6 +56,7 @@ from users.email_service import (
     send_password_reset_email,
     send_login_notification_email,
     send_failed_login_alert_email,
+    send_order_placed_email,
 )
 
 # --- Database & Config ---
@@ -835,13 +836,16 @@ def get_driver_catalog_item(item_id: str, current_user: dict = Depends(get_curre
     }
 
 @app.post("/api/driver/catalog/purchase")
-def purchase_catalog_item(body: dict, current_user: dict = Depends(get_current_user)):
+def purchase_catalog_item(body: dict, http_request: Request, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "driver":
         raise HTTPException(status_code=403, detail="Driver access required")
     driver_id = current_user["user_id"]
     item_id = body.get("item_id")
     if not item_id:
         raise HTTPException(status_code=400, detail="item_id required")
+    ip = get_request_ip(http_request)
+    agent = http_request.headers.get("User-Agent")
+    device_name, browser_name, os_name = parse_login_device_details(agent)
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -891,6 +895,27 @@ def purchase_catalog_item(body: dict, current_user: dict = Depends(get_current_u
         new_balance = cursor.fetchone()["total_points"]
         cursor.execute("SELECT stock_quantity FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s", (item_id, sponsor_id))
         new_stock = cursor.fetchone()["stock_quantity"]
+
+        cursor.execute(
+            "SELECT orders_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+            (driver_id,)
+        )
+        pref_row = cursor.fetchone()
+        orders_email_enabled = True if not pref_row else bool(pref_row["orders_email_enabled"])
+
+        if orders_email_enabled and current_user.get("email"):
+            send_order_placed_email(
+                to_email=current_user["email"],
+                username=current_user["username"],
+                order_items=[{"title": item["title"], "points_cost": item["points_cost"]}],
+                total_points=item["points_cost"],
+                placed_at=now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                ip_address=ip,
+                device_name=device_name,
+                browser_name=browser_name,
+                os_name=os_name,
+            )
+
         return {"message": f"Successfully redeemed '{item['title']}'", "points_spent": item["points_cost"], "new_points_balance": new_balance, "remaining_stock": new_stock}
     except HTTPException:
         conn.rollback()
