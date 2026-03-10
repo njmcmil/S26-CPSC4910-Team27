@@ -74,6 +74,7 @@ function NotificationBell() {
           background: '#fff', border: '1px solid var(--color-border)',
           borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
           width: 320, maxHeight: 380, overflowY: 'auto', zIndex: 100,
+          color: 'var(--color-text)',
         }}>
           <div style={{ padding: '0.75rem 1rem', fontWeight: 600, borderBottom: '1px solid var(--color-border)' }}>
             Notifications
@@ -336,6 +337,7 @@ export function Layout() {
               {ROLE_LABELS[user.role]}
             </span>
             <span className="header-username">{user.username}</span>
+            {user.role === 'driver' && <NotificationBell />}
             <Button variant="secondary" onClick={handleLogout} type="button">
               Log out
             </Button>
