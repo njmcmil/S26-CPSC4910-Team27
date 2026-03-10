@@ -28,6 +28,7 @@ from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from services.ebay.browse import search_products, get_product_details
+from schemas.notifications import NotificationPreferences
 
 # --- Schemas (Blueprint layer) ---
 from schemas.user import (
@@ -155,7 +156,49 @@ def get_about():
         cursor.close()
         conn.close()
 
+@app.get("/api/driver/notification-preferences")
+def get_notification_preferences(current_user: dict = Depends(get_current_user)):
+    """Get notification preferences for the logged-in driver."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT points_email_enabled, orders_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+            (current_user["user_id"],)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return {"points_email_enabled": True, "orders_email_enabled": True}
+        return row
+    finally:
+        cursor.close()
+        conn.close()
 
+
+@app.put("/api/driver/notification-preferences")
+def update_notification_preferences(
+    prefs: NotificationPreferences,
+    current_user: dict = Depends(get_current_user)
+):
+    """Save notification preferences for the logged-in driver."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO NotificationPreferences (user_id, points_email_enabled, orders_email_enabled)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                points_email_enabled = VALUES(points_email_enabled),
+                orders_email_enabled = VALUES(orders_email_enabled)
+            """,
+            (current_user["user_id"], prefs.points_email_enabled, prefs.orders_email_enabled)
+        )
+        conn.commit()
+        return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.post("/create-user")
 def create_user_endpoint(request: CreateUserRequest):

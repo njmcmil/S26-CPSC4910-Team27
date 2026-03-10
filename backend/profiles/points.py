@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Cookie
 from datetime import datetime, timedelta
 from shared.db import get_connection
 from auth.auth import get_current_user
+from users.email_service import send_points_notification
 
 from schemas.points import (
     PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest,
@@ -319,6 +320,27 @@ async def add_driver_points(
             (request.driver_id,)
         )
         new_total = cursor.fetchone()['total_points']
+
+        # Send email if driver has notifications enabled
+        cursor.execute(
+            "SELECT email, username FROM Users WHERE user_id = %s",
+            (request.driver_id,)
+        )
+        driver_user = cursor.fetchone()
+        if driver_user:
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (request.driver_id,)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver_user["email"],
+                    username=driver_user["username"],
+                    points_changed=request.points,
+                    reason=request.reason,
+                    new_total=new_total
+                )
         
         return {
             "success": True,
@@ -421,6 +443,27 @@ async def deduct_driver_points(
 
         cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (request.driver_id,))
         new_total = cursor.fetchone()['total_points']
+
+        # Send email if driver has notifications enabled
+        cursor.execute(
+            "SELECT email, username FROM Users WHERE user_id = %s",
+            (request.driver_id,)
+        )
+        driver_user = cursor.fetchone()
+        if driver_user:
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (request.driver_id,)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver_user["email"],
+                    username=driver_user["username"],
+                    points_changed=-request.points,
+                    reason=request.reason,
+                    new_total=new_total
+                )
         
         return {
             "success": True, 
