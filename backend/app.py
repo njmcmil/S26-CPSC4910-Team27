@@ -50,7 +50,6 @@ from users.users import (
     get_user_by_username
 )
 from auth.auth import get_current_user, create_access_token
-from auth.token_blacklist import blacklist_token
 from audit.login_audit import log_login_attempt
 from users.password_reset import generate_reset_token
 from users.email_service import (
