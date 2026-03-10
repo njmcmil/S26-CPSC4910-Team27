@@ -63,4 +63,4 @@ jobs:
         with:
           app-name: 'good-driver-app-team27'
           slot-name: 'Production'
-          package: node-app  # use the uploaded artifact name
+          package: node-app/  # use the uploaded artifact name
