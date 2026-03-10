@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Cookie
 from datetime import datetime, timedelta
 from shared.db import get_connection
 from auth.auth import get_current_user
+from users.email_service import send_points_notification
 
 from schemas.points import (
     PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest,
@@ -98,7 +99,7 @@ async def get_sponsor_reward_defaults(
     try:
         cursor.execute("""
             SELECT dollar_per_point, earn_rate, expiration_days,
-                   max_points_per_day, max_points_per_month
+                   max_points_per_day, max_points_per_month, order_success_delay_minutes
             FROM SponsorProfiles
             WHERE user_id = %s
         """, (user_id,))
@@ -114,6 +115,7 @@ async def get_sponsor_reward_defaults(
             "expiration_days": row['expiration_days'],
             "max_points_per_day": row['max_points_per_day'],
             "max_points_per_month": row['max_points_per_month'],
+            "order_success_delay_minutes": row['order_success_delay_minutes'] or 60,
         }
     finally:
         cursor.close()
@@ -141,15 +143,16 @@ async def update_sponsor_reward_defaults(
         
         cursor.execute("""
             INSERT INTO SponsorProfiles
-                (user_id, dollar_per_point, earn_rate, expiration_days, max_points_per_day, max_points_per_month)
+                (user_id, dollar_per_point, earn_rate, expiration_days, max_points_per_day, max_points_per_month, order_success_delay_minutes)
             VALUES
-                (%s, %s, %s, %s, %s, %s)
+                (%s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 dollar_per_point = VALUES(dollar_per_point),
                 earn_rate = VALUES(earn_rate),
                 expiration_days = VALUES(expiration_days),
                 max_points_per_day = VALUES(max_points_per_day),
-                max_points_per_month = VALUES(max_points_per_month)
+                max_points_per_month = VALUES(max_points_per_month),
+                order_success_delay_minutes = VALUES(order_success_delay_minutes)
         """, (
             user_id,
             defaults.dollar_per_point,
@@ -157,6 +160,7 @@ async def update_sponsor_reward_defaults(
             defaults.expiration_days,
             defaults.max_points_per_day,
             defaults.max_points_per_month,
+            defaults.order_success_delay_minutes,
         ))
 
         # Log history if dollar_per_point actually changed
@@ -319,6 +323,27 @@ async def add_driver_points(
             (request.driver_id,)
         )
         new_total = cursor.fetchone()['total_points']
+
+        # Send email if driver has notifications enabled
+        cursor.execute(
+            "SELECT email, username FROM Users WHERE user_id = %s",
+            (request.driver_id,)
+        )
+        driver_user = cursor.fetchone()
+        if driver_user:
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (request.driver_id,)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver_user["email"],
+                    username=driver_user["username"],
+                    points_changed=request.points,
+                    reason=request.reason,
+                    new_total=new_total
+                )
         
         return {
             "success": True,
@@ -359,7 +384,29 @@ async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_use
             """, (datetime.now(), user_id, driver_id, request.points, request.reason, current_user['user_id']))
             updated_drivers.append({"driver_id": driver_id, "new_total": new_total})
 
-        conn.commit()
+        cursor.execute(
+            "SELECT email, username FROM Users WHERE user_id = %s",
+            (driver_id,)
+        )
+        driver_user = cursor.fetchone()
+
+        if driver_user:
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (driver_id,)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver_user["email"],
+                    username=driver_user["username"],
+                    points_changed=request.points,
+                    reason=request.reason,
+                    new_total=new_total
+                )
+
+        conn.commit()        
+        
         return {"success": True, "updated_drivers": updated_drivers}
 
     finally:
@@ -421,6 +468,27 @@ async def deduct_driver_points(
 
         cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (request.driver_id,))
         new_total = cursor.fetchone()['total_points']
+
+        # Send email if driver has notifications enabled
+        cursor.execute(
+            "SELECT email, username FROM Users WHERE user_id = %s",
+            (request.driver_id,)
+        )
+        driver_user = cursor.fetchone()
+        if driver_user:
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (request.driver_id,)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver_user["email"],
+                    username=driver_user["username"],
+                    points_changed=-request.points,
+                    reason=request.reason,
+                    new_total=new_total
+                )
         
         return {
             "success": True, 
@@ -1023,6 +1091,15 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
 
         sponsor_id = driver['sponsor_user_id']
 
+        cursor.execute(
+            "SELECT driver_profile_id FROM DriverProfiles WHERE user_id = %s",
+            (driver_id,)
+        )
+        profile_row = cursor.fetchone()
+        if not profile_row:
+            raise HTTPException(status_code=404, detail="Driver profile not found")
+        driver_profile_id = profile_row['driver_profile_id']
+
         # Get dynamic min points threshold from sponsor settings
         cursor.execute(
             "SELECT min_points_for_tips FROM SponsorProfiles WHERE user_id = %s",
@@ -1048,7 +1125,7 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
               AND v.tip_id IS NULL
             ORDER BY t.created_at DESC
             """,
-            (driver_id, sponsor_id)
+            (driver_profile_id, sponsor_id)
         )
         tips = cursor.fetchall()
         if not tips:
@@ -1077,12 +1154,21 @@ async def record_tip_view(view_data: TipViewCreate, current_user: dict = Depends
     cursor = conn.cursor()
 
     try:
+        cursor.execute(
+            "SELECT driver_profile_id FROM DriverProfiles WHERE user_id = %s",
+            (driver_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Driver profile not found")
+        driver_profile_id = row[0]
+
         # Insert or update the tip view for this driver
         cursor.execute("""
             INSERT INTO DriverTipViews (driver_id, tip_id, last_viewed)
             VALUES (%s, %s, %s)
             ON DUPLICATE KEY UPDATE last_viewed = VALUES(last_viewed)
-        """, (driver_id, tip_id, datetime.now()))
+        """, (driver_profile_id, tip_id, datetime.now()))
 
         conn.commit()
 

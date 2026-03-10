@@ -29,6 +29,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const { addItem, items: cartItems, totalCount } = useCart();
   const navigate = useNavigate();
 
@@ -72,15 +73,49 @@ export function DriverCatalog({ previewMode = false }: Props) {
     }
   };
 
+  const loadSaved = async () => {
+    try {
+      const res = await api.get<{ saved_item_ids: string[] }>('/api/driver/saved-products');
+      setSavedIds(new Set(res.saved_item_ids));
+    } catch {
+      // silently fail- save buttons just won't reflect server state
+    }
+  };
+
   useEffect(() => {
     loadCatalog();
     if (!previewMode) {
+      loadSaved();
       pollRef.current = setInterval(() => loadCatalog(true), POLL_INTERVAL_MS);
     }
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [previewMode]);
+
+  const toggleSave = async (item_id: string) => {
+    const alreadySaved = savedIds.has(item_id);
+    // Optimistic update
+    setSavedIds(prev => {
+      const next = new Set(prev);
+      alreadySaved ? next.delete(item_id) : next.add(item_id);
+      return next;
+    });
+    try {
+      if (alreadySaved) {
+        await api.delete(`/api/driver/saved-products/${item_id}`);
+      } else {
+        await api.post('/api/driver/saved-products', { item_id });
+      }
+    } catch {
+      // Revert on failure
+      setSavedIds(prev => {
+        const next = new Set(prev);
+        alreadySaved ? next.add(item_id) : next.delete(item_id);
+        return next;
+      });
+    }
+  };
 
   const handleAddToCart = (item: CatalogItem) => {
     if (previewMode) return;
@@ -186,6 +221,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
               const inStock = item.stock_quantity > 0;
               const inCart = isInCart(item.item_id);
               const justAdded = addedIds.has(item.item_id);
+              const isSaved = savedIds.has(item.item_id);
 
               return (
                 <div key={item.item_id} className="product-card" style={{ opacity: inStock ? 1 : 0.6 }}>
@@ -229,6 +265,23 @@ export function DriverCatalog({ previewMode = false }: Props) {
                     >
                       View Details
                     </Link>
+                  )}
+
+                  {/* save/unsave toggle */}
+                  {!previewMode && (
+                    <button
+                      type="button"
+                      onClick={() => toggleSave(item.item_id)}
+                      style={{
+                        background: 'none', border: '1px solid var(--color-border)',
+                        borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem',
+                        padding: '3px 10px', marginBottom: '0.4rem',
+                        color: isSaved ? '#b45309' : 'var(--color-text-muted)',
+                        fontWeight: isSaved ? 600 : 400,
+                      }}
+                    >
+                      {isSaved ? '★ Saved' : '☆ Save'}
+                    </button>
                   )}
 
                   <button

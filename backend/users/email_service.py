@@ -2,170 +2,146 @@
 email_service.py
 ----------------
 Purpose:
-    Email sending service
-
-    MOCK VERSION - Prints emails to console instead of sending
-    Replace with real email service for production
-
-Responsibilities:
-    - Send password reset emails
-    - Format email content
-    - (Future: Send other notification emails)
-
-Usage:
-    from email_service import send_password_reset_email
-
-    success = send_password_reset_email(
-        to_email="user@example.com",
-        reset_token="abc123...",
-        username="john_doe"
-    )
+    Email sending service using SendGrid.
+    Falls back to console print if SENDGRID_API_KEY is not set.
 """
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+FROM_EMAIL = os.getenv("EMAIL_FROM", "noreply@gooddriverprogram.com")
+BASE_URL = os.getenv("FRONTEND_URL", "http://52.200.244.222:5173")
+
+
+def _send(to_email: str, subject: str, html: str, plain: str) -> bool:
+    """Internal helper — sends via SendGrid or prints to console."""
+    if SENDGRID_API_KEY:
+        try:
+            from sendgrid import SendGridAPIClient
+            from sendgrid.helpers.mail import Mail
+            message = Mail(
+                from_email=FROM_EMAIL,
+                to_emails=to_email,
+                subject=subject,
+                html_content=html,
+                plain_text_content=plain,
+            )
+            sg = SendGridAPIClient(SENDGRID_API_KEY)
+            response = sg.send(message)
+            return response.status_code == 202
+        except Exception as e:
+            print(f"[EMAIL ERROR] {e}")
+            return False
+    else:
+        print(f"\n[MOCK EMAIL] To: {to_email} | Subject: {subject}\n{plain}\n")
+        return True
 
 
 def send_password_reset_email(to_email: str, reset_token: str, username: str) -> bool:
+    reset_link = f"{BASE_URL}/reset-password?token={reset_token}"
+    subject = "Password Reset Request - Good Driver Incentive Program"
+    plain = f"Hello {username},\n\nReset your password: {reset_link}\n\nExpires in 24 hours."
+    html = f"""
+        <h2>Password Reset Request</h2>
+        <p>Hello {username},</p>
+        <p>Click the link below to reset your password:</p>
+        <p><a href="{reset_link}">Reset My Password</a></p>
+        <p>This link expires in 24 hours.</p>
+        <p>If you didn't request this, ignore this email.</p>
     """
-    Send password reset email to user.
-
-    MOCK VERSION: Prints email to console instead of actually sending.
-
-    In production, replace this with:
-    - SendGrid API
-    - AWS SES
-    - Other email service
-
-    Args:
-        to_email: Recipient email address
-        reset_token: Password reset token
-        username: User's username for personalization
-
-    Returns:
-        bool: True if "sent" successfully (always True in mock)
-
-    Email Contents:
-        - Subject: Password reset request
-        - Body: Instructions + reset link with token
-        - Link format: http://localhost:3000/reset-password?token={token}
-    """
-    # In production, this would be your actual domain
-    reset_link = f"http://localhost:3000/reset-password?token={reset_token}"
-
-    # Format the email
-    email_content = f"""
-    ╔══════════════════════════════════════════════════════════════╗
-    ║           PASSWORD RESET EMAIL (MOCK)                        ║
-    ╚══════════════════════════════════════════════════════════════╝
-
-    To: {to_email}
-    From: noreply@gooddriverprogram.com
-    Subject: Password Reset Request - Good Driver Incentive Program
-
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    Hello {username},
-
-    We received a request to reset your password for your Good Driver
-    Incentive Program account.
-
-    Click the link below to reset your password:
-
-    {reset_link}
-
-    This link will expire in 24 hours.
-
-    If you didn't request this password reset, please ignore this email.
-    Your password will remain unchanged.
-
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    For security reasons:
-    - Never share this link with anyone
-    - This link can only be used once
-    - If you didn't request this, your account is still secure
-
-    - Good Driver Incentive Program Team
-
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    TOKEN (for manual testing): {reset_token}
-
-    ╚══════════════════════════════════════════════════════════════╝
-    """
-
-    # MOCK: Print to console instead of sending
-    print(email_content)
-
-    # In production, replace above with actual email sending:
-    """
-    # Example with SendGrid:
-    from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail
-
-    message = Mail(
-        from_email='noreply@gooddriverprogram.com',
-        to_emails=to_email,
-        subject='Password Reset Request',
-        html_content=f'''
-            <h2>Password Reset Request</h2>
-            <p>Hello {username},</p>
-            <p>Click the link below to reset your password:</p>
-            <p><a href="{reset_link}">Reset My Password</a></p>
-            <p>This link expires in 24 hours.</p>
-        '''
-    )
-
-    try:
-        sg = SendGridAPIClient(os.environ.get('SENDGRID_API_KEY'))
-        response = sg.send(message)
-        return response.status_code == 202
-    except Exception as e:
-        print(f"Error sending email: {e}")
-        return False
-    """
-
-    # Mock always succeeds
-    return True
+    return _send(to_email, subject, html, plain)
 
 
 def send_password_change_confirmation(to_email: str, username: str) -> bool:
+    subject = "Password Changed - Good Driver Incentive Program"
+    plain = f"Hello {username},\n\nYour password was successfully changed.\n\nIf you did not make this change, contact support immediately."
+    html = f"""
+        <h2>Password Changed</h2>
+        <p>Hello {username},</p>
+        <p>Your password was successfully changed.</p>
+        <p>If you did not make this change, please contact support immediately.</p>
     """
-    Optional: Send confirmation email after password change.
+    return _send(to_email, subject, html, plain)
 
-    Good security practice to notify user when password changes.
 
-    Args:
-        to_email: User's email address
-        username: User's username
-
-    Returns:
-        bool: True if sent successfully
+def send_login_notification_email(
+    to_email: str,
+    username: str,
+    login_time: str,
+    ip_address: str,
+    device_name: str,
+    browser_name: str,
+    os_name: str,
+) -> bool:
+    subject = "New Login Detected - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        "A login to your account was detected.\n\n"
+        f"Time: {login_time}\n"
+        f"IP Address: {ip_address}\n"
+        f"Device: {device_name}\n"
+        f"Browser: {browser_name}\n"
+        f"Operating System: {os_name}\n\n"
+        "If this was not you, change your password immediately and review your trusted devices."
+    )
+    html = f"""
+        <h2>New Login Detected</h2>
+        <p>Hello {username},</p>
+        <p>A login to your account was detected.</p>
+        <ul>
+            <li><strong>Time:</strong> {login_time}</li>
+            <li><strong>IP Address:</strong> {ip_address}</li>
+            <li><strong>Device:</strong> {device_name}</li>
+            <li><strong>Browser:</strong> {browser_name}</li>
+            <li><strong>Operating System:</strong> {os_name}</li>
+        </ul>
+        <p>If this was not you, change your password immediately and review your trusted devices.</p>
+        <p><a href="{BASE_URL}/account/settings">Review trusted devices</a></p>
     """
-    email_content = f"""
-    ╔══════════════════════════════════════════════════════════════╗
-    ║           PASSWORD CHANGE CONFIRMATION (MOCK)                ║
-    ╚══════════════════════════════════════════════════════════════╝
+    return _send(to_email, subject, html, plain)
 
-    To: {to_email}
-    From: noreply@gooddriverprogram.com
-    Subject: Password Changed - Good Driver Incentive Program
 
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    Hello {username},
-
-    Your password was successfully changed.
-
-    If you did not make this change, please contact support immediately.
-
-    - Good Driver Incentive Program Team
-
-    ╚══════════════════════════════════════════════════════════════╝
+def send_failed_login_alert_email(
+    to_email: str,
+    username: str,
+    attempt_time: str,
+    attempted_username: str,
+    ip_address: str,
+    device_name: str,
+    browser_name: str,
+    os_name: str,
+) -> bool:
+    subject = "Failed Login Attempt Alert - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        "A failed login attempt was made on your account.\n\n"
+        f"Attempted Username: {attempted_username}\n"
+        f"Time: {attempt_time}\n"
+        f"IP Address: {ip_address}\n"
+        f"Device: {device_name}\n"
+        f"Browser: {browser_name}\n"
+        f"Operating System: {os_name}\n\n"
+        "If this was not you, reset your password and review your trusted devices immediately."
+    )
+    html = f"""
+        <h2>Failed Login Attempt Alert</h2>
+        <p>Hello {username},</p>
+        <p>A failed login attempt was made on your account.</p>
+        <ul>
+            <li><strong>Attempted Username:</strong> {attempted_username}</li>
+            <li><strong>Time:</strong> {attempt_time}</li>
+            <li><strong>IP Address:</strong> {ip_address}</li>
+            <li><strong>Device:</strong> {device_name}</li>
+            <li><strong>Browser:</strong> {browser_name}</li>
+            <li><strong>Operating System:</strong> {os_name}</li>
+        </ul>
+        <p>If this was not you, reset your password and review your trusted devices immediately.</p>
+        <p><a href="{BASE_URL}/account/settings">Review trusted devices</a></p>
     """
-
-    print(email_content)
-    return True
+    return _send(to_email, subject, html, plain)
 
 
 def send_driver_application_rejection_email(
@@ -174,68 +150,17 @@ def send_driver_application_rejection_email(
     rejection_category: str,
     rejection_reason: str
 ) -> bool:
+    subject = "Driver Application Update - Good Driver Incentive Program"
+    plain = f"Hello {username},\n\nYour application was not approved.\n\nCategory: {rejection_category}\nDetails: {rejection_reason}"
+    html = f"""
+        <h2>Driver Application Update</h2>
+        <p>Hello {username},</p>
+        <p>After careful review, your driver application was not approved at this time.</p>
+        <p><strong>Rejection Category:</strong> {rejection_category}</p>
+        <p><strong>Details:</strong> {rejection_reason}</p>
+        <p>You are welcome to address the feedback and apply again in the future.</p>
     """
-    Send driver application rejection email.
-
-    MOCK VERSION: Prints email to console instead of actually sending.
-
-    Args:
-        to_email: Driver's email address
-        username: Driver's username
-        rejection_category: High-level rejection category
-        rejection_reason: Detailed explanation for rejection
-
-    Returns:
-        bool: True if "sent" successfully (always True in mock)
-
-    Email Contents:
-        - Subject: Driver Application Update
-        - Body: Rejection category + detailed reason
-        - Purpose: Transparency and clear communication
-    """
-
-    email_content = f"""
-    ╔══════════════════════════════════════════════════════════════╗
-    ║        DRIVER APPLICATION STATUS UPDATE (MOCK)               ║
-    ╚══════════════════════════════════════════════════════════════╝
-
-    To: {to_email}
-    From: noreply@gooddriverprogram.com
-    Subject: Driver Application Update - Good Driver Incentive Program
-
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    Hello {username},
-
-    Thank you for applying to participate in the Good Driver
-    Incentive Program.
-
-    After careful review, your driver application was not approved
-    at this time.
-
-    Rejection Category:
-    {rejection_category}
-
-    Additional Details:
-    {rejection_reason}
-
-    You are welcome to review this feedback, address any issues,
-    and submit a new application in the future.
-
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    If you have questions, please contact support.
-
-    - Good Driver Incentive Program Team
-
-    ╚══════════════════════════════════════════════════════════════╝
-    """
-
-    # MOCK: Print to console instead of sending
-    print(email_content)
-
-    # Mock always succeeds
-    return True
+    return _send(to_email, subject, html, plain)
 
 
 def send_driver_application_approval_email(
@@ -243,54 +168,166 @@ def send_driver_application_approval_email(
     username: str,
     sponsor_name: str | None = None
 ) -> bool:
-    """
-    Send driver application approval email.
-
-    MOCK VERSION: Prints email to console instead of actually sending.
-
-    Args:
-        to_email: Driver's email address
-        username: Driver's username
-        sponsor_name: Name of the sponsor (optional)
-
-    Returns:
-        bool: True if "sent" successfully (always True in mock)
-    """
-
     sponsor_text = f" by {sponsor_name}" if sponsor_name else ""
-
-    email_content = f"""
-    ╔══════════════════════════════════════════════════════════════╗
-    ║        DRIVER APPLICATION APPROVED (MOCK)                    ║
-    ╚══════════════════════════════════════════════════════════════╝
-
-    To: {to_email}
-    From: noreply@gooddriverprogram.com
-    Subject: Your Driver Application Was Approved!
-
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    Hello {username},
-
-    Congratulations! 🎉
-
-    Your driver application{sponsor_text} has been APPROVED.
-
-    You are now eligible to:
-    - Deliver goods for your sponsor
-    - Earn reward points
-    - Redeem points for incentives
-
-    You can view your updated application status in your dashboard.
-
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    If you have questions, please contact support.
-
-    - Good Driver Incentive Program Team
-
-    ╚══════════════════════════════════════════════════════════════╝
+    subject = "Your Driver Application Was Approved!"
+    plain = f"Hello {username},\n\nCongratulations! Your application{sponsor_text} has been approved.\n\nYou can now earn and redeem points."
+    html = f"""
+        <h2>Application Approved! 🎉</h2>
+        <p>Hello {username},</p>
+        <p>Your driver application{sponsor_text} has been <strong>approved</strong>.</p>
+        <p>You are now eligible to earn reward points and redeem them for incentives.</p>
+        <p><a href="{BASE_URL}/driver/dashboard">Go to your dashboard</a></p>
     """
+    return _send(to_email, subject, html, plain)
 
-    print(email_content)
-    return True
+
+def send_points_notification(
+    to_email: str,
+    username: str,
+    points_changed: int,
+    reason: str,
+    new_total: int
+) -> bool:
+    action = "added to" if points_changed > 0 else "deducted from"
+    sign = "+" if points_changed > 0 else ""
+    subject = "Points Update - Good Driver Incentive Program"
+    plain = f"Hello {username},\n\n{sign}{points_changed} points have been {action} your account.\n\nReason: {reason}\nNew Balance: {new_total} points"
+    html = f"""
+        <h2>Points Update</h2>
+        <p>Hello {username},</p>
+        <p><strong>{sign}{points_changed} points</strong> have been {action} your account.</p>
+        <p><strong>Reason:</strong> {reason}</p>
+        <p><strong>New Balance:</strong> {new_total} points</p>
+        <p><a href="{BASE_URL}/driver/points">View your points history</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_dropped_by_sponsor_email(
+    to_email: str,
+    username: str,
+    sponsor_name: str | None = None
+) -> bool:
+    sponsor_text = f" by {sponsor_name}" if sponsor_name else ""
+    subject = "Sponsor Update - Good Driver Incentive Program"
+    plain = f"Hello {username},\n\nYou have been removed from the program{sponsor_text}.\n\nIf you have questions, please contact support."
+    html = f"""
+        <h2>Sponsor Relationship Update</h2>
+        <p>Hello {username},</p>
+        <p>You have been removed from the program{sponsor_text}.</p>
+        <p>If you have questions, please contact support.</p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_order_placed_email(
+    to_email: str,
+    username: str,
+    order_items: list,
+    total_points: int,
+    placed_at: str,
+    ip_address: str,
+    device_name: str,
+    browser_name: str,
+    os_name: str,
+) -> bool:
+    subject = "Order Confirmation - Good Driver Incentive Program"
+    items_plain = "\n".join([f"- {item['title']} ({item['points_cost']} pts)" for item in order_items])
+    items_html = "".join([f"<li>{item['title']} — {item['points_cost']} pts</li>" for item in order_items])
+    plain = (
+        f"Hello {username},\n\n"
+        "Your order has been placed successfully.\n\n"
+        f"Time: {placed_at}\n"
+        f"IP Address: {ip_address}\n"
+        f"Device: {device_name}\n"
+        f"Browser: {browser_name}\n"
+        f"Operating System: {os_name}\n\n"
+        f"Items:\n{items_plain}\n\n"
+        f"Total: {total_points} points"
+    )
+    html = f"""
+        <h2>Order Confirmation 🎉</h2>
+        <p>Hello {username},</p>
+        <p>Your order has been placed successfully!</p>
+        <ul>
+            <li><strong>Time:</strong> {placed_at}</li>
+            <li><strong>IP Address:</strong> {ip_address}</li>
+            <li><strong>Device:</strong> {device_name}</li>
+            <li><strong>Browser:</strong> {browser_name}</li>
+            <li><strong>Operating System:</strong> {os_name}</li>
+        </ul>
+        <ul>{items_html}</ul>
+        <p><strong>Total Points Used:</strong> {total_points}</p>
+        <p><a href="{BASE_URL}/driver/catalog">Browse more items</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+def send_sponsor_order_placed_email(
+    to_email: str,
+    username: str,
+    item_title: str,
+    points_cost: int,
+    placed_at: str,
+    sponsor_name: str,
+) -> bool:
+    subject = "Order Placed by Your Sponsor - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        f"Your sponsor ({sponsor_name}) has placed an order using your points.\n\n"
+        f"Item: {item_title}\n"
+        f"Points Used: {points_cost}\n"
+        f"Time: {placed_at}\n\n"
+        "You can view your orders in the portal."
+    )
+    html = f"""
+        <h2>Order Placed by Your Sponsor</h2>
+        <p>Hello {username},</p>
+        <p>Your sponsor (<strong>{sponsor_name}</strong>) has placed an order using your points.</p>
+        <ul>
+            <li><strong>Item:</strong> {item_title}</li>
+            <li><strong>Points Used:</strong> {points_cost}</li>
+            <li><strong>Time:</strong> {placed_at}</li>
+        </ul>
+        <p><a href="{BASE_URL}/driver/orders">View your orders</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+def send_order_success_email(
+    to_email: str,
+    username: str,
+    item_title: str,
+    points_cost: int,
+    placed_at: str,
+    purchase_ip_address: str,
+    purchase_device_name: str,
+    purchase_browser_name: str,
+    purchase_os_name: str,
+) -> bool:
+    subject = "Order Successful - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        "Your order is now successful.\n\n"
+        f"Item: {item_title}\n"
+        f"Points Used: {points_cost}\n"
+        f"Original Purchase Time: {placed_at}\n"
+        f"IP Address: {purchase_ip_address}\n"
+        f"Device: {purchase_device_name}\n"
+        f"Browser: {purchase_browser_name}\n"
+        f"Operating System: {purchase_os_name}\n"
+    )
+    html = f"""
+        <h2>Order Successful</h2>
+        <p>Hello {username},</p>
+        <p>Your order is now marked successful.</p>
+        <ul>
+            <li><strong>Item:</strong> {item_title}</li>
+            <li><strong>Points Used:</strong> {points_cost}</li>
+            <li><strong>Original Purchase Time:</strong> {placed_at}</li>
+            <li><strong>IP Address:</strong> {purchase_ip_address}</li>
+            <li><strong>Device:</strong> {purchase_device_name}</li>
+            <li><strong>Browser:</strong> {purchase_browser_name}</li>
+            <li><strong>Operating System:</strong> {purchase_os_name}</li>
+        </ul>
+        <p><a href="{BASE_URL}/driver/orders">View your orders</a></p>
+    """
+    return _send(to_email, subject, html, plain)

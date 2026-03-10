@@ -8,6 +8,7 @@ import { Button } from '../components/Button';
 import { Spinner } from '../components/Spinner';
 import { Alert } from '../components/Alert';
 import type { TrustedDevice, ApiError } from '../types';
+import { api } from '../services/apiClient';
 
 type Tab = 'devices' | 'notifications' | 'password';
 
@@ -175,16 +176,88 @@ function TrustedDevicesPanel() {
 /* ── Notifications Panel (Driver only) ── */
 
 function NotificationsPanel() {
+  const [pointsEmail, setPointsEmail] = useState(true);
+  const [ordersEmail, setOrdersEmail] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get<{ points_email_enabled: boolean; orders_email_enabled: boolean }>(
+      '/api/driver/notification-preferences'
+    )
+      .then((data) => {
+        setPointsEmail(data.points_email_enabled);
+        setOrdersEmail(data.orders_email_enabled);
+      })
+      .catch(() => setError('Failed to load preferences.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSuccess('');
+    setError('');
+    try {
+      await api.put('/api/driver/notification-preferences', {
+        points_email_enabled: pointsEmail,
+        orders_email_enabled: ordersEmail,
+      });
+      setSuccess('Preferences saved!');
+    } catch {
+      setError('Failed to save preferences.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <Spinner label="Loading preferences..." />;
+
   return (
     <>
       <h3>Alert Preferences</h3>
-      <p className="mt-1">
-        Configure how you receive notifications about points changes, order
-        updates, and sponsor announcements.
+      <p className="helper-text mt-1">
+        Choose which email notifications you'd like to receive.
+        You will always receive an email if you are removed from a sponsor — this cannot be disabled.
       </p>
-      <p className="placeholder-msg mt-2">
-        Notification preferences are under development. Check back soon.
-      </p>
+
+      <div aria-live="polite" aria-atomic="true">
+        {success && <Alert variant="success">{success}</Alert>}
+        {error && <Alert variant="error">{error}</Alert>}
+      </div>
+
+      <div className="checkbox-group mt-2">
+        <input
+          type="checkbox"
+          id="notif-points"
+          checked={pointsEmail}
+          onChange={(e) => setPointsEmail(e.target.checked)}
+        />
+        <div>
+          <label htmlFor="notif-points">Points added or removed</label>
+          <p className="helper-text">Get an email whenever your points balance changes.</p>
+        </div>
+      </div>
+
+      <div className="checkbox-group mt-1">
+        <input
+          type="checkbox"
+          id="notif-orders"
+          checked={ordersEmail}
+          onChange={(e) => setOrdersEmail(e.target.checked)}
+        />
+        <div>
+          <label htmlFor="notif-orders">Order placed</label>
+          <p className="helper-text">Get an email when an order is placed on your behalf.</p>
+        </div>
+      </div>
+
+      <div className="mt-2">
+        <Button onClick={handleSave} loading={saving}>
+          {saving ? 'Saving...' : 'Save Preferences'}
+        </Button>
+      </div>
     </>
   );
 }
