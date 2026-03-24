@@ -631,7 +631,7 @@ async def upload_drivers(
 
             # Link to sponsor
             cursor.execute("""
-                INSERT INTO SponsorDrivers (sponsor_id, driver_id, status)
+                INSERT INTO SponsorDrivers (sponsor_user_id, driver_user_id, status)
                 VALUES (%s, %s, 'approved')
             """, (current_user["user_id"], user_id))
 
