@@ -107,11 +107,29 @@ def create_sponsor(name: str, driver_name: str) -> int:
         conn.close()
 
 
+def log_bulk_upload_error(line_number: int, raw_line: str, reason: str) -> None:
+    """Persist skipped and failed rows for later review."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO BulkUploadErrors (line_number, raw_line, reason)
+            VALUES (%s, %s, %s)
+            """,
+            (line_number, raw_line, reason)
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
 
-def parse_bulk_file(content: str) -> tuple[list[dict], list[str]]:
+def parse_bulk_file(content: str) -> tuple[list[dict], list[dict]]:
     """
     Parse pipe-delimited file content into a list of record dicts.
     Validates type fields and field counts. Returns valid records plus
@@ -128,34 +146,59 @@ def parse_bulk_file(content: str) -> tuple[list[dict], list[str]]:
         record_type = fields[0].upper()
 
         if record_type not in VALID_TYPES:
-            errors.append(
-                f"Line {line_num}: invalid type '{fields[0]}'. Must be O, D, or S."
-            )
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": f"Invalid type '{fields[0]}'. Must be O, D, or S.",
+            })
             continue
 
         if record_type == "O":
             if len(fields) != 2:
-                errors.append(
-                    f"Line {line_num}: O record requires exactly 2 fields (O|Name), got {len(fields)}."
-                )
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"O record requires exactly 2 fields (O|Name), got {len(fields)}.",
+                })
                 continue
-            records.append({"type": "O", "name": fields[1]})
+            records.append({
+                "type": "O",
+                "name": fields[1],
+                "line_number": line_num,
+                "raw_line": raw_line,
+            })
 
         elif record_type == "D":
             if len(fields) != 3:
-                errors.append(
-                    f"Line {line_num}: D record requires exactly 3 fields (D|Driver|Org), got {len(fields)}."
-                )
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"D record requires exactly 3 fields (D|Driver|Org), got {len(fields)}.",
+                })
                 continue
-            records.append({"type": "D", "name": fields[1], "organization": fields[2]})
+            records.append({
+                "type": "D",
+                "name": fields[1],
+                "organization": fields[2],
+                "line_number": line_num,
+                "raw_line": raw_line,
+            })
 
         elif record_type == "S":
             if len(fields) != 3:
-                errors.append(
-                    f"Line {line_num}: S record requires exactly 3 fields (S|Sponsor|Driver), got {len(fields)}."
-                )
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"S record requires exactly 3 fields (S|Sponsor|Driver), got {len(fields)}.",
+                })
                 continue
-            records.append({"type": "S", "name": fields[1], "driver": fields[2]})
+            records.append({
+                "type": "S",
+                "name": fields[1],
+                "driver": fields[2],
+                "line_number": line_num,
+                "raw_line": raw_line,
+            })
 
     return records, errors
 
@@ -173,6 +216,13 @@ async def bulk_upload(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="File must be UTF-8 encoded text.")
 
     records, errors = parse_bulk_file(content)
+
+    for error in errors:
+        log_bulk_upload_error(
+            error["line_number"],
+            error["raw_line"],
+            error["reason"],
+        )
 
     orgs_created = 0
     drivers_created = 0
@@ -193,13 +243,34 @@ async def bulk_upload(file: UploadFile = File(...)):
                 sponsors_created += 1
 
         except ValueError as e:
-            errors.append(str(e))
+            error = {
+                "line_number": record["line_number"],
+                "raw_line": record["raw_line"],
+                "reason": str(e),
+            }
+            errors.append(error)
+            log_bulk_upload_error(
+                error["line_number"],
+                error["raw_line"],
+                error["reason"],
+            )
         except Exception as e:
-            errors.append(f"Unexpected error for record {record}: {e}")
+            error = {
+                "line_number": record["line_number"],
+                "raw_line": record["raw_line"],
+                "reason": f"Unexpected error: {e}",
+            }
+            errors.append(error)
+            log_bulk_upload_error(
+                error["line_number"],
+                error["raw_line"],
+                error["reason"],
+            )
 
     return {
         "organizations_created": orgs_created,
         "drivers_created": drivers_created,
         "sponsors_created": sponsors_created,
+        "error_count": len(errors),
         "errors": errors,
     }
