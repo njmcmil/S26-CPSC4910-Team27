@@ -3,11 +3,17 @@ import { getToken } from '../../services/apiClient';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://52.200.244.222:8000';
 
+interface ValidationError {
+  line_number: number;
+  raw_line: string;
+  reason: string;
+}
+
 interface UploadResult {
   organizations_created: number;
   drivers_created: number;
   sponsors_created: number;
-  errors: string[];
+  errors: ValidationError[];
 }
 
 export function AdminBulkUploadPage() {
@@ -151,7 +157,16 @@ S|Sponsor Name|Driver Name`}
                 Warnings / skipped lines ({result.errors.length})
               </p>
               <ul style={{ paddingLeft: '1.25rem', lineHeight: 1.8, fontSize: '0.875rem' }}>
-                {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+                {result.errors.map((e) => (
+                  <li key={e.line_number}>
+                    <strong>Line {e.line_number}:</strong> {e.reason}
+                    {e.raw_line && (
+                      <div style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#666', marginTop: '0.15rem' }}>
+                        {e.raw_line}
+                      </div>
+                    )}
+                  </li>
+                ))}
               </ul>
             </div>
           )}
