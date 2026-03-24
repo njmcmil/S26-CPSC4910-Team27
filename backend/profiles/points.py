@@ -344,20 +344,17 @@ async def add_driver_points(
     cursor = conn.cursor(dictionary=True)
 
     try:
+        user_id = current_user['user_id']
+
         # Verify driver belongs to this sponsor
         cursor.execute(
-            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (request.driver_id,)
+            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (request.driver_id, user_id)
         )
         driver = cursor.fetchone()
 
         if not driver:
-            raise HTTPException(status_code=404, detail="Driver not found")
-
-        user_id = current_user['user_id']
-        if driver['sponsor_user_id'] != user_id:
             raise HTTPException(status_code=403, detail="Driver does not belong to your organization")
-
         # Look up sponsor's expiration_days to compute expires_at (#13990)
         # Use user_id since SponsorProfiles is keyed by user_id (not sponsor_id)
         cursor.execute(
@@ -385,8 +382,8 @@ async def add_driver_points(
         
         # Get updated point total
         cursor.execute(
-            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (request.driver_id,)
+            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (request.driver_id, user_id)
         )
         new_total = cursor.fetchone()['total_points']
 
@@ -644,7 +641,7 @@ async def deduct_driver_points(
 
         conn.commit()
 
-        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (request.driver_id,))
+        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s", (request.driver_id, user_id))
         new_total = cursor.fetchone()['total_points']
 
         # Send email if driver has notifications enabled
@@ -911,9 +908,10 @@ async def update_accrual_status(
 
 @router.get("/driver/points/history")
 async def get_driver_point_history(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    sponsor_id: int = None
 ):
-    """Get driver's complete point history"""
+    """Get driver's complete point history, optionally filtered by sponsor"""
     
     if current_user.get('role') != 'driver':
         raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
@@ -923,25 +921,47 @@ async def get_driver_point_history(
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Get current total
-        cursor.execute("""
-            SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s
-        """, (driver_id,))
+        # Get current total for this sponsor (or first sponsor if none specified)
+        if sponsor_id:
+            cursor.execute("""
+                SELECT total_points FROM SponsorDrivers 
+                WHERE driver_user_id = %s AND sponsor_user_id = %s
+            """, (driver_id, sponsor_id))
+        else:
+            cursor.execute("""
+                SELECT total_points FROM SponsorDrivers 
+                WHERE driver_user_id = %s LIMIT 1
+            """, (driver_id,))
         current = cursor.fetchone()
 
-        # Get all point changes (includes expires_at, #13990)
-        cursor.execute("""
-            SELECT
-                date,
-                points_changed,
-                reason,
-                changed_by_user_id,
-                expires_at
-            FROM audit_log
-            WHERE category = 'point_change'
-            AND driver_id = %s
-            ORDER BY date DESC
-        """, (driver_id,))
+        # Get point changes filtered by sponsor if provided
+        if sponsor_id:
+            cursor.execute("""
+                SELECT
+                    date,
+                    points_changed,
+                    reason,
+                    changed_by_user_id,
+                    expires_at
+                FROM audit_log
+                WHERE category = 'point_change'
+                AND driver_id = %s
+                AND sponsor_id = %s
+                ORDER BY date DESC
+            """, (driver_id, sponsor_id))
+        else:
+            cursor.execute("""
+                SELECT
+                    date,
+                    points_changed,
+                    reason,
+                    changed_by_user_id,
+                    expires_at
+                FROM audit_log
+                WHERE category = 'point_change'
+                AND driver_id = %s
+                ORDER BY date DESC
+            """, (driver_id,))
         
         history = cursor.fetchall()
         

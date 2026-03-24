@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../../services/apiClient';
 import { useCart } from '../../auth/CartContext';
+import { useAuth } from '../../auth/AuthContext';
 import type { CartItem } from '../../auth/CartContext';
 
 interface CatalogItem {
@@ -23,6 +24,7 @@ const DEBOUNCE_MS = 250;
 const POLL_INTERVAL_MS = 30_000;
 
 export function DriverCatalog({ previewMode = false }: Props) {
+  const { activeSponsorId } = useAuth();
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [points, setPoints] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
@@ -60,9 +62,10 @@ export function DriverCatalog({ previewMode = false }: Props) {
     try {
       // US-38: returns current_points for balance check
       // US-39: returns stock_quantity per item
-      const res = await api.get<{ current_points: number; items: CatalogItem[] }>(
-        '/api/driver/catalog'
-      );
+      const url = activeSponsorId
+        ? `/api/driver/catalog?sponsor_id=${activeSponsorId}`
+        : '/api/driver/catalog';
+      const res = await api.get<{ current_points: number; items: CatalogItem[] }>(url); 
       setPoints(res.current_points);
       setItems(res.items);
     } catch (err) {
@@ -91,7 +94,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [previewMode]);
+  }, [previewMode, activeSponsorId]);
 
   const toggleSave = async (item_id: string) => {
     const alreadySaved = savedIds.has(item_id);

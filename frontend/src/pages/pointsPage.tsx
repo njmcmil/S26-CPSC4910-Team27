@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
 import { pointsService } from '../services/pointsService';
 import { Spinner } from '../components/Spinner';
 import { Alert } from '../components/Alert';
@@ -22,6 +23,7 @@ interface GroupedTransactions {
 }
 
 export function PointsPage() {
+  const { activeSponsorId, sponsors } = useAuth();
   const [data, setData] = useState<PointsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -31,12 +33,12 @@ export function PointsPage() {
     setLoading(true);
     setError('');
     try {
-      const pointsData = await pointsService.getPoints();
+      const pointsData = await pointsService.getPoints(activeSponsorId);
       setData(pointsData);
 
       // Fetch full history with expires_at data 
       try {
-        const historyData = await pointsService.getDriverPointHistory();
+        const historyData = await pointsService.getDriverPointHistory(activeSponsorId);
         const now = new Date();
         const expiring = historyData.history
           .filter(
@@ -60,7 +62,7 @@ export function PointsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeSponsorId]);
 
   useEffect(() => {
     fetchPoints();
@@ -113,7 +115,14 @@ export function PointsPage() {
 
   return (
     <section aria-labelledby="points-heading">
-      <h2 id="points-heading">My Points</h2>
+      <h2 id="points-heading">
+        My Points
+        {sponsors.length > 1 && activeSponsorId && (
+          <span style={{ fontSize: '0.9rem', fontWeight: 400, color: 'var(--color-text-muted)', marginLeft: '0.75rem' }}>
+            — {sponsors.find(s => s.sponsor_user_id === activeSponsorId)?.sponsor_name}
+          </span>
+        )}
+      </h2>
 
       {/* Points Balance Card */}
       <div className="card points-balance-card mt-1">
