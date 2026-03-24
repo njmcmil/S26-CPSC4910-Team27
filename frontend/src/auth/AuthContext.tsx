@@ -10,12 +10,22 @@ import type { ReactNode } from 'react';
 import type { AuthUser, LoginRequest, UserRole } from '../types';
 import { authService } from '../services/authService';
 import { setToken } from '../services/apiClient';
+import { api } from '../services/apiClient';
+
+export interface SponsorOption {
+  sponsor_user_id: number;
+  sponsor_name: string;
+  total_points: number;
+}
 
 interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   login: (data: LoginRequest) => Promise<UserRole>;
   logout: () => Promise<void>;
+  activeSponsorId: number | null;
+  setActiveSponsorId: (id: number) => void;
+  sponsors: SponsorOption[];
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -58,7 +68,26 @@ function clearAuth() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeSponsorId, setActiveSponsorId] = useState<number | null>(null);
+  const [sponsors, setSponsors] = useState<SponsorOption[]>([]);
 
+  // Load sponsors when user logs in as driver
+  useEffect(() => {
+    if (user?.role === 'driver') {
+      api.get<{ sponsors: SponsorOption[] }>('/api/driver/sponsors')
+        .then((data) => {
+          setSponsors(data.sponsors);
+          if (data.sponsors.length > 0 && !activeSponsorId) {
+            setActiveSponsorId(data.sponsors[0].sponsor_user_id);
+          }
+        })
+        .catch(() => {});
+    } else {
+      setSponsors([]);
+      setActiveSponsorId(null);
+    }
+  }, [user]);
+  
   // Restore session on mount
   useEffect(() => {
     const stored = loadAuth();
@@ -91,6 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(null);
     setUser(null);
+    setSponsors([]);
+    setActiveSponsorId(null);
     clearAuth();
   }, []);
 
