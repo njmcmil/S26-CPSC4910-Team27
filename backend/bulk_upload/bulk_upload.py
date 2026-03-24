@@ -111,13 +111,14 @@ def create_sponsor(name: str, driver_name: str) -> int:
 # Parsing
 # ---------------------------------------------------------------------------
 
-def parse_bulk_file(content: str) -> list[dict]:
+def parse_bulk_file(content: str) -> tuple[list[dict], list[str]]:
     """
     Parse pipe-delimited file content into a list of record dicts.
-    Validates type fields and field counts. Returns list of records or
-    raises ValueError on the first invalid line.
+    Validates type fields and field counts. Returns valid records plus
+    per-line errors for rows that should be skipped.
     """
     records = []
+    errors = []
     for line_num, raw_line in enumerate(content.splitlines(), start=1):
         line = raw_line.strip()
         if not line:
@@ -127,32 +128,36 @@ def parse_bulk_file(content: str) -> list[dict]:
         record_type = fields[0].upper()
 
         if record_type not in VALID_TYPES:
-            raise ValueError(
+            errors.append(
                 f"Line {line_num}: invalid type '{fields[0]}'. Must be O, D, or S."
             )
+            continue
 
         if record_type == "O":
             if len(fields) != 2:
-                raise ValueError(
+                errors.append(
                     f"Line {line_num}: O record requires exactly 2 fields (O|Name), got {len(fields)}."
                 )
+                continue
             records.append({"type": "O", "name": fields[1]})
 
         elif record_type == "D":
             if len(fields) != 3:
-                raise ValueError(
+                errors.append(
                     f"Line {line_num}: D record requires exactly 3 fields (D|Driver|Org), got {len(fields)}."
                 )
+                continue
             records.append({"type": "D", "name": fields[1], "organization": fields[2]})
 
         elif record_type == "S":
             if len(fields) != 3:
-                raise ValueError(
+                errors.append(
                     f"Line {line_num}: S record requires exactly 3 fields (S|Sponsor|Driver), got {len(fields)}."
                 )
+                continue
             records.append({"type": "S", "name": fields[1], "driver": fields[2]})
 
-    return records
+    return records, errors
 
 
 # ---------------------------------------------------------------------------
@@ -167,16 +172,11 @@ async def bulk_upload(file: UploadFile = File(...)):
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="File must be UTF-8 encoded text.")
 
-    # Parse and validate — fail fast on any invalid line
-    try:
-        records = parse_bulk_file(content)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    records, errors = parse_bulk_file(content)
 
     orgs_created = 0
     drivers_created = 0
     sponsors_created = 0
-    errors = []
 
     for record in records:
         try:
