@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Cookie
+from fastapi import APIRouter, Depends, HTTPException, Cookie, UploadFile, File
 from datetime import datetime, timedelta
 from shared.db import get_connection
 from auth.auth import get_current_user
@@ -8,6 +8,7 @@ from schemas.points import (
     PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest,
     TipCreate, Tip, TipViewCreate, AccrualStatusUpdate, BulkPointUpdateRequest,
     SponsorRewardDefaults, PointHistoryItem, PointHistoryResponse,
+    BulkPointUploadResponse,
 )
 from typing import Optional
 
@@ -27,6 +28,71 @@ def verify_sponsor(current_user: dict = Depends(get_current_user)):
     if current_user.get('role') != 'sponsor':
         raise HTTPException(status_code=403, detail="Sponsor access required")
     return current_user
+
+
+def parse_points_upload_file(content: str) -> tuple[list[dict], list[dict]]:
+    """Parse username|points|reason rows into valid records plus line-level errors."""
+    records = []
+    errors = []
+
+    for line_num, raw_line in enumerate(content.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        fields = [field.strip() for field in line.split("|")]
+        if len(fields) != 3:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": f"Expected 3 fields (username|points|reason), got {len(fields)}.",
+            })
+            continue
+
+        username, points_raw, reason = fields
+        if not username:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": "Username is required.",
+            })
+            continue
+
+        try:
+            points_value = int(points_raw)
+        except ValueError:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": f"Points value '{points_raw}' is not a valid integer.",
+            })
+            continue
+
+        if points_value <= 0:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": "Points must be a positive integer.",
+            })
+            continue
+
+        if len(reason) < 3:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": "Reason must be at least 3 characters.",
+            })
+            continue
+
+        records.append({
+            "line_number": line_num,
+            "raw_line": raw_line,
+            "username": username,
+            "points": points_value,
+            "reason": reason,
+        })
+
+    return records, errors
 
 # ============= SPONSOR ENDPOINTS =============
 
@@ -406,6 +472,118 @@ async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_use
         
         return {"success": True, "updated_drivers": updated_drivers}
 
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/sponsor/points/upload", response_model=BulkPointUploadResponse)
+async def upload_driver_points(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(verify_sponsor),
+):
+    user_id = current_user["user_id"]
+    raw_bytes = await file.read()
+    try:
+        content = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded text.")
+
+    records, errors = parse_points_upload_file(content)
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
+            (user_id,)
+        )
+        sponsor_profile = cursor.fetchone()
+        expiration_days = sponsor_profile["expiration_days"] if sponsor_profile and sponsor_profile.get("expiration_days") else None
+
+        updated_driver_ids = []
+        total_points_added = 0
+
+        for record in records:
+            cursor.execute(
+                """
+                SELECT u.user_id, u.email, u.username, sd.total_points
+                FROM Users u
+                JOIN SponsorDrivers sd
+                  ON sd.driver_user_id = u.user_id
+                WHERE u.username = %s
+                  AND sd.sponsor_user_id = %s
+                """,
+                (record["username"], user_id)
+            )
+            driver = cursor.fetchone()
+
+            if not driver:
+                errors.append({
+                    "line_number": record["line_number"],
+                    "raw_line": record["raw_line"],
+                    "reason": f"Driver '{record['username']}' not found for your organization.",
+                })
+                continue
+
+            new_total = driver["total_points"] + record["points"]
+            expires_at = (datetime.now() + timedelta(days=expiration_days)) if expiration_days else None
+
+            cursor.execute(
+                """
+                UPDATE SponsorDrivers
+                SET total_points = total_points + %s
+                WHERE driver_user_id = %s AND sponsor_user_id = %s
+                """,
+                (record["points"], driver["user_id"], user_id)
+            )
+            cursor.execute(
+                """
+                INSERT INTO audit_log
+                (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
+                VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    datetime.now(),
+                    user_id,
+                    driver["user_id"],
+                    record["points"],
+                    record["reason"],
+                    user_id,
+                    expires_at,
+                )
+            )
+
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (driver["user_id"],)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver["email"],
+                    username=driver["username"],
+                    points_changed=record["points"],
+                    reason=record["reason"],
+                    new_total=new_total,
+                )
+
+            updated_driver_ids.append(driver["user_id"])
+            total_points_added += record["points"]
+
+        conn.commit()
+
+        return {
+            "success": True,
+            "rows_processed": len(records),
+            "rows_updated": len(updated_driver_ids),
+            "total_points_added": total_points_added,
+            "updated_drivers": updated_driver_ids,
+            "errors": errors,
+        }
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         cursor.close()
         conn.close()

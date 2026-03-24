@@ -26,6 +26,7 @@ export function SponsorPointsPage() {
   const [drivers, setDrivers] = useState<SponsorDriver[]>([]);
   const [driversLoading, setDriversLoading] = useState(true);
   const [driversError, setDriversError] = useState('');
+  const [selectedDriverIds, setSelectedDriverIds] = useState<number[]>([]);
 
   // Form state
   const [selectedDriverId, setSelectedDriverId] = useState('');
@@ -65,13 +66,31 @@ export function SponsorPointsPage() {
   const selectedDriver = drivers.find(
     (d) => d.driver_user_id === Number(selectedDriverId),
   );
+  const allDriversSelected = drivers.length > 0 && selectedDriverIds.length === drivers.length;
+  const bulkMode = selectedDriverIds.length > 0;
+
+  const toggleDriverSelection = (driverId: number) => {
+    setSelectedDriverIds((prev) =>
+      prev.includes(driverId)
+        ? prev.filter((id) => id !== driverId)
+        : [...prev, driverId],
+    );
+    setSuccessMsg('');
+    setError('');
+  };
+
+  const toggleSelectAllDrivers = () => {
+    setSelectedDriverIds(allDriversSelected ? [] : drivers.map((d) => d.driver_user_id));
+    setSuccessMsg('');
+    setError('');
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
 
-    if (!selectedDriverId) {
+    if (!selectedDriverId && !bulkMode) {
       setError('Please select a driver.');
       return;
     }
@@ -89,29 +108,51 @@ export function SponsorPointsPage() {
 
     setSubmitting(true);
     try {
-      const payload = {
-        driver_id: Number(selectedDriverId),
-        points: pointsNum,
-        reason: reason.trim(),
-      };
+      if (bulkMode) {
+        const res = await pointsService.bulkUpdatePoints({
+          driver_ids: selectedDriverIds,
+          points: adjustmentType === 'add' ? pointsNum : -pointsNum,
+          reason: reason.trim(),
+        });
 
-      const res =
-        adjustmentType === 'add'
-          ? await pointsService.addPoints(payload)
-          : await pointsService.deductPoints(payload);
+        setSuccessMsg(
+          `${adjustmentType === 'add' ? 'Updated' : 'Deducted from'} ${res.updated_drivers.length} drivers.`,
+        );
+        setSelectedDriverIds([]);
+        setDrivers((prev) =>
+          prev.map((driver) => {
+            const updated = res.updated_drivers.find(
+              (entry) => entry.driver_id === driver.driver_user_id,
+            );
+            return updated
+              ? { ...driver, points_balance: updated.new_total }
+              : driver;
+          }),
+        );
+      } else {
+        const payload = {
+          driver_id: Number(selectedDriverId),
+          points: pointsNum,
+          reason: reason.trim(),
+        };
 
-      setSuccessMsg(res.message);
+        const res =
+          adjustmentType === 'add'
+            ? await pointsService.addPoints(payload)
+            : await pointsService.deductPoints(payload);
+
+        setSuccessMsg(res.message);
+        setDrivers((prev) =>
+          prev.map((d) =>
+            d.driver_user_id === Number(selectedDriverId)
+              ? { ...d, points_balance: res.new_total }
+              : d,
+          ),
+        );
+      }
+
       setPoints('');
       setReason('');
-
-      // Update the local driver's balance so the UI reflects the change
-      setDrivers((prev) =>
-        prev.map((d) =>
-          d.driver_user_id === Number(selectedDriverId)
-            ? { ...d, points_balance: res.new_total }
-            : d,
-        ),
-      );
     } catch (err) {
       const apiErr = err as ApiError;
       setError(apiErr.message || 'Failed to submit point adjustment.');
@@ -153,12 +194,86 @@ export function SponsorPointsPage() {
           {error && <Alert variant="error">{error}</Alert>}
 
           <form onSubmit={handleSubmit} noValidate>
+            <div className="form-group">
+              <label style={{ display: 'block', marginBottom: '0.5rem' }}>Bulk Driver Selection</label>
+              <div
+                style={{
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius)',
+                  padding: '0.75rem',
+                  maxHeight: '16rem',
+                  overflowY: 'auto',
+                  background: 'var(--color-surface, #fff)',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'auto 1fr auto',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    fontWeight: 600,
+                    marginBottom: '0.75rem',
+                    paddingBottom: '0.5rem',
+                    borderBottom: '1px solid var(--color-border)',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={allDriversSelected}
+                    onChange={toggleSelectAllDrivers}
+                  />
+                  <span>Select all drivers</span>
+                  <span style={{ color: 'var(--color-text-muted)', fontWeight: 500 }}>
+                    {drivers.length} total
+                  </span>
+                </label>
+
+                {drivers.map((driver) => (
+                  <label
+                    key={driver.driver_user_id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'auto 1fr auto',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      padding: '0.5rem 0',
+                      borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedDriverIds.includes(driver.driver_user_id)}
+                      onChange={() => toggleDriverSelection(driver.driver_user_id)}
+                    />
+                    <span style={{ minWidth: 0 }}>
+                      <strong>{driverDisplayName(driver)}</strong> ({driver.username})
+                    </span>
+                    <span
+                      style={{
+                        whiteSpace: 'nowrap',
+                        fontVariantNumeric: 'tabular-nums',
+                        color: 'var(--color-text-muted)',
+                        justifySelf: 'end',
+                      }}
+                    >
+                      {driver.points_balance.toLocaleString()} pts
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="helper-text">
+                Select multiple drivers here for a bulk update, or leave all unchecked to update one driver below.
+              </p>
+            </div>
+
             {/* Driver selector */}
             <div className="form-group">
               <label htmlFor="points-driver">Driver</label>
               <select
                 id="points-driver"
                 value={selectedDriverId}
+                disabled={bulkMode}
                 onChange={(e) => {
                   setSelectedDriverId(e.target.value);
                   setSuccessMsg('');
@@ -212,12 +327,20 @@ export function SponsorPointsPage() {
             />
 
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <Button type="submit" loading={submitting} disabled={!selectedDriverId}>
+              <Button
+                type="submit"
+                loading={submitting}
+                disabled={!selectedDriverId && !bulkMode}
+              >
                 {submitting
                   ? 'Submitting...'
-                  : adjustmentType === 'add'
-                    ? 'Add Points'
-                    : 'Deduct Points'}
+                  : bulkMode
+                    ? adjustmentType === 'add'
+                      ? 'Add Points to Selected Drivers'
+                      : 'Deduct Points from Selected Drivers'
+                    : adjustmentType === 'add'
+                      ? 'Add Points'
+                      : 'Deduct Points'}
               </Button>
 
               {selectedDriver && (

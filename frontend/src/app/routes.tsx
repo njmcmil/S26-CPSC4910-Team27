@@ -32,6 +32,12 @@ import { SponsorPurchaseHistory } from '../features/sponsor/SponsorPurchaseHisto
 import { SponsorErrorLogs } from '../features/sponsor/SponsorErrorLogs';
 
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
+import { AdminUsersPage } from '../features/admin/AdminUsers';
+import { AdminSponsorsPage } from '../features/admin/AdminSponsors';
+import { AdminReportsPage } from '../features/admin/AdminReports';
+import { AdminAuditLogsPage } from '../features/admin/AdminAuditLogs';
+import { AdminDriverSponsorsPage } from '../features/admin/AdminDriverSponsors';
+import { AdminBulkUploadPage } from '../features/admin/AdminBulkUpload';
 
 
 /**
@@ -100,6 +106,12 @@ export const router = createBrowserRouter([
             children: [
               { path: '/admin/dashboard', element: <AdminDashboardPage /> },
               { path: '/admin', element: <AdminDashboardPage /> },
+              { path: '/admin/users', element: <AdminUsersPage /> },
+              { path: '/admin/sponsors', element: <AdminSponsorsPage /> },
+              { path: '/admin/reports', element: <AdminReportsPage /> },
+              { path: '/admin/audit-logs', element: <AdminAuditLogsPage /> },
+              { path: '/admin/driver-sponsors', element: <AdminDriverSponsorsPage /> },
+              { path: '/admin/bulk-upload', element: <AdminBulkUploadPage /> },
             ],
           },
         ],

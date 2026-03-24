@@ -606,6 +606,14 @@ async def upload_drivers(
 
             username, email, first_name, last_name = parts
 
+            cursor.execute(
+                "SELECT user_id FROM Users WHERE username = %s OR email = %s",
+                (username, email)
+            )
+
+            if cursor.fetchone():
+                continue  # skip duplicates
+
             # Insert user
             cursor.execute("""
                 INSERT INTO Users (username, email, role)

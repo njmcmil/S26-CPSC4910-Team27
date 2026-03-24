@@ -154,155 +154,154 @@ export function DriverCatalog({ previewMode = false }: Props) {
   const isInCart = (item_id: string) => cartItems.some(i => i.item_id === item_id);
 
   return (
-    <div>
-      <div className="points-banner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <h2>Your Available Points: {points.toLocaleString()}</h2>
+    <section className="catalog-page" aria-labelledby="driver-catalog-heading">
+      <div className="catalog-shell">
+        <div className="catalog-header card">
+          <div>
+            <p className="catalog-kicker">Driver Catalog</p>
+            <h2 id="driver-catalog-heading">Redeem rewards from your sponsor catalog.</h2>
+            <p className="helper-text">
+              Browse available products, check stock, and save items for later.
+            </p>
+          </div>
 
-        {!previewMode && (
-          <button
-            onClick={() => navigate('/driver/cart')}
-            style={{
-              background: '#2563eb', color: '#fff', border: 'none',
-              borderRadius: 8, padding: '0.5rem 1.2rem', fontWeight: 600,
-              cursor: 'pointer', fontSize: '0.95rem', display: 'flex',
-              alignItems: 'center', gap: '0.5rem',
-            }}
-          >
-            View Cart
-            {totalCount > 0 && (
-              <span style={{
-                background: '#ef4444', color: '#fff', borderRadius: '9999px',
-                fontSize: '0.75rem', fontWeight: 700, padding: '1px 7px',
-              }}>
-                {totalCount}
-              </span>
-            )}
-          </button>
-        )}
+          <div className="catalog-summary">
+            <span className="catalog-summary-label">Available Points</span>
+            <strong className="catalog-summary-value">{points.toLocaleString()}</strong>
+          </div>
 
-        {previewMode && (
-          <p className="text-sm text-gray-500">Sponsor Preview — Purchase Disabled</p>
-        )}
-      </div>
-      
-      {/* search bar */}
-      {!previewMode && (
-        <div style={{ marginBottom: '1rem' }}>
-          <input
-            type="search"
-            placeholder="Search catalog…"
-            value={searchInput}
-            onChange={e => handleSearchChange(e.target.value)}
-            aria-label="Search catalog"
-            style={{ width: '100%', maxWidth: 360, padding: '0.4rem 0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--color-border)' }}
-          />
-        </div>
-      )}
+          {!previewMode && (
+            <button
+              onClick={() => navigate('/driver/cart')}
+              className="catalog-cart-button"
+            >
+              View Cart
+              <span className="catalog-cart-badge">{totalCount}</span>
+            </button>
+          )}
 
-      {feedback && (
-        <div role="alert" style={{
-          padding: '0.75rem 1rem', borderRadius: 8, marginBottom: '1rem',
-          background: feedback.type === 'success' ? '#d1fae5' : '#fee2e2',
-          color: feedback.type === 'success' ? '#065f46' : '#991b1b',
-          fontWeight: 500,
-        }}>
-          {feedback.msg}
-        </div>
-      )}
-
-      {error && <p className="error">{error}</p>}
-
-      {loading ? (
-        <p>Loading catalog...</p>
-      ) : (
-        <div className="catalog-grid">
-          {visibleItems.length === 0 ? (
-            <p>{searchQuery ? 'No products match your search.' : 'No sponsor products available.'}</p>
-          ) : (
-            visibleItems.map(item => {
-              const canAfford = points >= item.points_cost;
-              const inStock = item.stock_quantity > 0;
-              const inCart = isInCart(item.item_id);
-              const justAdded = addedIds.has(item.item_id);
-              const isSaved = savedIds.has(item.item_id);
-
-              return (
-                <div key={item.item_id} className="product-card" style={{ opacity: inStock ? 1 : 0.6 }}>
-                  {item.image_url ? (
-                    <img src={item.image_url} alt={item.title} />
-                  ) : (
-                    <div className="image-placeholder">No Image</div>
-                  )}
-
-                  <h3>{item.title}</h3>
-
-                  {/* Points cost */}
-                  <p style={{ fontWeight: 700 }}>{item.points_cost.toLocaleString()} pts</p>
-
-                  {/* US-39: stock badge always visible */}
-                  <p style={{
-                    fontSize: '0.82rem', fontWeight: 600, display: 'inline-block',
-                    padding: '2px 8px', borderRadius: 9999, marginBottom: '0.5rem',
-                    color: !inStock ? '#b91c1c' : item.stock_quantity <= 3 ? '#92400e' : '#065f46',
-                    background: !inStock ? '#fee2e2' : item.stock_quantity <= 3 ? '#fef3c7' : '#d1fae5',
-                  }}>
-                    {!inStock
-                      ? 'Out of Stock'
-                      : item.stock_quantity <= 3
-                      ? `Only ${item.stock_quantity} left!`
-                      : `${item.stock_quantity} in stock`}
-                  </p>
-
-                  {/* US-38: affordability hint */}
-                  {!previewMode && !canAfford && inStock && (
-                    <p style={{ fontSize: '0.78rem', color: '#9ca3af', marginBottom: '0.4rem' }}>
-                      Need {(item.points_cost - points).toLocaleString()} more pts
-                    </p>
-                  )}
-
-                  {/* link to product details page */}
-                  {!previewMode && (
-                    <Link
-                      to={`/driver/catalog/${item.item_id}`}
-                      style={{ display: 'block', fontSize: '0.82rem', marginBottom: '0.4rem', color: 'var(--color-primary)' }}
-                    >
-                      View Details
-                    </Link>
-                  )}
-
-                  {/* save/unsave toggle */}
-                  {!previewMode && (
-                    <button
-                      type="button"
-                      onClick={() => toggleSave(item.item_id)}
-                      style={{
-                        background: 'none', border: '1px solid var(--color-border)',
-                        borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem',
-                        padding: '3px 10px', marginBottom: '0.4rem',
-                        color: isSaved ? '#b45309' : 'var(--color-text-muted)',
-                        fontWeight: isSaved ? 600 : 400,
-                      }}
-                    >
-                      {isSaved ? '★ Saved' : '☆ Save'}
-                    </button>
-                  )}
-
-                  <button
-                    disabled={previewMode || !inStock}
-                    onClick={() => handleAddToCart(item)}
-                  >
-                    {previewMode ? 'Preview Only'
-                      : !inStock ? 'Out of Stock'
-                      : justAdded ? '✓ Added!'
-                      : inCart ? 'In Cart'
-                      : 'Add to Cart'}
-                  </button>
-                </div>
-              );
-            })
+          {previewMode && (
+            <p className="helper-text">Sponsor Preview. Cart actions are disabled.</p>
           )}
         </div>
-      )}
-    </div>
+      
+        {!previewMode && (
+          <div className="catalog-toolbar card">
+            <input
+              type="search"
+              placeholder="Search catalog…"
+              value={searchInput}
+              onChange={e => handleSearchChange(e.target.value)}
+              aria-label="Search catalog"
+              className="catalog-search-input"
+            />
+          </div>
+        )}
+
+        {feedback && (
+          <div
+            role="alert"
+            className={feedback.type === 'success' ? 'catalog-feedback success' : 'catalog-feedback error'}
+          >
+            {feedback.msg}
+          </div>
+        )}
+
+        {error && <p className="error">{error}</p>}
+
+        {loading ? (
+          <p>Loading catalog...</p>
+        ) : (
+          <div className="catalog-grid">
+            {visibleItems.length === 0 ? (
+              <p>{searchQuery ? 'No products match your search.' : 'No sponsor products available.'}</p>
+            ) : (
+              visibleItems.map(item => {
+                const canAfford = points >= item.points_cost;
+                const inStock = item.stock_quantity > 0;
+                const inCart = isInCart(item.item_id);
+                const justAdded = addedIds.has(item.item_id);
+                const isSaved = savedIds.has(item.item_id);
+                const stockClass = !inStock ? 'out' : item.stock_quantity <= 3 ? 'low' : 'ok';
+                const detailPath = `/driver/catalog/${item.item_id}`;
+
+                return (
+                  <div key={item.item_id} className="product-card">
+                    {!previewMode ? (
+                      <Link to={detailPath} className="catalog-image-link">
+                        {item.image_url ? (
+                          <img src={item.image_url} alt={item.title} className="catalog-product-image" />
+                        ) : (
+                          <div className="image-placeholder">No Image</div>
+                        )}
+                      </Link>
+                    ) : item.image_url ? (
+                      <img src={item.image_url} alt={item.title} className="catalog-product-image" />
+                    ) : (
+                      <div className="image-placeholder">No Image</div>
+                    )}
+
+                    {!previewMode ? (
+                      <Link to={detailPath} className="catalog-title-link">
+                        <h3>{item.title}</h3>
+                      </Link>
+                    ) : (
+                      <h3>{item.title}</h3>
+                    )}
+
+                    <p className="catalog-product-price">{item.points_cost.toLocaleString()} pts</p>
+
+                    <p className={`catalog-stock-badge ${stockClass}`}>
+                      {!inStock
+                        ? 'Out of Stock'
+                        : item.stock_quantity <= 3
+                          ? `Only ${item.stock_quantity} left`
+                          : `${item.stock_quantity} in stock`}
+                    </p>
+
+                    {!previewMode && !canAfford && inStock && (
+                      <p className="catalog-muted-note">
+                        Need {(item.points_cost - points).toLocaleString()} more pts
+                      </p>
+                    )}
+
+                    {!previewMode && (
+                      <Link
+                        to={detailPath}
+                        className="catalog-link"
+                      >
+                        View Details
+                      </Link>
+                    )}
+
+                    {!previewMode && (
+                      <button
+                        type="button"
+                        onClick={() => toggleSave(item.item_id)}
+                        className={isSaved ? 'catalog-secondary-button active' : 'catalog-secondary-button'}
+                      >
+                        {isSaved ? 'Saved' : 'Save'}
+                      </button>
+                    )}
+
+                    <button
+                      disabled={previewMode || !inStock}
+                      onClick={() => handleAddToCart(item)}
+                      className="catalog-primary-button"
+                    >
+                      {previewMode ? 'Preview Only'
+                        : !inStock ? 'Out of Stock'
+                        : justAdded ? 'Added'
+                        : inCart ? 'In Cart'
+                        : 'Add to Cart'}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

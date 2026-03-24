@@ -30,6 +30,20 @@ export interface PointChangeResponse {
   new_total: number;
 }
 
+export interface BulkPointChangeRequest {
+  driver_ids: number[];
+  points: number;
+  reason: string;
+}
+
+export interface BulkPointChangeResponse {
+  success: boolean;
+  updated_drivers: Array<{
+    driver_id: number;
+    new_total: number;
+  }>;
+}
+
 export const pointsService = {
   /**
    * Get current points balance and transaction history for the authenticated driver
@@ -101,5 +115,10 @@ export const pointsService = {
   /** Sponsor deducts points from a driver */
   deductPoints(data: PointChangeRequest): Promise<PointChangeResponse> {
     return api.post<PointChangeResponse>('/api/sponsor/points/deduct', data);
+  },
+
+  /** Sponsor updates points for multiple drivers */
+  bulkUpdatePoints(data: BulkPointChangeRequest): Promise<BulkPointChangeResponse> {
+    return api.post<BulkPointChangeResponse>('/api/sponsor/points/bulk-update', data);
   },
 };
