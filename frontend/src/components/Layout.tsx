@@ -225,6 +225,8 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
         items: [
           { to: '/admin/users', label: 'Users' },
           { to: '/admin/sponsors', label: 'Sponsors' },
+          { to: '/admin/driver-sponsors', label: 'Driver Sponsors' },
+          { to: '/admin/bulk-upload', label: 'Bulk Upload' },
         ],
       },
       {

@@ -1,9 +1,10 @@
-import type { ApiError, Product } from '../types';
+import type { ApiError } from '../types';
 
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://52.200.244.222:8000';
 
 let authToken: string | null = null;
+let onUnauthorized: (() => void) | null = null;
 
 export function setToken(token: string | null) {
   authToken = token;
@@ -11,6 +12,11 @@ export function setToken(token: string | null) {
 
 export function getToken(): string | null {
   return authToken;
+}
+
+/** Register a callback invoked whenever any request returns 401 (e.g. expired token). */
+export function setUnauthorizedHandler(fn: () => void) {
+  onUnauthorized = fn;
 }
 
 async function request<T>(
@@ -50,6 +56,11 @@ async function request<T>(
     }
 
     const error: ApiError = { status: res.status, message, detail, fieldErrors };
+
+    if (res.status === 401 && onUnauthorized) {
+      onUnauthorized();
+    }
+
     throw error;
   }
 

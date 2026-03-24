@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from 'react';
 import type { AuthUser, LoginRequest, UserRole } from '../types';
 import { authService } from '../services/authService';
-import { setToken } from '../services/apiClient';
+import { setToken, setUnauthorizedHandler } from '../services/apiClient';
 
 interface AuthState {
   user: AuthUser | null;
@@ -92,6 +92,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
     clearAuth();
+  }, []);
+
+  // When a request returns 401 (expired/invalid token), clear auth and redirect to login.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setToken(null);
+      setUser(null);
+      clearAuth();
+      window.location.replace('/login');
+    });
   }, []);
 
   const value = useMemo(
