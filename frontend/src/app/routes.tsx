@@ -37,6 +37,7 @@ import { AdminSponsorsPage } from '../features/admin/AdminSponsors';
 import { AdminReportsPage } from '../features/admin/AdminReports';
 import { AdminAuditLogsPage } from '../features/admin/AdminAuditLogs';
 import { AdminDriverSponsorsPage } from '../features/admin/AdminDriverSponsors';
+import { AdminBulkUploadPage } from '../features/admin/AdminBulkUpload';
 
 
 /**
@@ -110,6 +111,7 @@ export const router = createBrowserRouter([
               { path: '/admin/reports', element: <AdminReportsPage /> },
               { path: '/admin/audit-logs', element: <AdminAuditLogsPage /> },
               { path: '/admin/driver-sponsors', element: <AdminDriverSponsorsPage /> },
+              { path: '/admin/bulk-upload', element: <AdminBulkUploadPage /> },
             ],
           },
         ],
