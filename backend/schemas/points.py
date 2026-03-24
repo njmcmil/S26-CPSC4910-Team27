@@ -33,6 +33,21 @@ class BulkPointUpdateRequest(BaseModel):
     points: float
     reason: str
 
+
+class BulkPointUploadError(BaseModel):
+    line_number: int
+    raw_line: str
+    reason: str
+
+
+class BulkPointUploadResponse(BaseModel):
+    success: bool
+    rows_processed: int
+    rows_updated: int
+    total_points_added: int
+    updated_drivers: List[int]
+    errors: List[BulkPointUploadError]
+
 class SponsorRewardDefaults(BaseModel):
     """Default reward settings for a sponsor (#13984)"""
     dollar_per_point: float = Field(default=0.01, ge=0, description="Dollar value per point")
