@@ -12,7 +12,7 @@ Responsibilities:
 # Sponsor Profile Manager
 # Handles data for Sponsors...pulls data from Users, Profiles, and SponsorProfiles
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from datetime import datetime
 from auth.auth import get_current_user, require_role
 from shared.db import get_connection
@@ -580,3 +580,58 @@ def get_sponsor_drivers(current_user: dict = Depends(require_role("sponsor"))):
     finally:
         cursor.close()
         conn.close()
+
+
+
+@router.post("/upload-drivers")
+async def upload_drivers(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_role("sponsor"))
+):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        contents = await file.read()
+        lines = contents.decode("utf-8").splitlines()
+
+        created = []
+
+        for line in lines:
+            # Expect: username|email|first_name|last_name
+            parts = line.strip().split("|")
+
+            if len(parts) != 4:
+                continue  # skip bad rows
+
+            username, email, first_name, last_name = parts
+
+            # Insert user
+            cursor.execute("""
+                INSERT INTO Users (username, email, role)
+                VALUES (%s, %s, 'driver')
+            """, (username, email))
+
+            user_id = cursor.lastrowid
+
+            # Insert profile
+            cursor.execute("""
+                INSERT INTO Profiles (user_id, first_name, last_name)
+                VALUES (%s, %s, %s)
+            """, (user_id, first_name, last_name))
+
+            # Link to sponsor
+            cursor.execute("""
+                INSERT INTO SponsorDrivers (sponsor_id, driver_id, status)
+                VALUES (%s, %s, 'approved')
+            """, (current_user["user_id"], user_id))
+
+            created.append(username)
+
+        conn.commit()
+
+        return {"created": created}
+
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
