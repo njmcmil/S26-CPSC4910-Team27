@@ -555,7 +555,6 @@ def get_sponsor_drivers(current_user: dict = Depends(require_role("sponsor"))):
             JOIN Users u ON sd.driver_user_id = u.user_id
             LEFT JOIN Profiles p ON u.user_id = p.user_id
             WHERE sd.sponsor_user_id = %s
-            AND sd.status = 'approved'
             """,
             (sponsor_id,)
         )
