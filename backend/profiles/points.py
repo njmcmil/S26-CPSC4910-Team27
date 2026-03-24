@@ -278,20 +278,17 @@ async def add_driver_points(
     cursor = conn.cursor(dictionary=True)
 
     try:
+        user_id = current_user['user_id']
+
         # Verify driver belongs to this sponsor
         cursor.execute(
-            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (request.driver_id,)
+            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (request.driver_id, user_id)
         )
         driver = cursor.fetchone()
 
         if not driver:
-            raise HTTPException(status_code=404, detail="Driver not found")
-
-        user_id = current_user['user_id']
-        if driver['sponsor_user_id'] != user_id:
             raise HTTPException(status_code=403, detail="Driver does not belong to your organization")
-
         # Look up sponsor's expiration_days to compute expires_at (#13990)
         # Use user_id since SponsorProfiles is keyed by user_id (not sponsor_id)
         cursor.execute(
@@ -319,8 +316,8 @@ async def add_driver_points(
         
         # Get updated point total
         cursor.execute(
-            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (request.driver_id,)
+            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (request.driver_id, user_id)
         )
         new_total = cursor.fetchone()['total_points']
 
