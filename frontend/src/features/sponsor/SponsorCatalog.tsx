@@ -242,97 +242,108 @@ export function SponsorCatalog() {
     : '';
 
   return (
-    <div className="sponsor-catalog-container">
-      <h2>Sponsor Catalog Management</h2>
+    <section className="catalog-page sponsor-catalog-container" aria-labelledby="sponsor-catalog-heading">
+      <div className="catalog-shell">
+        <div className="catalog-header card">
+          <div>
+            <p className="catalog-kicker">Sponsor Catalog</p>
+            <h2 id="sponsor-catalog-heading">Manage the products your drivers can redeem.</h2>
+            <p className="helper-text">
+              Search products, curate your catalog, and preview what drivers will see.
+            </p>
+          </div>
 
-      {/* HEADER */}
-      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-        {!driverView && (
-          <button
-            type="button"
-            onClick={handlePublishCatalog}
-            style={{
-              background: '#16a34a',
-              color: 'white',
-              padding: '6px 12px',
-            }}
-          >
-            Publish Catalog
-          </button>
+          <div className="catalog-header-actions">
+            {!driverView && (
+              <button
+                type="button"
+                onClick={handlePublishCatalog}
+                className="catalog-publish-button"
+              >
+                Publish Catalog
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={toggleDriverView}
+              className="preview-toggle-btn"
+            >
+              {driverView ? 'Exit Driver Preview' : 'View As Driver'}
+            </button>
+          </div>
+        </div>
+
+        {driverView && (
+          <div className="catalog-toolbar card">
+            <div className="catalog-preview-panel">
+              <div>
+                <h3>Driver Preview Mode</h3>
+                <p className="helper-text">Switch between drivers to verify the live catalog experience.</p>
+              </div>
+              <div className="catalog-preview-controls">
+                <label htmlFor="preview-driver-select">Driver</label>
+                <select
+                  id="preview-driver-select"
+                  value={selectedDriverId}
+                  onChange={(e) => setSelectedDriverId(e.target.value)}
+                  className="catalog-select"
+                >
+                  <option value="">-- Select driver --</option>
+                  {drivers.map((d) => {
+                    const name = (d.first_name || d.last_name)
+                      ? `${d.first_name ?? ''} ${d.last_name ?? ''}`.trim()
+                      : d.username;
+                    return (
+                      <option key={d.driver_user_id} value={d.driver_user_id}>
+                        {name} ({d.points_balance.toLocaleString()} pts)
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            </div>
+            {selectedDriver && (
+              <p className="catalog-muted-note">
+                Available Points: {selectedDriver.points_balance.toLocaleString()} ({selectedDriverName})
+              </p>
+            )}
+          </div>
         )}
 
-        <button
-          type="button"
-          onClick={toggleDriverView}
-          className="preview-toggle-btn"
-        >
-          {driverView ? 'Exit Driver Preview' : 'View As Driver'}
-        </button>
-      </div>
+        {!driverView && (
+          <form onSubmit={handleSearch} className="catalog-toolbar card">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search products..."
+              className="catalog-search-input"
+            />
+            <button type="submit" className="catalog-primary-button">Search</button>
+          </form>
+        )}
 
-      {driverView && (
-        <div className="points-banner">
-          <h3>Driver Preview Mode</h3>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label htmlFor="preview-driver-select">Driver:</label>
-            <select
-              id="preview-driver-select"
-              value={selectedDriverId}
-              onChange={(e) => setSelectedDriverId(e.target.value)}
-              style={{ padding: '4px 8px' }}
-            >
-              <option value="">-- Select driver --</option>
-              {drivers.map((d) => {
-                const name = (d.first_name || d.last_name)
-                  ? `${d.first_name ?? ''} ${d.last_name ?? ''}`.trim()
-                  : d.username;
-                return (
-                  <option key={d.driver_user_id} value={d.driver_user_id}>
-                    {name} ({d.points_balance.toLocaleString()} pts)
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          {selectedDriver && (
-            <p style={{ marginTop: '0.4rem' }}>
-              Available Points: {selectedDriver.points_balance.toLocaleString()} ({selectedDriverName})
-            </p>
-          )}
-        </div>
-      )}
+        {error && <p className="error">{error}</p>}
 
-      {!driverView && (
-        <form onSubmit={handleSearch} className="search-bar">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search products..."
-          />
-          <button type="submit">Search</button>
-        </form>
-      )}
-
-      {error && <p className="error">{error}</p>}
-
-      {loading ? (
-        <p>Loading...</p>
-      ) : (
-        <div className="catalog-grid">
-          {products.length === 0 ? (
-            <p>No products found.</p>
-          ) : (
-            products.map((product) => (
-              <div
-                key={product.itemId}
-                className="product-card"
-              >
+        {loading ? (
+          <p>Loading...</p>
+        ) : (
+          <div className="catalog-grid">
+            {products.length === 0 ? (
+              <p>No products found.</p>
+            ) : (
+              products.map((product) => (
+                <div
+                  key={product.itemId}
+                  className="product-card"
+                >
                 {/* IMAGE */}
                 {product.image?.imageUrl ? (
                   <img
                     src={product.image.imageUrl}
                     alt={product.title}
+                    className="catalog-product-image"
                   />
                 ) : (
                   <div className="image-placeholder">
@@ -342,31 +353,20 @@ export function SponsorCatalog() {
 
                 <h3>{product.title}</h3>
 
-                <p>
+                <p className="catalog-muted-note">
                   {product.price?.value
                     ? `${product.price.value} ${product.price.currency}`
                     : 'Price N/A'}
                 </p>
 
                 {product.stock_quantity !== undefined && (
-                  <p style={{
-                    fontSize: '0.82rem',
-                    fontWeight: 600,
-                    display: 'inline-block',
-                    padding: '2px 8px',
-                    borderRadius: 9999,
-                    marginBottom: '0.5rem',
-                    color: product.stock_quantity <= 0
-                      ? '#b91c1c'
+                  <p className={`catalog-stock-badge ${
+                    product.stock_quantity <= 0
+                      ? 'out'
                       : product.stock_quantity <= 3
-                        ? '#92400e'
-                        : '#065f46',
-                    background: product.stock_quantity <= 0
-                      ? '#fee2e2'
-                      : product.stock_quantity <= 3
-                        ? '#fef3c7'
-                        : '#d1fae5',
-                  }}>
+                        ? 'low'
+                        : 'ok'
+                  }`}>
                     {product.stock_quantity <= 0
                       ? 'Out of Stock'
                       : product.stock_quantity <= 3
@@ -376,15 +376,10 @@ export function SponsorCatalog() {
                 )}
 
                 {product.is_active !== undefined && (
-                  <p
-                    style={{
-                      fontWeight: 'bold',
-                      color: product.is_active ? 'green' : 'red',
-                    }}
-                  >
+                  <p className={product.is_active ? 'catalog-status active' : 'catalog-status inactive'}>
                     {product.is_active
-                      ? 'Status: Active 🟢'
-                      : 'Status: Disabled 🔴'}
+                      ? 'Status: Active'
+                      : 'Status: Disabled'}
                   </p>
                 )}
 
@@ -403,18 +398,14 @@ export function SponsorCatalog() {
                           e.target.value as 'G' | 'PG',
                       })
                     }
+                    className="catalog-select"
                   >
                     <option value="G">G</option>
                     <option value="PG">PG</option>
                   </select>
 
                   <label
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '2px',
-                      fontSize: '0.82rem',
-                    }}
+                    className="catalog-field"
                   >
                     Point Cost
                     <input
@@ -431,16 +422,14 @@ export function SponsorCatalog() {
                           ),
                         }))
                       }
-                      style={{
-                        width: '90px',
-                        padding: '2px 6px',
-                      }}
+                      className="catalog-cost-input"
                     />
                   </label>
 
                   <button
                     type="button"
                     onClick={() => handleAddToCatalog(product)}
+                    className="catalog-primary-button"
                   >
                     Add to Catalog
                   </button>
@@ -448,11 +437,7 @@ export function SponsorCatalog() {
                   {product.is_active !== undefined && (
                     <button
                       type="button"
-                      style={{
-                        background: product.is_active ? 'red' : '#16a34a',
-                        color: 'white',
-                        marginLeft: '0.5rem',
-                      }}
+                      className={product.is_active ? 'catalog-danger-button' : 'catalog-success-button'}
                       onClick={() =>
                         product.is_active
                           ? handleRemoveFromCatalog(product.itemId)
@@ -466,11 +451,7 @@ export function SponsorCatalog() {
                   {product.is_active !== undefined && (
                     <button
                       type="button"
-                      style={{
-                        background: '#7f1d1d',
-                        color: 'white',
-                        marginLeft: '0.5rem',
-                      }}
+                      className="catalog-danger-button"
                       onClick={() => handleDeleteFromCatalog(product.itemId)}
                     >
                       Remove
@@ -480,11 +461,7 @@ export function SponsorCatalog() {
                   {driverView && product.is_active !== undefined && (
                     <button
                       type="button"
-                      style={{
-                        background: '#2563eb',
-                        color: 'white',
-                        marginLeft: '0.5rem',
-                      }}
+                      className="catalog-primary-button"
                       disabled={!selectedDriverId || purchasingItemId === product.itemId || (product.stock_quantity ?? 0) <= 0}
                       onClick={() => handleSponsorPurchase(product.itemId, product.title)}
                     >
@@ -493,33 +470,22 @@ export function SponsorCatalog() {
                   )}
                 </div>
 
-              </div>
-            ))
-          )}
-        </div>
-      )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
 
-      {purchaseToast && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            position: 'fixed',
-            right: '1rem',
-            bottom: '1rem',
-            background: '#065f46',
-            color: 'white',
-            padding: '0.75rem 1rem',
-            borderRadius: 8,
-            boxShadow: '0 8px 20px rgba(0,0,0,0.2)',
-            maxWidth: 420,
-            zIndex: 1200,
-            fontSize: '0.9rem',
-          }}
-        >
-          {purchaseToast}
-        </div>
-      )}
-    </div>
+        {purchaseToast && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="catalog-feedback success"
+          >
+            {purchaseToast}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
