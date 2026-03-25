@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react';
 import { getToken } from '../../services/apiClient';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://52.200.244.222:8000';
+const BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? 'https://f8kqwmp227.execute-api.us-east-1.amazonaws.com';
+
 
 interface ValidationError {
   line_number: number;
