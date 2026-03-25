@@ -25,9 +25,12 @@ async function request<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> | undefined),
   };
+
+  if (options.body != null && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;
