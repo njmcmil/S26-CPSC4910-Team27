@@ -217,11 +217,11 @@ export function LoginPage() {
         <p className="helper-text" style={{ marginTop: '0.5rem' }}>
           Sprint {aboutInfo.sprint_number} &nbsp;·&nbsp; v{aboutInfo.version_number} &nbsp;·&nbsp; Released {new Date(aboutInfo.release_date).toLocaleDateString()}
         </p>
-        {aboutInfo.sponsors.length > 0 && (
+        {(aboutInfo.sponsors?.length ?? 0) > 0 && (
           <div className="mt-1">
             <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>Our Sponsors</p>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {aboutInfo.sponsors.map((s) => (
+              {(aboutInfo.sponsors ?? []).map((s) => (
                 <li
                   key={s.name}
                   style={{
