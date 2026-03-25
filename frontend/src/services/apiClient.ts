@@ -3,7 +3,7 @@ import type { ApiError } from '../types';
 
 const BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'https://f8kqwmp227.execute-api.us-east-1.amazonaws.com';
-
+  
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 
