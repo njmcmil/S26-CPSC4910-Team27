@@ -49,10 +49,19 @@ from users.users import (
     update_password,
     get_user_by_username
 )
-from auth.auth import get_current_user, create_access_token
+from auth.auth import (
+    get_current_user,
+    create_access_token,
+    hash_password,
+    verify_password,
+)
 from auth.token_blacklist import blacklist_token
-from audit.login_audit import log_login_attempt
-from users.password_reset import generate_reset_token
+from audit.login_audit import log_login_attempt, get_last_login
+from users.password_reset import (
+    generate_reset_token,
+    validate_reset_token,
+    mark_token_used,
+)
 from users.email_service import (
     send_password_reset_email,
     send_login_notification_email,
@@ -60,6 +69,7 @@ from users.email_service import (
     send_order_placed_email,
     send_sponsor_order_placed_email,
 )
+from shared.utils import validate_password
 
 # --- Database & Config ---
 from shared.db import get_connection
