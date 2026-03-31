@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { api } from '../../services/apiClient';
 
@@ -70,36 +70,6 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
 
 export function AdminDashboardPage() {
   const { user } = useAuth();
-  const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  async function loadMetrics() {
-    try {
-      const data = await fetchSystemMetrics();
-      setMetrics(data);
-      setLastUpdated(new Date().toISOString());
-      setError(null);
-    } catch (err: unknown) {
-      const message = err && typeof err === 'object' && 'message' in err
-        ? String((err as { message: unknown }).message)
-        : 'Failed to load metrics';
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadMetrics();
-    intervalRef.current = setInterval(loadMetrics, POLL_INTERVAL_MS);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
-
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
   // Data states
@@ -271,7 +241,7 @@ export function AdminDashboardPage() {
             <h3 style={{ margin: 0 }}>Audit Logs</h3>
             <select
               value={auditCategory}
-              onChange={e => { setAuditCategory(e.target.value); loadTab('audit-logs'); }}
+              onChange={e => setAuditCategory(e.target.value)}
               style={{ padding: '0.35rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.85rem' }}
             >
               <option value="">All Categories</option>
