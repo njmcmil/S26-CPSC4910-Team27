@@ -239,6 +239,7 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
         items: [
           { to: '/admin/reports', label: 'Reports' },
           { to: '/admin/audit-logs', label: 'Audit Logs' },
+          { to: '/admin/communication-logs', label: 'Communication Logs' },
         ],
       },
       {

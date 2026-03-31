@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/apiClient';
+import { Button } from '../../components/Button';
+import { Alert } from '../../components/Alert';
+import { Spinner } from '../../components/Spinner';
+import type { ApiError } from '../../types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -460,5 +464,14 @@ export function AdminReportsPage() {
         </div>
       )}
     </section>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="card">
+      <p className="helper-text" style={{ marginBottom: '0.35rem' }}>{label}</p>
+      <strong>{typeof value === 'number' ? value.toLocaleString() : value}</strong>
+    </div>
   );
 }

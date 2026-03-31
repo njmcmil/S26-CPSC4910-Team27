@@ -1,6 +1,10 @@
 from pydantic import BaseModel
 
-
+class DriverSponsorRow(BaseModel):
+    id: int
+    name: str
+    status: str | None
+    total_points:int
 class RedemptionReportRow(BaseModel):
     sponsor_id: int
     sponsor_name: str
@@ -47,3 +51,57 @@ class LoginAuditRow(BaseModel):
 
 class LoginAuditResponse(BaseModel):
     login_audit: list[LoginAuditRow]
+
+class CommunicationLogRow(BaseModel):
+    log_id: int
+    created_at: str
+    driver_user_id: int
+    driver_name: str | None
+    sponsor_user_id: int
+    sponsor_name: str | None
+    sent_by_role: str
+    message: str
+
+class CommunicationLogResponse(BaseModel):
+    communication_logs: list[CommunicationLogRow]
+
+class SystemMetricsResponse(BaseModel):
+    fetched_at: str
+    # user counts
+    total_users: int
+    total_drivers: int
+    total_sponsors: int
+    total_admins: int
+    # orders
+    total_orders: int
+    pending_orders: int
+    shipped_orders: int
+    cancelled_orders: int
+    # points
+    total_points_awarded: int
+    total_points_redeemed: int
+    # logins in last 24 hours
+    logins_last_24h: int
+    failed_logins_last_24h: int
+
+class OperationsSummaryResponse(BaseModel):
+    period: str
+    date_from: str
+    date_to: str
+    generated_at: str
+    # Orders
+    total_orders: int
+    pending_orders: int
+    shipped_orders: int
+    cancelled_orders: int
+    points_redeemed_via_orders: int
+    active_drivers: int
+    active_sponsors: int
+    # Registrations
+    new_drivers: int
+    new_sponsors: int
+    # Points awarded
+    points_awarded: int
+    # Logins
+    total_logins: int
+    failed_logins: int

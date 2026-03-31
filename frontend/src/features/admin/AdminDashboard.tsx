@@ -70,6 +70,35 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
 
 export function AdminDashboardPage() {
   const { user } = useAuth();
+  const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  async function loadMetrics() {
+    try {
+      const data = await fetchSystemMetrics();
+      setMetrics(data);
+      setLastUpdated(new Date().toISOString());
+      setError(null);
+    } catch (err: unknown) {
+      const message = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message: unknown }).message)
+        : 'Failed to load metrics';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadMetrics();
+    intervalRef.current = setInterval(loadMetrics, POLL_INTERVAL_MS);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
