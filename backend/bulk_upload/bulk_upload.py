@@ -2,122 +2,73 @@
 bulk_upload.py
 --------------
 Purpose:
-    Handles bulk upload of Organizations, Drivers, and Sponsors
-    from a pipe-delimited file.
+    Handles bulk creation of sponsor and driver accounts from a
+    pipe-delimited file.  Uses the existing create_user() function so
+    all business rules (password hashing, SponsorProfiles init, etc.)
+    are respected.
 
 Format:
-    O|Organization Name
-    D|Driver Name|Organization Name
-    S|Sponsor Name|Driver Name
+    S|username|email                      → create a sponsor account
+    D|username|email|sponsor_username     → create a driver and link to sponsor
 """
+
+import secrets
+import string
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from shared.db import get_connection
+from users.users import create_user
+from shared.services import get_user_by_username
 
 router = APIRouter()
 
-VALID_TYPES = {"O", "D", "S"}
+VALID_TYPES = {"S", "D"}
 
 
 # ---------------------------------------------------------------------------
-# Helper / DB functions
+# Helper functions
 # ---------------------------------------------------------------------------
 
-def create_organization(name: str) -> int:
-    """Insert an organization and return its new ID."""
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
+def generate_temp_password() -> str:
+    """Return a random 12-char password that satisfies all validation rules."""
+    lower   = secrets.choice(string.ascii_lowercase)
+    upper   = secrets.choice(string.ascii_uppercase)
+    digit   = secrets.choice(string.digits)
+    special = secrets.choice('!@#$%^&*()')
+    pool    = string.ascii_letters + string.digits + '!@#$%^&*()'
+    rest    = [secrets.choice(pool) for _ in range(8)]
+    chars   = list(lower + upper + digit + special) + rest
+    secrets.SystemRandom().shuffle(chars)
+    return ''.join(chars)
+
+
+def link_driver_to_sponsor(driver_user_id: int, sponsor_user_id: int) -> None:
+    """Insert an approved SponsorDrivers row."""
+    conn   = get_connection()
+    cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO BulkOrganizations (name) VALUES (%s)",
-            (name,)
+            """
+            INSERT INTO SponsorDrivers (sponsor_user_id, driver_user_id, status)
+            VALUES (%s, %s, 'approved')
+            ON DUPLICATE KEY UPDATE sponsor_user_id = sponsor_user_id
+            """,
+            (sponsor_user_id, driver_user_id),
         )
         conn.commit()
-        return cursor.lastrowid
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def get_organization_by_name(name: str) -> dict | None:
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute(
-            "SELECT * FROM BulkOrganizations WHERE name = %s",
-            (name,)
-        )
-        return cursor.fetchone()
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def create_driver(name: str, organization_name: str) -> int:
-    """Insert a driver associated with an existing organization."""
-    org = get_organization_by_name(organization_name)
-    if not org:
-        raise ValueError(f"Organization '{organization_name}' not found")
-
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute(
-            "INSERT INTO BulkDrivers (name, organization_id) VALUES (%s, %s)",
-            (name, org["id"])
-        )
-        conn.commit()
-        return cursor.lastrowid
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def get_driver_by_name(name: str) -> dict | None:
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute(
-            "SELECT * FROM BulkDrivers WHERE name = %s",
-            (name,)
-        )
-        return cursor.fetchone()
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def create_sponsor(name: str, driver_name: str) -> int:
-    """Insert a sponsor associated with an existing driver."""
-    driver = get_driver_by_name(driver_name)
-    if not driver:
-        raise ValueError(f"Driver '{driver_name}' not found")
-
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute(
-            "INSERT INTO BulkSponsors (name, driver_id) VALUES (%s, %s)",
-            (name, driver["id"])
-        )
-        conn.commit()
-        return cursor.lastrowid
     finally:
         cursor.close()
         conn.close()
 
 
 def log_bulk_upload_error(line_number: int, raw_line: str, reason: str) -> None:
-    """Persist skipped and failed rows for later review."""
-    conn = get_connection()
+    """Persist skipped / failed rows for later review."""
+    conn   = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            """
-            INSERT INTO BulkUploadErrors (line_number, raw_line, reason)
-            VALUES (%s, %s, %s)
-            """,
-            (line_number, raw_line, reason)
+            "INSERT INTO BulkUploadErrors (line_number, raw_line, reason) VALUES (%s, %s, %s)",
+            (line_number, raw_line, reason),
         )
         conn.commit()
     finally:
@@ -131,73 +82,62 @@ def log_bulk_upload_error(line_number: int, raw_line: str, reason: str) -> None:
 
 def parse_bulk_file(content: str) -> tuple[list[dict], list[dict]]:
     """
-    Parse pipe-delimited file content into a list of record dicts.
-    Validates type fields and field counts. Returns valid records plus
-    per-line errors for rows that should be skipped.
+    Parse pipe-delimited content into validated record dicts.
+
+    Accepted line formats:
+      S|username|email
+      D|username|email|sponsor_username
     """
-    records = []
-    errors = []
+    records: list[dict] = []
+    errors:  list[dict] = []
+
     for line_num, raw_line in enumerate(content.splitlines(), start=1):
         line = raw_line.strip()
         if not line:
             continue
 
-        fields = [f.strip() for f in line.split("|")]
+        fields      = [f.strip() for f in line.split("|")]
         record_type = fields[0].upper()
 
         if record_type not in VALID_TYPES:
             errors.append({
                 "line_number": line_num,
-                "raw_line": raw_line,
-                "reason": f"Invalid type '{fields[0]}'. Must be O, D, or S.",
+                "raw_line":    raw_line,
+                "reason":      f"Invalid type '{fields[0]}'. Must be S or D.",
             })
             continue
 
-        if record_type == "O":
-            if len(fields) != 2:
+        if record_type == "S":
+            if len(fields) != 3:
                 errors.append({
                     "line_number": line_num,
-                    "raw_line": raw_line,
-                    "reason": f"O record requires exactly 2 fields (O|Name), got {len(fields)}.",
+                    "raw_line":    raw_line,
+                    "reason":      f"S record requires 3 fields (S|username|email), got {len(fields)}.",
                 })
                 continue
             records.append({
-                "type": "O",
-                "name": fields[1],
+                "type":        "S",
+                "username":    fields[1],
+                "email":       fields[2],
                 "line_number": line_num,
-                "raw_line": raw_line,
+                "raw_line":    raw_line,
             })
 
         elif record_type == "D":
-            if len(fields) != 3:
+            if len(fields) != 4:
                 errors.append({
                     "line_number": line_num,
-                    "raw_line": raw_line,
-                    "reason": f"D record requires exactly 3 fields (D|Driver|Org), got {len(fields)}.",
+                    "raw_line":    raw_line,
+                    "reason":      f"D record requires 4 fields (D|username|email|sponsor_username), got {len(fields)}.",
                 })
                 continue
             records.append({
-                "type": "D",
-                "name": fields[1],
-                "organization": fields[2],
-                "line_number": line_num,
-                "raw_line": raw_line,
-            })
-
-        elif record_type == "S":
-            if len(fields) != 3:
-                errors.append({
-                    "line_number": line_num,
-                    "raw_line": raw_line,
-                    "reason": f"S record requires exactly 3 fields (S|Sponsor|Driver), got {len(fields)}.",
-                })
-                continue
-            records.append({
-                "type": "S",
-                "name": fields[1],
-                "driver": fields[2],
-                "line_number": line_num,
-                "raw_line": raw_line,
+                "type":             "D",
+                "username":         fields[1],
+                "email":            fields[2],
+                "sponsor_username": fields[3],
+                "line_number":      line_num,
+                "raw_line":         raw_line,
             })
 
     return records, errors
@@ -218,59 +158,85 @@ async def bulk_upload(file: UploadFile = File(...)):
     records, errors = parse_bulk_file(content)
 
     for error in errors:
-        log_bulk_upload_error(
-            error["line_number"],
-            error["raw_line"],
-            error["reason"],
-        )
+        log_bulk_upload_error(error["line_number"], error["raw_line"], error["reason"])
 
-    orgs_created = 0
-    drivers_created = 0
     sponsors_created = 0
+    drivers_created  = 0
+    created_users:   list[dict] = []   # {username, role, temp_password}
+
+    # Track sponsors created in this batch so D lines can reference them
+    # even before they exist in the DB (i.e., S line appears before D line in file)
+    batch_sponsors: dict[str, int] = {}  # username -> user_id
 
     for record in records:
         try:
-            if record["type"] == "O":
-                create_organization(record["name"])
-                orgs_created += 1
+            if record["type"] == "S":
+                temp_pw = generate_temp_password()
+                user    = create_user(
+                    username=record["username"],
+                    password=temp_pw,
+                    role="sponsor",
+                    email=record["email"],
+                )
+                batch_sponsors[record["username"]] = user["user_id"]
+                sponsors_created += 1
+                created_users.append({
+                    "username":      record["username"],
+                    "role":          "sponsor",
+                    "temp_password": temp_pw,
+                })
 
             elif record["type"] == "D":
-                create_driver(record["name"], record["organization"])
-                drivers_created += 1
+                sponsor_username = record["sponsor_username"]
 
-            elif record["type"] == "S":
-                create_sponsor(record["name"], record["driver"])
-                sponsors_created += 1
+                # Resolve sponsor — check the current-batch cache first, then DB
+                if sponsor_username in batch_sponsors:
+                    sponsor_id = batch_sponsors[sponsor_username]
+                else:
+                    sponsor = get_user_by_username(sponsor_username)
+                    if not sponsor:
+                        raise ValueError(f"Sponsor '{sponsor_username}' not found")
+                    if sponsor["role"] != "sponsor":
+                        raise ValueError(f"User '{sponsor_username}' is not a sponsor")
+                    sponsor_id = sponsor["user_id"]
+
+                temp_pw = generate_temp_password()
+                user    = create_user(
+                    username=record["username"],
+                    password=temp_pw,
+                    role="driver",
+                    email=record["email"],
+                )
+                link_driver_to_sponsor(user["user_id"], sponsor_id)
+                drivers_created += 1
+                created_users.append({
+                    "username":      record["username"],
+                    "role":          "driver",
+                    "temp_password": temp_pw,
+                })
 
         except ValueError as e:
-            error = {
+            err = {
                 "line_number": record["line_number"],
-                "raw_line": record["raw_line"],
-                "reason": str(e),
+                "raw_line":    record["raw_line"],
+                "reason":      str(e),
             }
-            errors.append(error)
-            log_bulk_upload_error(
-                error["line_number"],
-                error["raw_line"],
-                error["reason"],
-            )
+            errors.append(err)
+            log_bulk_upload_error(err["line_number"], err["raw_line"], err["reason"])
+
         except Exception as e:
-            error = {
+            err = {
                 "line_number": record["line_number"],
-                "raw_line": record["raw_line"],
-                "reason": f"Unexpected error: {e}",
+                "raw_line":    record["raw_line"],
+                "reason":      f"Unexpected error: {e}",
             }
-            errors.append(error)
-            log_bulk_upload_error(
-                error["line_number"],
-                error["raw_line"],
-                error["reason"],
-            )
+            errors.append(err)
+            log_bulk_upload_error(err["line_number"], err["raw_line"], err["reason"])
 
     return {
-        "organizations_created": orgs_created,
-        "drivers_created": drivers_created,
         "sponsors_created": sponsors_created,
-        "error_count": len(errors),
-        "errors": errors,
+        "drivers_created":  drivers_created,
+        "created_users":    created_users,
+        "error_count":      len(errors),
+        "errors":           errors,
     }

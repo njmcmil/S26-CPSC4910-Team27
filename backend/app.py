@@ -205,9 +205,53 @@ def log_sponsor_user_action(sponsor_user_id: int, method: str, path: str) -> Non
         conn.close()
 
 
+def get_driver_user_for_audit(http_request: Request) -> dict | None:
+    authorization = http_request.headers.get("Authorization", "")
+    if not authorization.startswith("Bearer "):
+        return None
+
+    token = authorization.split(" ", 1)[1].strip()
+    payload = verify_token(token)
+    if not payload:
+        return None
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        return None
+
+    user = get_user_by_id(user_id)
+    if not user or user.get("role") != "driver":
+        return None
+
+    return user
+
+
+def log_driver_user_action(driver_user_id: int, method: str, path: str) -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            INSERT INTO audit_log
+                (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES
+                ('driver_user_action', %s, NULL, %s, 0, %s, %s)
+            """,
+            (datetime.utcnow(), driver_user_id, f"{method} {path}", driver_user_id)
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.middleware("http")
-async def audit_sponsor_user_actions(request: Request, call_next):
+async def audit_user_actions(request: Request, call_next):
     sponsor_user = get_sponsor_user_for_audit(request)
+    driver_user = get_driver_user_for_audit(request)
     response = await call_next(request)
 
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -218,6 +262,9 @@ async def audit_sponsor_user_actions(request: Request, call_next):
 
     if sponsor_user and sponsor_user.get("role") == "sponsor":
         log_sponsor_user_action(sponsor_user["user_id"], request.method, request.url.path)
+
+    if driver_user and driver_user.get("role") == "driver":
+        log_driver_user_action(driver_user["user_id"], request.method, request.url.path)
 
     return response
 

@@ -33,3 +33,17 @@ class AuditLogRow(BaseModel):
 
 class AuditLogResponse(BaseModel):
     audit_logs: list[AuditLogRow]
+
+
+class LoginAuditRow(BaseModel):
+    user_id: int | None
+    username: str
+    role: str | None
+    success: bool
+    ip_address: str | None
+    user_agent: str | None
+    login_time: str
+
+
+class LoginAuditResponse(BaseModel):
+    login_audit: list[LoginAuditRow]

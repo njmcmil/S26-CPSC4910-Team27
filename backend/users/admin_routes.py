@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
 from auth.auth import require_role
-from schemas.admin import AuditLogResponse, RedemptionReportResponse
+from schemas.admin import AuditLogResponse, LoginAuditResponse, RedemptionReportResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
