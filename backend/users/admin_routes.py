@@ -7,9 +7,91 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
 from auth.auth import require_role
-from schemas.admin import AuditLogResponse, CommunicationLogResponse, DriverSponsorRow, LoginAuditResponse, RedemptionReportResponse
+from schemas.admin import (
+    AuditLogResponse, 
+    CommunicationLogResponse, 
+    DriverSponsorRow, 
+    LoginAuditResponse, 
+    RedemptionReportResponse,
+    SystemMetricsResponse,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+@router.get("/metrics", response_model=SystemMetricsResponse)
+def get_system_metrics(current_user: dict = Depends(require_role("admin"))):
+    """Return a live snapshot of key system metrics for the admin dashboard."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # User counts by role
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) AS total_users,
+                SUM(CASE WHEN role = 'driver'  THEN 1 ELSE 0 END) AS total_drivers,
+                SUM(CASE WHEN role = 'sponsor' THEN 1 ELSE 0 END) AS total_sponsors,
+                SUM(CASE WHEN role = 'admin'   THEN 1 ELSE 0 END) AS total_admins
+            FROM Users
+            """
+        )
+        user_row = cursor.fetchone()
+
+        # All-time order totals
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) AS total_orders,
+                SUM(CASE WHEN status = 'pending'   THEN 1 ELSE 0 END) AS pending_orders,
+                SUM(CASE WHEN status = 'shipped'   THEN 1 ELSE 0 END) AS shipped_orders,
+                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_orders
+            FROM Orders
+            """
+        )
+        order_row = cursor.fetchone()
+
+        # All-time points awarded (positive entries in audit_log)
+        cursor.execute(
+            "SELECT COALESCE(SUM(points_changed), 0) AS pts FROM audit_log WHERE points_changed > 0"
+        )
+        pts_awarded = int((cursor.fetchone() or {}).get("pts", 0))
+
+        # All-time points redeemed via non-cancelled orders
+        cursor.execute(
+            "SELECT COALESCE(SUM(points_cost), 0) AS pts FROM Orders WHERE status != 'cancelled'"
+        )
+        pts_redeemed = int((cursor.fetchone() or {}).get("pts", 0))
+
+        # Login activity in the last 24 hours
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) AS total_logins,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed_logins
+            FROM LoginAudit
+            WHERE login_time >= NOW() - INTERVAL 24 HOUR
+            """
+        )
+        login_row = cursor.fetchone()
+
+        return {
+            "fetched_at": datetime.utcnow().isoformat(),
+            "total_users":   int(user_row.get("total_users")   or 0),
+            "total_drivers": int(user_row.get("total_drivers") or 0),
+            "total_sponsors":int(user_row.get("total_sponsors")or 0),
+            "total_admins":  int(user_row.get("total_admins")  or 0),
+            "total_orders":    int(order_row.get("total_orders")    or 0),
+            "pending_orders":  int(order_row.get("pending_orders")  or 0),
+            "shipped_orders":  int(order_row.get("shipped_orders")  or 0),
+            "cancelled_orders":int(order_row.get("cancelled_orders")or 0),
+            "total_points_awarded":  pts_awarded,
+            "total_points_redeemed": pts_redeemed,
+            "logins_last_24h":        int(login_row.get("total_logins")  or 0),
+            "failed_logins_last_24h": int(login_row.get("failed_logins") or 0),
+        }
+    finally:
+        cursor.close()
+        conn.close()
 
 # Allows admin to see big picture
 @router.get("/users")

@@ -65,6 +65,25 @@ class CommunicationLogRow(BaseModel):
 class CommunicationLogResponse(BaseModel):
     communication_logs: list[CommunicationLogRow]
 
+class SystemMetricsResponse(BaseModel):
+    fetched_at: str
+    # user counts
+    total_users: int
+    total_drivers: int
+    total_sponsors: int
+    total_admins: int
+    # orders
+    total_orders: int
+    pending_orders: int
+    shipped_orders: int
+    cancelled_orders: int
+    # points
+    total_points_awarded: int
+    total_points_redeemed: int
+    # logins in last 24 hours
+    logins_last_24h: int
+    failed_logins_last_24h: int
+
 class OperationsSummaryResponse(BaseModel):
     period: str
     date_from: str
