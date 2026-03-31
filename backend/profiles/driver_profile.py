@@ -241,15 +241,56 @@ def get_my_driver_applications(
     try:
         cursor.execute(
             """
-            SELECT application_id, status, rejection_reason, created_at, updated_at
-            FROM DriverApplications
+            SELECT da.application_id,
+                   da.sponsor_user_id,
+                   COALESCE(sp.company_name, u.username) AS sponsor_name,
+                   da.status,
+                   da.rejection_reason,
+                   da.created_at,
+                   da.updated_at
+            FROM DriverApplications da
+            JOIN Users u ON da.sponsor_user_id = u.user_id
+            LEFT JOIN SponsorProfiles sp ON da.sponsor_user_id = sp.user_id
             WHERE driver_user_id = %s
-            ORDER BY created_at DESC
+            ORDER BY da.created_at DESC
             """,
             (user_id,)
         )
         return cursor.fetchall()
 
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/application-sponsors")
+def get_available_sponsors_for_application(
+    current_user: dict = Depends(require_role("driver"))
+):
+    """
+    Return sponsors a driver can apply to, plus whether the driver is already linked.
+    """
+    user_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            """
+            SELECT u.user_id AS sponsor_user_id,
+                   COALESCE(sp.company_name, u.username) AS sponsor_name,
+                   CASE WHEN sd.driver_user_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_current_sponsor
+            FROM Users u
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id
+            LEFT JOIN SponsorDrivers sd
+              ON sd.sponsor_user_id = u.user_id
+             AND sd.driver_user_id = %s
+            WHERE u.role = 'sponsor'
+            ORDER BY sponsor_name
+            """,
+            (user_id,)
+        )
+        return cursor.fetchall()
     finally:
         cursor.close()
         conn.close()

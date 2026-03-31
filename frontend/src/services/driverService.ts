@@ -14,6 +14,31 @@ interface PointHistoryResponse {
   total_count: number;
 }
 
+export interface DriverApplicationSponsor {
+  sponsor_user_id: number;
+  sponsor_name: string;
+  is_current_sponsor: boolean;
+}
+
+export interface DriverApplicationSummary {
+  application_id: number;
+  sponsor_user_id: number;
+  sponsor_name: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface CreateDriverApplicationPayload {
+  sponsor_user_id: number;
+  license_number: string;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_year: number;
+  vehicle_license_plate: string;
+}
+
 export const driverService = {
   /** Fetch the authenticated driver's profile */
   getProfile(): Promise<DriverProfile> {
@@ -30,5 +55,17 @@ export const driverService = {
     return api.get<PointHistoryResponse>(
       '/api/driver/points/history'
     );
-  }
+  },
+
+  getApplicationSponsors(): Promise<DriverApplicationSponsor[]> {
+    return api.get<DriverApplicationSponsor[]>('/me/application-sponsors');
+  },
+
+  getApplications(): Promise<DriverApplicationSummary[]> {
+    return api.get<DriverApplicationSummary[]>('/me/applications');
+  },
+
+  createApplication(data: CreateDriverApplicationPayload): Promise<{ message: string; application_id: number; status: string }> {
+    return api.post('/me/applications', data);
+  },
 }
