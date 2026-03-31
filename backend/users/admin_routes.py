@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
 from auth.auth import require_role
-from schemas.admin import AuditLogResponse, DriverSponsorRow, LoginAuditResponse, RedemptionReportResponse
+from schemas.admin import AuditLogResponse, CommunicationLogResponse, DriverSponsorRow, LoginAuditResponse, RedemptionReportResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -238,6 +238,71 @@ def get_login_audit(
         cursor.close()
         conn.close()
 
+@router.get("/communication-logs", response_model=CommunicationLogResponse)
+def get_communication_logs(
+    driver_id: int | None = None,
+    sponsor_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    keyword: str | None = None,
+    limit: int = 100,
+    current_user: dict = Depends(require_role("admin")),
+):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        capped_limit = min(max(limit, 1), 500)
+        params: list[object] = []
+        query = """
+            SELECT
+                cl.log_id,
+                cl.created_at,
+                cl.driver_user_id,
+                COALESCE(
+                    CONCAT(dp.first_name, ' ', dp.last_name),
+                    du.username
+                ) AS driver_name,
+                cl.sponsor_user_id,
+                COALESCE(sp.company_name, su.username) AS sponsor_name,
+                cl.sent_by_role,
+                cl.message
+            FROM CommunicationLogs cl
+            JOIN Users du ON du.user_id = cl.driver_user_id
+            LEFT JOIN Profiles dp ON dp.user_id = cl.driver_user_id
+            JOIN Users su ON su.user_id = cl.sponsor_user_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = cl.sponsor_user_id
+            WHERE 1=1
+        """
+
+        if driver_id is not None:
+            query += " AND cl.driver_user_id = %s"
+            params.append(driver_id)
+        if sponsor_id is not None:
+            query += " AND cl.sponsor_user_id = %s"
+            params.append(sponsor_id)
+        if date_from:
+            query += " AND cl.created_at >= %s"
+            params.append(date_from)
+        if date_to:
+            query += " AND cl.created_at <= %s"
+            params.append(date_to)
+        if keyword:
+            query += " AND cl.message LIKE %s"
+            params.append(f"%{keyword}%")
+
+        query += " ORDER BY cl.created_at DESC LIMIT %s"
+        params.append(capped_limit)
+
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        for row in rows:
+            if row["created_at"]:
+                row["created_at"] = row["created_at"].isoformat()
+
+        return {"communication_logs": rows}
+    finally:
+        cursor.close()
+        conn.close()
 
 # Admin- delete a user
 @router.delete("/users/{username}")

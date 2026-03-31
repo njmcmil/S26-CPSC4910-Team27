@@ -51,3 +51,16 @@ class LoginAuditRow(BaseModel):
 
 class LoginAuditResponse(BaseModel):
     login_audit: list[LoginAuditRow]
+
+class CommunicationLogRow(BaseModel):
+    log_id: int
+    created_at: str
+    driver_user_id: int
+    driver_name: str | None
+    sponsor_user_id: int
+    sponsor_name: str | None
+    sent_by_role: str
+    message: str
+
+class CommunicationLogResponse(BaseModel):
+    communication_logs: list[CommunicationLogRow]
