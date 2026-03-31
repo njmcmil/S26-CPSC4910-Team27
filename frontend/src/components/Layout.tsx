@@ -200,6 +200,7 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
         defaultOpen: true,
         items: [
           { to: '/sponsor/purchase-history', label: 'Purchase History' },
+          { to: '/sponsor/audit-logs', label: 'Audit Logs' },
           { to: '/sponsor/error-logs', label: 'Error Logs' },
         ],
       },

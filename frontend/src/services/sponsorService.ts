@@ -32,6 +32,13 @@ export interface DriverStatusChange {
   reason: string;
 }
 
+export interface SponsorUserActionLog {
+  date: string;
+  changed_by_user_id: number | null;
+  changed_by_username: string | null;
+  reason: string | null;
+}
+
 /* =====================
    Base URLs
 ===================== */
@@ -64,6 +71,10 @@ export const sponsorService = {
 
   getDriverStatusChanges(): Promise<DriverStatusChange[]> {
     return api.get(`${APPLICATIONS_BASE}/status-changes`) as Promise<DriverStatusChange[]>;
+  },
+
+  getUserActionLogs(): Promise<SponsorUserActionLog[]> {
+    return api.get('/sponsor/audit-logs') as Promise<SponsorUserActionLog[]>;
   },
 
   approveApplication(applicationId: number) {
