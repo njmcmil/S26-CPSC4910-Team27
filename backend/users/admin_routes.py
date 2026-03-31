@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
 from auth.auth import require_role
-from schemas.admin import AuditLogResponse, RedemptionReportResponse
+from schemas.admin import AuditLogResponse, LoginAuditResponse, RedemptionReportResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -187,6 +187,49 @@ def get_audit_logs(
     finally:
         cursor.close()
         conn.close()
+
+@router.get("/login-audit", response_model=LoginAuditResponse)
+def get_login_audit(
+    role: str | None = None,
+    limit: int = 100,
+    current_user: dict = Depends(require_role("admin")),
+):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        capped_limit = min(max(limit, 1), 500)
+        params: list[object] = []
+        query = """
+            SELECT
+                la.user_id,
+                la.username,
+                u.role,
+                la.success,
+                la.ip_address,
+                la.user_agent,
+                la.login_time
+            FROM LoginAudit la
+            LEFT JOIN Users u ON u.user_id = la.user_id
+        """
+        if role:
+            query += " WHERE u.role = %s"
+            params.append(role)
+
+        query += " ORDER BY la.login_time DESC LIMIT %s"
+        params.append(capped_limit)
+
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        for row in rows:
+            if row["login_time"]:
+                row["login_time"] = row["login_time"].isoformat()
+            row["success"] = bool(row["success"])
+
+        return {"login_audit": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
 
 # Admin- delete a user
 @router.delete("/users/{username}")
