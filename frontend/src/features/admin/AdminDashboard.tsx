@@ -5,7 +5,7 @@ import { api } from '../../services/apiClient';
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface LoginAttempt {
-  login_id: number;
+  audit_id: number;
   username: string;
   user_id: number | null;
   success: boolean;
