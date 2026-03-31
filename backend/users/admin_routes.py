@@ -13,6 +13,7 @@ from schemas.admin import (
     DriverSponsorRow, 
     LoginAuditResponse, 
     RedemptionReportResponse,
+    OperationsSummaryResponse,
     SystemMetricsResponse,
 )
 
