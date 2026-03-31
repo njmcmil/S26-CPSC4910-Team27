@@ -203,7 +203,7 @@ def get_login_attempts(
         params: list[object] = []
         query = """
             SELECT
-                la.login_id,
+                la.audit_id,
                 la.username,
                 la.user_id,
                 la.success,
