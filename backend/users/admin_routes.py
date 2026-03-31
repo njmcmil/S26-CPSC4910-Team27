@@ -188,6 +188,104 @@ def get_audit_logs(
         cursor.close()
         conn.close()
 
+@router.get("/login-attempts")
+def get_login_attempts(
+    limit: int = 100,
+    username: str | None = None,
+    success: bool | None = None,
+    current_user: dict = Depends(require_role("admin")),
+):
+    """Admin views all login attempts to identify suspicious activity."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        capped_limit = min(max(limit, 1), 500)
+        params: list[object] = []
+        query = """
+            SELECT
+                la.login_id,
+                la.username,
+                la.user_id,
+                la.success,
+                la.ip_address,
+                la.user_agent,
+                la.login_time
+            FROM LoginAudit la
+            WHERE 1=1
+        """
+        if username:
+            query += " AND la.username LIKE %s"
+            params.append(f"%{username}%")
+        if success is not None:
+            query += " AND la.success = %s"
+            params.append(success)
+
+        query += " ORDER BY la.login_time DESC LIMIT %s"
+        params.append(capped_limit)
+
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        for row in rows:
+            if row["login_time"]:
+                row["login_time"] = row["login_time"].isoformat()
+            row["success"] = bool(row["success"])
+        return {"login_attempts": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/driver-logs")
+def get_driver_logs(
+    driver_id: int | None = None,
+    limit: int = 100,
+    current_user: dict = Depends(require_role("admin")),
+):
+    """Admin views all driver point logs for troubleshooting."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        capped_limit = min(max(limit, 1), 500)
+        params: list[object] = []
+        query = """
+            SELECT
+                al.date,
+                al.category,
+                al.driver_id,
+                u.username AS driver_username,
+                al.sponsor_id,
+                COALESCE(sp.company_name, su.username) AS sponsor_name,
+                al.points_changed,
+                al.reason,
+                al.changed_by_user_id,
+                al.expires_at
+            FROM audit_log al
+            LEFT JOIN Users u ON u.user_id = al.driver_id
+            LEFT JOIN Users su ON su.user_id = al.sponsor_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = al.sponsor_id
+            WHERE al.category = 'point_change'
+        """
+        if driver_id:
+            query += " AND al.driver_id = %s"
+            params.append(driver_id)
+
+        query += " ORDER BY al.date DESC LIMIT %s"
+        params.append(capped_limit)
+
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        for row in rows:
+            if row["date"]:
+                row["date"] = row["date"].isoformat()
+            if row["expires_at"]:
+                row["expires_at"] = row["expires_at"].isoformat()
+            if row["points_changed"] is not None:
+                row["points_changed"] = int(row["points_changed"])
+        return {"driver_logs": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
 # Admin- delete a user
 @router.delete("/users/{username}")
 def delete_user(username: str, current_user: dict = Depends(require_role("admin"))):
