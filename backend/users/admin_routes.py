@@ -188,6 +188,329 @@ def get_audit_logs(
         cursor.close()
         conn.close()
 
+@router.get("/reports/sales-by-sponsor")
+def get_sales_by_sponsor_report(
+    sponsor_id: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    view: str = "summary",  # "summary" or "detailed"
+    current_user: dict = Depends(require_role("admin")),
+):
+    """Admin: Sales by Sponsor report."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        params: list = []
+        where = ["o.status != 'cancelled'"]
+        if sponsor_id:
+            where.append("o.sponsor_user_id = %s")
+            params.append(sponsor_id)
+        if start_date:
+            where.append("o.created_at >= %s")
+            params.append(start_date)
+        if end_date:
+            where.append("o.created_at <= %s")
+            params.append(end_date + " 23:59:59")
+        where_clause = "WHERE " + " AND ".join(where) if where else ""
+
+        if view == "detailed":
+            cursor.execute(f"""
+                SELECT
+                    o.order_id,
+                    o.created_at,
+                    COALESCE(sp.company_name, su.username) AS sponsor_name,
+                    u.username AS driver_username,
+                    o.item_title,
+                    o.points_cost,
+                    o.status
+                FROM Orders o
+                JOIN Users su ON su.user_id = o.sponsor_user_id
+                LEFT JOIN SponsorProfiles sp ON sp.user_id = o.sponsor_user_id
+                JOIN Users u ON u.user_id = o.driver_user_id
+                {where_clause}
+                ORDER BY sponsor_name, o.created_at DESC
+            """, tuple(params))
+        else:
+            cursor.execute(f"""
+                SELECT
+                    COALESCE(sp.company_name, su.username) AS sponsor_name,
+                    COUNT(*) AS total_orders,
+                    SUM(o.points_cost) AS total_points,
+                    MIN(o.created_at) AS first_order,
+                    MAX(o.created_at) AS last_order
+                FROM Orders o
+                JOIN Users su ON su.user_id = o.sponsor_user_id
+                LEFT JOIN SponsorProfiles sp ON sp.user_id = o.sponsor_user_id
+                {where_clause}
+                GROUP BY o.sponsor_user_id, sponsor_name
+                ORDER BY total_points DESC
+            """, tuple(params))
+
+        rows = cursor.fetchall()
+        for row in rows:
+            for k in row:
+                if hasattr(row[k], 'isoformat'):
+                    row[k] = row[k].isoformat()
+                elif row[k] is not None and k in ('total_points', 'points_cost', 'total_orders'):
+                    row[k] = int(row[k])
+        return {"rows": rows, "view": view}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/reports/sales-by-driver")
+def get_sales_by_driver_report(
+    sponsor_id: int | None = None,
+    driver_id: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    view: str = "summary",
+    current_user: dict = Depends(require_role("admin")),
+):
+    """Admin: Sales by Driver report."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        params: list = []
+        where = ["o.status != 'cancelled'"]
+        if sponsor_id:
+            where.append("o.sponsor_user_id = %s")
+            params.append(sponsor_id)
+        if driver_id:
+            where.append("o.driver_user_id = %s")
+            params.append(driver_id)
+        if start_date:
+            where.append("o.created_at >= %s")
+            params.append(start_date)
+        if end_date:
+            where.append("o.created_at <= %s")
+            params.append(end_date + " 23:59:59")
+        where_clause = "WHERE " + " AND ".join(where) if where else ""
+
+        if view == "detailed":
+            cursor.execute(f"""
+                SELECT
+                    o.order_id,
+                    o.created_at,
+                    u.username AS driver_username,
+                    COALESCE(sp.company_name, su.username) AS sponsor_name,
+                    o.item_title,
+                    o.points_cost,
+                    o.status
+                FROM Orders o
+                JOIN Users u ON u.user_id = o.driver_user_id
+                JOIN Users su ON su.user_id = o.sponsor_user_id
+                LEFT JOIN SponsorProfiles sp ON sp.user_id = o.sponsor_user_id
+                {where_clause}
+                ORDER BY driver_username, o.created_at DESC
+            """, tuple(params))
+        else:
+            cursor.execute(f"""
+                SELECT
+                    u.username AS driver_username,
+                    COALESCE(sp.company_name, su.username) AS sponsor_name,
+                    COUNT(*) AS total_orders,
+                    SUM(o.points_cost) AS total_points
+                FROM Orders o
+                JOIN Users u ON u.user_id = o.driver_user_id
+                JOIN Users su ON su.user_id = o.sponsor_user_id
+                LEFT JOIN SponsorProfiles sp ON sp.user_id = o.sponsor_user_id
+                {where_clause}
+                GROUP BY o.driver_user_id, driver_username, o.sponsor_user_id, sponsor_name
+                ORDER BY driver_username
+            """, tuple(params))
+
+        rows = cursor.fetchall()
+        for row in rows:
+            for k in row:
+                if hasattr(row[k], 'isoformat'):
+                    row[k] = row[k].isoformat()
+                elif row[k] is not None and k in ('total_points', 'points_cost', 'total_orders'):
+                    row[k] = int(row[k])
+        return {"rows": rows, "view": view}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/reports/invoice")
+def get_invoice_report(
+    sponsor_id: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    current_user: dict = Depends(require_role("admin")),
+):
+    """Admin: Invoice report per sponsor."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        params: list = []
+        where = ["o.status != 'cancelled'"]
+        if sponsor_id:
+            where.append("o.sponsor_user_id = %s")
+            params.append(sponsor_id)
+        if start_date:
+            where.append("o.created_at >= %s")
+            params.append(start_date)
+        if end_date:
+            where.append("o.created_at <= %s")
+            params.append(end_date + " 23:59:59")
+        where_clause = "WHERE " + " AND ".join(where) if where else ""
+
+        cursor.execute(f"""
+            SELECT
+                COALESCE(sp.company_name, su.username) AS sponsor_name,
+                su.email AS sponsor_email,
+                u.username AS driver_username,
+                COUNT(*) AS order_count,
+                SUM(o.points_cost) AS total_points,
+                ROUND(SUM(o.points_cost) * COALESCE(spr.dollar_per_point, 0.01), 2) AS fee_generated
+            FROM Orders o
+            JOIN Users su ON su.user_id = o.sponsor_user_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = o.sponsor_user_id
+            LEFT JOIN SponsorProfiles spr ON spr.user_id = o.sponsor_user_id
+            JOIN Users u ON u.user_id = o.driver_user_id
+            {where_clause}
+            GROUP BY o.sponsor_user_id, sponsor_name, sponsor_email, o.driver_user_id, driver_username, spr.dollar_per_point
+            ORDER BY sponsor_name, driver_username
+        """, tuple(params))
+
+        rows = cursor.fetchall()
+
+        # Group by sponsor for invoice format
+        invoices: dict = {}
+        for row in rows:
+            sname = row["sponsor_name"]
+            if sname not in invoices:
+                invoices[sname] = {
+                    "sponsor_name": sname,
+                    "sponsor_email": row["sponsor_email"],
+                    "drivers": [],
+                    "total_fee": 0.0,
+                    "total_points": 0,
+                }
+            invoices[sname]["drivers"].append({
+                "driver_username": row["driver_username"],
+                "order_count": int(row["order_count"]),
+                "total_points": int(row["total_points"]),
+                "fee_generated": float(row["fee_generated"] or 0),
+            })
+            invoices[sname]["total_fee"] += float(row["fee_generated"] or 0)
+            invoices[sname]["total_points"] += int(row["total_points"])
+
+        return {"invoices": list(invoices.values())}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/reports/audit-log")
+def get_audit_log_report(
+    sponsor_id: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    category: str | None = None,
+    limit: int = 500,
+    current_user: dict = Depends(require_role("admin")),
+):
+    """Admin: Audit log report with filters."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        params: list = []
+        where = []
+        if sponsor_id:
+            where.append("al.sponsor_id = %s")
+            params.append(sponsor_id)
+        if start_date:
+            where.append("al.date >= %s")
+            params.append(start_date)
+        if end_date:
+            where.append("al.date <= %s")
+            params.append(end_date + " 23:59:59")
+        if category:
+            where.append("al.category = %s")
+            params.append(category)
+        where_clause = "WHERE " + " AND ".join(where) if where else ""
+
+        cursor.execute(f"""
+            SELECT
+                al.date,
+                al.category,
+                COALESCE(sp.company_name, su.username) AS sponsor_name,
+                al.driver_id,
+                du.username AS driver_username,
+                al.points_changed,
+                al.reason,
+                al.changed_by_user_id
+            FROM audit_log al
+            LEFT JOIN Users su ON su.user_id = al.sponsor_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = al.sponsor_id
+            LEFT JOIN Users du ON du.user_id = al.driver_id
+            {where_clause}
+            ORDER BY al.date DESC
+            LIMIT %s
+        """, tuple(params) + (min(limit, 1000),))
+
+        rows = cursor.fetchall()
+        for row in rows:
+            if row["date"]:
+                row["date"] = row["date"].isoformat()
+            if row["points_changed"] is not None:
+                row["points_changed"] = int(row["points_changed"])
+        return {"rows": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/reports/sponsors")
+def get_all_sponsors_list(current_user: dict = Depends(require_role("admin"))):
+    """Get list of all sponsors for report filter dropdowns."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT u.user_id, COALESCE(sp.company_name, u.username) AS name
+            FROM Users u
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id
+            WHERE u.role = 'sponsor'
+            ORDER BY name
+        """)
+        return {"sponsors": cursor.fetchall()}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/reports/drivers")
+def get_all_drivers_list(
+    sponsor_id: int | None = None,
+    current_user: dict = Depends(require_role("admin"))
+):
+    """Get list of drivers for report filter dropdowns."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        if sponsor_id:
+            cursor.execute("""
+                SELECT u.user_id, u.username
+                FROM Users u
+                JOIN SponsorDrivers sd ON sd.driver_user_id = u.user_id
+                WHERE sd.sponsor_user_id = %s
+                ORDER BY u.username
+            """, (sponsor_id,))
+        else:
+            cursor.execute("""
+                SELECT user_id, username FROM Users
+                WHERE role = 'driver' ORDER BY username
+            """)
+        return {"drivers": cursor.fetchall()}
+    finally:
+        cursor.close()
+        conn.close()
+
 @router.get("/login-attempts")
 def get_login_attempts(
     limit: int = 100,
