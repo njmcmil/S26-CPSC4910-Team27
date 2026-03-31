@@ -11,8 +11,17 @@ interface DriverApplication {
   created_at?: string;
 }
 
+interface DriverStatusChange {
+  date: string;
+  driver_user_id: number;
+  username: string;
+  status: 'approved' | 'rejected' | 'updated';
+  reason: string;
+}
+
 export function SponsorApplicationsPage() {
   const [applications, setApplications] = useState<DriverApplication[]>([]);
+  const [statusChanges, setStatusChanges] = useState<DriverStatusChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,8 +29,11 @@ export function SponsorApplicationsPage() {
   const loadApplications = async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await sponsorService.getPendingApplications();
       setApplications(data);
+      const changes = await sponsorService.getDriverStatusChanges();
+      setStatusChanges(changes);
     } catch (err) {
       setError('Failed to load applications');
     } finally {
@@ -91,6 +103,38 @@ export function SponsorApplicationsPage() {
           </div>
         </div>
       ))}
+
+      <div className="card mt-3">
+        <h3>Recent Status Changes</h3>
+        <p className="mt-1">Latest approval and rejection updates for your drivers.</p>
+
+        {statusChanges.length === 0 ? (
+          <p className="mt-2">No status changes logged yet.</p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border-color, #ddd)', textAlign: 'left' }}>
+                <th style={{ padding: '0.5rem' }}>Date</th>
+                <th style={{ padding: '0.5rem' }}>Driver</th>
+                <th style={{ padding: '0.5rem' }}>Status</th>
+                <th style={{ padding: '0.5rem' }}>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {statusChanges.map((change, index) => (
+                <tr key={`${change.driver_user_id}-${change.date}-${index}`} style={{ borderBottom: '1px solid var(--border-color, #eee)' }}>
+                  <td style={{ padding: '0.5rem' }}>
+                    {new Date(change.date).toLocaleString()}
+                  </td>
+                  <td style={{ padding: '0.5rem' }}>{change.username}</td>
+                  <td style={{ padding: '0.5rem', textTransform: 'capitalize' }}>{change.status}</td>
+                  <td style={{ padding: '0.5rem' }}>{change.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </section>
   );
 }

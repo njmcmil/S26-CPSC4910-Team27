@@ -12,6 +12,7 @@ import { NotFoundPage } from '../pages/NotFound';
 
 import { DriverDashboardPage } from '../features/driver/DriverDashboard';
 import { DriverProfilePage } from '../features/driver/DriverProfile';
+import { DriverApplicationsPage } from '../features/driver/DriverApplications';
 import { PointsPage } from '../pages/pointsPage';
 import { DriverCatalog } from '../features/driver/DriverCatalog';
 import { DriverProductDetail } from '../features/driver/DriverProductDetail';
@@ -73,6 +74,7 @@ export const router = createBrowserRouter([
             element: <RoleGuard allowed={['driver']} />,
             children: [
               { path: '/driver/dashboard', element: <DriverDashboardPage /> },
+              { path: '/driver/applications', element: <DriverApplicationsPage /> },
               { path: '/driver/profile', element: <DriverProfilePage /> },
               { path: '/driver/points', element: <PointsPage /> },
               { path: '/driver/catalog', element: <DriverCatalog /> },

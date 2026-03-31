@@ -145,7 +145,10 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
       {
         label: 'Overview',
         defaultOpen: true,
-        items: [{ to: '/driver/dashboard', label: 'Dashboard' }],
+        items: [
+          { to: '/driver/dashboard', label: 'Dashboard' },
+          { to: '/driver/applications', label: 'Applications' },
+        ],
       },
       {
         label: 'Rewards',

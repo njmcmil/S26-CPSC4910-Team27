@@ -19,7 +19,7 @@ from shared.db import get_connection
 from users.email_service import send_driver_application_rejection_email, send_driver_application_approval_email
 from typing import List
 
-from schemas.sponsor import SponsorProfile, CreateSponsorProfileRequest, UpdateSponsorProfileRequest, DriverApplication, RejectDriverApplicationRequest, SponsorDriver
+from schemas.sponsor import SponsorProfile, CreateSponsorProfileRequest, UpdateSponsorProfileRequest, DriverApplication, RejectDriverApplicationRequest, SponsorDriver, DriverStatusChange
 
 
 router = APIRouter(prefix="/sponsor", tags=["sponsor-profile"])
@@ -394,7 +394,7 @@ def reject_driver_application(
     try:
         cursor.execute(
             """
-            SELECT da.status, u.email, u.username
+            SELECT da.status, da.driver_user_id, u.email, u.username
             FROM DriverApplications da
             JOIN Users u ON da.driver_user_id = u.user_id
             WHERE da.application_id = %s
@@ -410,18 +410,37 @@ def reject_driver_application(
         if app["status"] != "pending":
             raise HTTPException(status_code=400, detail="Only pending applications can be rejected")
 
+        changed_at = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute(
             """
             UPDATE DriverApplications
             SET status = 'rejected',
                 rejection_category = %s,
-                rejection_reason = %s
+                rejection_reason = %s,
+                updated_at = %s
             WHERE application_id = %s
             """,
             (
                 request.rejection_category.value,
                 request.rejection_reason,
+                changed_at,
                 application_id
+            )
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO audit_log
+            (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES ('driver_status_change', %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                changed_at,
+                sponsor_id,
+                app["driver_user_id"],
+                0,
+                f"rejected: {request.rejection_category.value} - {request.rejection_reason}",
+                current_user["user_id"],
             )
         )
 
@@ -494,6 +513,7 @@ def approve_driver_application(
         )
 
 
+        changed_at = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute(
             """
             INSERT INTO SponsorDrivers 
@@ -501,7 +521,23 @@ def approve_driver_application(
             VALUES (%s, %s, %s)
             ON DUPLICATE KEY UPDATE sponsor_user_id = sponsor_user_id
             """,
-            (sponsor_id, app["driver_user_id"], datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'))
+            (sponsor_id, app["driver_user_id"], changed_at)
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO audit_log
+            (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES ('driver_status_change', %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                changed_at,
+                sponsor_id,
+                app["driver_user_id"],
+                0,
+                "approved",
+                current_user["user_id"],
+            )
         )
 
         conn.commit()
@@ -518,6 +554,50 @@ def approve_driver_application(
             "driver_user_id": app["driver_user_id"]
         }
 
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/applications/status-changes", response_model=List[DriverStatusChange])
+def get_driver_status_changes(current_user: dict = Depends(require_role("sponsor"))):
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            """
+            SELECT
+                al.date,
+                al.driver_id AS driver_user_id,
+                u.username,
+                CASE
+                    WHEN al.reason LIKE 'approved%%' THEN 'approved'
+                    WHEN al.reason LIKE 'rejected:%%' THEN 'rejected'
+                    ELSE 'updated'
+                END AS status,
+                al.reason
+            FROM audit_log al
+            JOIN Users u ON u.user_id = al.driver_id
+            WHERE al.category = 'driver_status_change'
+              AND al.sponsor_id = %s
+            ORDER BY al.date DESC
+            LIMIT 25
+            """,
+            (sponsor_id,),
+        )
+        rows = cursor.fetchall()
+        return [
+            DriverStatusChange(
+                date=row["date"],
+                driver_user_id=row["driver_user_id"],
+                username=row["username"],
+                status=row["status"],
+                reason=row["reason"],
+            )
+            for row in rows
+        ]
     finally:
         cursor.close()
         conn.close()

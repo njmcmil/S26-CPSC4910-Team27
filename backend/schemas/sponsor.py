@@ -97,3 +97,11 @@ class SponsorDriver(BaseModel):
     phone_number: str | None = None
     city: str | None = None
     state: str | None = None
+
+
+class DriverStatusChange(BaseModel):
+    date: datetime
+    driver_user_id: int
+    username: str
+    status: str
+    reason: str
