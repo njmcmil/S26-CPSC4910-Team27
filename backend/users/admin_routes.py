@@ -149,6 +149,111 @@ def get_redemption_report(current_user: dict = Depends(require_role("admin"))):
         cursor.close()
         conn.close()
 
+@router.get("/reports/summary", response_model=OperationsSummaryResponse)
+def get_operations_summary(
+    period: str = "weekly",
+    date_from: str = "",
+    date_to: str = "",
+    current_user: dict = Depends(require_role("admin")),
+):
+    """
+    Return key operational metrics for a given date range.
+    period is informational only; the actual window is determined by date_from/date_to
+    sent from the frontend.
+    """
+    if not date_from or not date_to:
+        raise HTTPException(status_code=422, detail="date_from and date_to are required")
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # orders metrics
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) AS total_orders,
+                SUM(CASE WHEN status = 'pending'   THEN 1 ELSE 0 END) AS pending_orders,
+                SUM(CASE WHEN status = 'shipped'   THEN 1 ELSE 0 END) AS shipped_orders,
+                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_orders,
+                SUM(CASE WHEN status != 'cancelled' THEN points_cost ELSE 0 END) AS points_redeemed,
+                COUNT(DISTINCT driver_user_id)  AS active_drivers,
+                COUNT(DISTINCT sponsor_user_id) AS active_sponsors
+            FROM Orders
+            WHERE created_at BETWEEN %s AND %s
+            """,
+            (date_from, date_to),
+        )
+        order_row = cursor.fetchone()
+
+        # new driver registrations (using Profiles.created_at as registration proxy)
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM Profiles p
+            JOIN Users u ON u.user_id = p.user_id
+            WHERE u.role = 'driver' AND p.created_at BETWEEN %s AND %s
+            """,
+            (date_from, date_to),
+        )
+        new_drivers = int((cursor.fetchone() or {}).get("cnt", 0))
+
+        # new sponsor registrations
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM Profiles p
+            JOIN Users u ON u.user_id = p.user_id
+            WHERE u.role = 'sponsor' AND p.created_at BETWEEN %s AND %s
+            """,
+            (date_from, date_to),
+        )
+        new_sponsors = int((cursor.fetchone() or {}).get("cnt", 0))
+
+        # points awarded from audit log
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(points_changed), 0) AS pts
+            FROM audit_log
+            WHERE points_changed > 0 AND date BETWEEN %s AND %s
+            """,
+            (date_from, date_to),
+        )
+        points_awarded = int((cursor.fetchone() or {}).get("pts", 0))
+
+        # login metrics
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) AS total_logins,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed_logins
+            FROM LoginAudit
+            WHERE login_time BETWEEN %s AND %s
+            """,
+            (date_from, date_to),
+        )
+        login_row = cursor.fetchone()
+
+        return {
+            "period": period,
+            "date_from": date_from,
+            "date_to": date_to,
+            "generated_at": datetime.utcnow().isoformat(),
+            "total_orders": int(order_row.get("total_orders") or 0),
+            "pending_orders": int(order_row.get("pending_orders") or 0),
+            "shipped_orders": int(order_row.get("shipped_orders") or 0),
+            "cancelled_orders": int(order_row.get("cancelled_orders") or 0),
+            "points_redeemed_via_orders": int(order_row.get("points_redeemed") or 0),
+            "active_drivers": int(order_row.get("active_drivers") or 0),
+            "active_sponsors": int(order_row.get("active_sponsors") or 0),
+            "new_drivers": new_drivers,
+            "new_sponsors": new_sponsors,
+            "points_awarded": points_awarded,
+            "total_logins": int(login_row.get("total_logins") or 0),
+            "failed_logins": int(login_row.get("failed_logins") or 0),
+        }
+    finally:
+        cursor.close()
+        conn.close()
 
 @router.get("/audit-logs", response_model=AuditLogResponse)
 def get_audit_logs(

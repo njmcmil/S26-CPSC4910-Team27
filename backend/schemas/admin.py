@@ -64,3 +64,25 @@ class CommunicationLogRow(BaseModel):
 
 class CommunicationLogResponse(BaseModel):
     communication_logs: list[CommunicationLogRow]
+
+class OperationsSummaryResponse(BaseModel):
+    period: str
+    date_from: str
+    date_to: str
+    generated_at: str
+    # Orders
+    total_orders: int
+    pending_orders: int
+    shipped_orders: int
+    cancelled_orders: int
+    points_redeemed_via_orders: int
+    active_drivers: int
+    active_sponsors: int
+    # Registrations
+    new_drivers: int
+    new_sponsors: int
+    # Points awarded
+    points_awarded: int
+    # Logins
+    total_logins: int
+    failed_logins: int
