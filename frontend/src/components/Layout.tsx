@@ -145,7 +145,10 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
       {
         label: 'Overview',
         defaultOpen: true,
-        items: [{ to: '/driver/dashboard', label: 'Dashboard' }],
+        items: [
+          { to: '/driver/dashboard', label: 'Dashboard' },
+          { to: '/driver/applications', label: 'Applications' },
+        ],
       },
       {
         label: 'Rewards',
@@ -197,6 +200,7 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
         defaultOpen: true,
         items: [
           { to: '/sponsor/purchase-history', label: 'Purchase History' },
+          { to: '/sponsor/audit-logs', label: 'Audit Logs' },
           { to: '/sponsor/error-logs', label: 'Error Logs' },
         ],
       },

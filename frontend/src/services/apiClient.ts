@@ -1,7 +1,7 @@
 import type { ApiError } from '../types';
 
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://52.200.244.222:8000';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
@@ -24,9 +24,12 @@ async function request<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> | undefined),
   };
+
+  if (options.body != null && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;

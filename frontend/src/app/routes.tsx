@@ -12,6 +12,7 @@ import { NotFoundPage } from '../pages/NotFound';
 
 import { DriverDashboardPage } from '../features/driver/DriverDashboard';
 import { DriverProfilePage } from '../features/driver/DriverProfile';
+import { DriverApplicationsPage } from '../features/driver/DriverApplications';
 import { PointsPage } from '../pages/pointsPage';
 import { DriverCatalog } from '../features/driver/DriverCatalog';
 import { DriverProductDetail } from '../features/driver/DriverProductDetail';
@@ -30,6 +31,7 @@ import { SponsorRewardSettingsPage } from '../features/sponsor/SponsorRewardSett
 import { SponsorCatalog } from '../features/sponsor/SponsorCatalog';
 import { SponsorPurchaseHistory } from '../features/sponsor/SponsorPurchaseHistory';
 import { SponsorErrorLogs } from '../features/sponsor/SponsorErrorLogs';
+import { SponsorAuditLogs } from '../features/sponsor/SponsorAuditLogs';
 
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
 import { AdminUsersPage } from '../features/admin/AdminUsers';
@@ -73,6 +75,7 @@ export const router = createBrowserRouter([
             element: <RoleGuard allowed={['driver']} />,
             children: [
               { path: '/driver/dashboard', element: <DriverDashboardPage /> },
+              { path: '/driver/applications', element: <DriverApplicationsPage /> },
               { path: '/driver/profile', element: <DriverProfilePage /> },
               { path: '/driver/points', element: <PointsPage /> },
               { path: '/driver/catalog', element: <DriverCatalog /> },
@@ -96,6 +99,7 @@ export const router = createBrowserRouter([
               { path: '/sponsor/reward-settings', element: <SponsorRewardSettingsPage /> },
               { path: '/sponsor/catalog', element: <SponsorCatalog /> },
               { path: '/sponsor/purchase-history', element: <SponsorPurchaseHistory /> },
+              { path: '/sponsor/audit-logs', element: <SponsorAuditLogs /> },
               { path: '/sponsor/error-logs', element: <SponsorErrorLogs /> },
             ],
           },

@@ -24,6 +24,21 @@ export interface SponsorDriver {
   last_name: string | null;
 }
 
+export interface DriverStatusChange {
+  date: string;
+  driver_user_id: number;
+  username: string;
+  status: 'approved' | 'rejected' | 'updated';
+  reason: string;
+}
+
+export interface SponsorUserActionLog {
+  date: string;
+  changed_by_user_id: number | null;
+  changed_by_username: string | null;
+  reason: string | null;
+}
+
 /* =====================
    Base URLs
 ===================== */
@@ -52,6 +67,14 @@ export const sponsorService = {
 
   getPendingApplications(): Promise<DriverApplication[]> {
     return api.get(`${APPLICATIONS_BASE}?status=pending`) as Promise<DriverApplication[]>;
+  },
+
+  getDriverStatusChanges(): Promise<DriverStatusChange[]> {
+    return api.get(`${APPLICATIONS_BASE}/status-changes`) as Promise<DriverStatusChange[]>;
+  },
+
+  getUserActionLogs(): Promise<SponsorUserActionLog[]> {
+    return api.get('/sponsor/audit-logs') as Promise<SponsorUserActionLog[]>;
   },
 
   approveApplication(applicationId: number) {

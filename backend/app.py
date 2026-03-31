@@ -49,10 +49,20 @@ from users.users import (
     update_password,
     get_user_by_username
 )
-from auth.auth import get_current_user, create_access_token
+from auth.auth import (
+    get_current_user,
+    create_access_token,
+    hash_password,
+    verify_password,
+    verify_token,
+)
 from auth.token_blacklist import blacklist_token
-from audit.login_audit import log_login_attempt
-from users.password_reset import generate_reset_token
+from audit.login_audit import log_login_attempt, get_last_login
+from users.password_reset import (
+    generate_reset_token,
+    validate_reset_token,
+    mark_token_used,
+)
 from users.email_service import (
     send_password_reset_email,
     send_login_notification_email,
@@ -60,6 +70,7 @@ from users.email_service import (
     send_order_placed_email,
     send_sponsor_order_placed_email,
 )
+from shared.utils import validate_password
 
 # --- Database & Config ---
 from shared.db import get_connection
@@ -149,6 +160,66 @@ def parse_login_device_details(user_agent: str | None) -> tuple[str, str, str]:
         os_name = "Unknown OS"
 
     return device_name, browser_name, os_name
+
+
+def get_sponsor_user_for_audit(http_request: Request) -> dict | None:
+    authorization = http_request.headers.get("Authorization", "")
+    if not authorization.startswith("Bearer "):
+        return None
+
+    token = authorization.split(" ", 1)[1].strip()
+    payload = verify_token(token)
+    if not payload:
+        return None
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        return None
+
+    user = get_user_by_id(user_id)
+    if not user or user.get("role") != "sponsor":
+        return None
+
+    return user
+
+
+def log_sponsor_user_action(sponsor_user_id: int, method: str, path: str) -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            INSERT INTO audit_log
+                (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES
+                ('sponsor_user_action', %s, %s, NULL, 0, %s, %s)
+            """,
+            (datetime.utcnow(), sponsor_user_id, f"{method} {path}", sponsor_user_id)
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.middleware("http")
+async def audit_sponsor_user_actions(request: Request, call_next):
+    sponsor_user = get_sponsor_user_for_audit(request)
+    response = await call_next(request)
+
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return response
+
+    if response.status_code >= 400:
+        return response
+
+    if sponsor_user and sponsor_user.get("role") == "sponsor":
+        log_sponsor_user_action(sponsor_user["user_id"], request.method, request.url.path)
+
+    return response
 
 # Run scheduler on startup
 @app.on_event("startup")
