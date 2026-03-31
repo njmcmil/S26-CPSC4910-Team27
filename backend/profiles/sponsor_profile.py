@@ -19,7 +19,7 @@ from shared.db import get_connection
 from users.email_service import send_driver_application_rejection_email, send_driver_application_approval_email
 from typing import List
 
-from schemas.sponsor import SponsorProfile, CreateSponsorProfileRequest, UpdateSponsorProfileRequest, DriverApplication, RejectDriverApplicationRequest, SponsorDriver, DriverStatusChange
+from schemas.sponsor import SponsorProfile, CreateSponsorProfileRequest, UpdateSponsorProfileRequest, DriverApplication, RejectDriverApplicationRequest, SponsorDriver, DriverStatusChange, SponsorUserActionLog
 
 
 router = APIRouter(prefix="/sponsor", tags=["sponsor-profile"])
@@ -595,6 +595,43 @@ def get_driver_status_changes(current_user: dict = Depends(require_role("sponsor
                 username=row["username"],
                 status=row["status"],
                 reason=row["reason"],
+            )
+            for row in rows
+        ]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/audit-logs", response_model=List[SponsorUserActionLog])
+def get_sponsor_user_action_logs(current_user: dict = Depends(require_role("sponsor"))):
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            """
+            SELECT
+                al.date,
+                al.changed_by_user_id,
+                u.username AS changed_by_username,
+                al.reason
+            FROM audit_log al
+            LEFT JOIN Users u ON u.user_id = al.changed_by_user_id
+            WHERE al.category = 'sponsor_user_action'
+              AND al.sponsor_id = %s
+            ORDER BY al.date DESC
+            """,
+            (sponsor_id,),
+        )
+        rows = cursor.fetchall()
+        return [
+            SponsorUserActionLog(
+                date=row["date"],
+                changed_by_user_id=row.get("changed_by_user_id"),
+                changed_by_username=row.get("changed_by_username"),
+                reason=row.get("reason"),
             )
             for row in rows
         ]

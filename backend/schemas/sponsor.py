@@ -105,3 +105,10 @@ class DriverStatusChange(BaseModel):
     username: str
     status: str
     reason: str
+
+
+class SponsorUserActionLog(BaseModel):
+    date: datetime
+    changed_by_user_id: int | None = None
+    changed_by_username: str | None = None
+    reason: str | None = None
