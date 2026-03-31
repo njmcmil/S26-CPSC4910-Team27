@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/apiClient';
 import { useCart } from '../../auth/CartContext';
+import { useAuth } from '../../auth/AuthContext';
 
 export function CheckoutPage() {
   const { items, totalPoints, clearCart } = useCart();
+  const { activeSponsorId } = useAuth();
   const navigate = useNavigate();
 
   const [currentPoints, setCurrentPoints] = useState<number | null>(null);
@@ -19,7 +21,10 @@ export function CheckoutPage() {
     }
 
     // Fetch fresh point balance
-    api.get<{ current_points: number; items: unknown[] }>('/api/driver/catalog')
+    const catalogUrl = activeSponsorId
+      ? `/api/driver/catalog?sponsor_id=${activeSponsorId}`
+      : '/api/driver/catalog';
+    api.get<{ current_points: number; items: unknown[] }>(catalogUrl)
       .then(res => setCurrentPoints(res.current_points))
       .catch(() => setError('Could not load your point balance.'))
       .finally(() => setLoading(false));
@@ -36,7 +41,10 @@ export function CheckoutPage() {
     try {
       // Place each item as a purchase
       for (const item of items) {
-        await api.post('/api/driver/catalog/purchase', { item_id: item.item_id });
+        await api.post('/api/driver/catalog/purchase', { 
+          item_id: item.item_id,
+          sponsor_id: activeSponsorId,
+        });
       }
       clearCart();
       navigate('/driver/order-confirmation', { replace: true });
