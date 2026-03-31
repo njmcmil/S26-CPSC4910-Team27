@@ -1,174 +1,379 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
-import { fetchSystemMetrics, type SystemMetrics } from '../../services/AdminService'
+import { api } from '../../services/apiClient';
 
-const POLL_INTERVAL_MS = 30_000;
+// ── Types ──────────────────────────────────────────────────────────────────
 
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+interface LoginAttempt {
+  audit_id: number;
+  username: string;
+  user_id: number | null;
+  success: boolean;
+  ip_address: string;
+  user_agent: string;
+  login_time: string;
 }
 
-interface MetricCardProps {
-  label: string;
-  value: number | string;
-  sub?: string;
-  highlight?: 'warning' | 'danger';
+interface AuditLog {
+  date: string;
+  category: string;
+  sponsor_name: string | null;
+  driver_id: number | null;
+  points_changed: number | null;
+  reason: string | null;
+  changed_by_user_id: number | null;
 }
 
-function MetricCard({ label, value, sub, highlight }: MetricCardProps) {
-  const accentStyle: React.CSSProperties =
-    highlight === 'danger'
-      ? { borderTop: '3px solid var(--color-danger)' }
-      : highlight === 'warning'
-      ? { borderTop: '3px solid var(--color-warning)' }
-      : { borderTop: '3px solid var(--color-primary)' };
+interface DriverLog {
+  date: string;
+  driver_id: number;
+  driver_username: string;
+  sponsor_name: string | null;
+  points_changed: number;
+  reason: string;
+  expires_at: string | null;
+}
 
+interface User {
+  user_id: number;
+  username: string;
+  role: string;
+  email: string;
+}
+
+type Tab = 'overview' | 'login-attempts' | 'audit-logs' | 'driver-logs' | 'users';
+
+// ── Tab Button ─────────────────────────────────────────────────────────────
+
+function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <div className="card" style={accentStyle}>
-      <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
-        {label}
-      </p>
-      <p style={{ fontSize: '2rem', fontWeight: 700, lineHeight: 1, color: 'var(--color-text)' }}>
-        {value}
-      </p>
-      {sub && (
-        <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '0.3rem' }}>
-          {sub}
-        </p>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '0.5rem 1rem',
+        borderRadius: 8,
+        border: 'none',
+        background: active ? '#2563eb' : 'var(--color-surface)',
+        color: active ? '#fff' : 'var(--color-text)',
+        fontWeight: active ? 700 : 400,
+        cursor: 'pointer',
+        fontSize: '0.9rem',
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
+// ── Main Dashboard ─────────────────────────────────────────────────────────
+
 export function AdminDashboardPage() {
   const { user } = useAuth();
-  const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
 
-  async function loadMetrics() {
+  // Data states
+  const [loginAttempts, setLoginAttempts] = useState<LoginAttempt[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [driverLogs, setDriverLogs] = useState<DriverLog[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Filters
+  const [loginFilter, setLoginFilter] = useState('');
+  const [auditCategory, setAuditCategory] = useState('');
+  const [driverFilter, setDriverFilter] = useState('');
+
+  const loadTab = useCallback(async (tab: Tab) => {
+    setLoading(true);
+    setError('');
     try {
-      const data = await fetchSystemMetrics();
-      setMetrics(data);
-      setLastUpdated(new Date().toISOString());
-      setError(null);
-    } catch (err: unknown) {
-      const message = err && typeof err === 'object' && 'message' in err
-        ? String((err as { message: unknown }).message)
-        : 'Failed to load metrics';
-      setError(message);
+      if (tab === 'login-attempts') {
+        const res = await api.get<{ login_attempts: LoginAttempt[] }>('/admin/login-attempts?limit=200');
+        setLoginAttempts(res.login_attempts);
+      } else if (tab === 'audit-logs') {
+        const url = auditCategory
+          ? `/admin/audit-logs?limit=200&category=${auditCategory}`
+          : '/admin/audit-logs?limit=200';
+        const res = await api.get<{ audit_logs: AuditLog[] }>(url);
+        setAuditLogs(res.audit_logs);
+      } else if (tab === 'driver-logs') {
+        const res = await api.get<{ driver_logs: DriverLog[] }>('/admin/driver-logs?limit=200');
+        setDriverLogs(res.driver_logs);
+      } else if (tab === 'users') {
+        const res = await api.get<User[]>('/admin/users');
+        setUsers(res);
+      }
+    } catch {
+      setError('Failed to load data.');
     } finally {
       setLoading(false);
     }
-  }
+  }, [auditCategory]);
 
   useEffect(() => {
-    loadMetrics();
-    intervalRef.current = setInterval(loadMetrics, POLL_INTERVAL_MS);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+    if (activeTab !== 'overview') {
+      loadTab(activeTab);
+    }
+  }, [activeTab, loadTab]);
+
+  const tableStyle: React.CSSProperties = {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '0.85rem',
+  };
+
+  const thStyle: React.CSSProperties = {
+    textAlign: 'left',
+    padding: '0.5rem 0.75rem',
+    borderBottom: '2px solid var(--color-border)',
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+  };
+
+  const tdStyle: React.CSSProperties = {
+    padding: '0.5rem 0.75rem',
+    borderBottom: '1px solid var(--color-border)',
+    verticalAlign: 'top',
+  };
 
   return (
     <section aria-labelledby="admin-heading">
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <div>
-          <h2 id="admin-heading">Admin Dashboard</h2>
-          <p className="mt-1" style={{ color: 'var(--color-text-muted)' }}>
-            Welcome back, {user?.username}.
-          </p>
-        </div>
-        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', textAlign: 'right' }}>
-          {loading && !metrics && <span>Loading metrics…</span>}
-          {lastUpdated && !loading && (
-            <span>Last updated: {formatTimestamp(lastUpdated)}</span>
-          )}
-          {loading && metrics && <span style={{ marginLeft: '0.5rem' }}>Refreshing…</span>}
-        </div>
+      <h2 id="admin-heading">Admin Dashboard</h2>
+      <p className="mt-1">Welcome back, {user?.username}.</p>
+
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', margin: '1.5rem 0 1rem' }}>
+        <TabButton label="Overview" active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
+        <TabButton label="Login Attempts" active={activeTab === 'login-attempts'} onClick={() => setActiveTab('login-attempts')} />
+        <TabButton label="Audit Logs" active={activeTab === 'audit-logs'} onClick={() => setActiveTab('audit-logs')} />
+        <TabButton label="Driver Logs" active={activeTab === 'driver-logs'} onClick={() => setActiveTab('driver-logs')} />
+        <TabButton label="Users" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
       </div>
 
       {error && (
-        <div
-          role="alert"
-          style={{
-            marginTop: '1rem',
-            padding: '0.75rem 1rem',
-            background: 'var(--color-error-bg)',
-            border: '1px solid var(--color-danger)',
-            borderRadius: 'var(--radius)',
-            color: 'var(--color-danger)',
-            fontSize: '0.875rem',
-          }}
-        >
-          {error} — metrics will retry automatically.
+        <div style={{ background: '#fee2e2', color: '#991b1b', padding: '0.75rem 1rem', borderRadius: 8, marginBottom: '1rem' }}>
+          {error}
         </div>
       )}
 
-      {loading && !metrics ? (
-        <p style={{ marginTop: '2rem', color: 'var(--color-text-muted)' }}>Loading…</p>
-      ) : metrics ? (
-        <>
-          {/* Users */}
-          <h3 style={{ marginTop: '1.5rem', marginBottom: '0.75rem', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
-            Users
-          </h3>
-          <div className="placeholder-grid">
-            <MetricCard label="Total Users" value={metrics.total_users} />
-            <MetricCard label="Drivers" value={metrics.total_drivers} />
-            <MetricCard label="Sponsors" value={metrics.total_sponsors} />
-            <MetricCard label="Admins" value={metrics.total_admins} />
+      {/* Overview */}
+      {activeTab === 'overview' && (
+        <div className="placeholder-grid mt-2">
+          <div className="card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('users')}>
+            <h3>Users</h3>
+            <p className="helper-text">View all users</p>
           </div>
-
-          {/* Orders */}
-          <h3 style={{ marginTop: '1.5rem', marginBottom: '0.75rem', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
-            Orders (all time)
-          </h3>
-          <div className="placeholder-grid">
-            <MetricCard label="Total Orders" value={metrics.total_orders} />
-            <MetricCard
-              label="Pending"
-              value={metrics.pending_orders}
-              highlight={metrics.pending_orders > 0 ? 'warning' : undefined}
-            />
-            <MetricCard label="Shipped" value={metrics.shipped_orders} />
-            <MetricCard
-              label="Cancelled"
-              value={metrics.cancelled_orders}
-              highlight={metrics.cancelled_orders > 0 ? 'danger' : undefined}
-            />
+          <div className="card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('login-attempts')}>
+            <h3>Login Attempts</h3>
+            <p className="helper-text">Monitor suspicious activity</p>
           </div>
-
-          {/* Points */}
-          <h3 style={{ marginTop: '1.5rem', marginBottom: '0.75rem', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
-            Points (all time)
-          </h3>
-          <div className="placeholder-grid">
-            <MetricCard label="Points Awarded" value={metrics.total_points_awarded.toLocaleString()} />
-            <MetricCard label="Points Redeemed" value={metrics.total_points_redeemed.toLocaleString()} />
+          <div className="card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('audit-logs')}>
+            <h3>Audit Logs</h3>
+            <p className="helper-text">Every system change</p>
           </div>
+          <div className="card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('driver-logs')}>
+            <h3>Driver Logs</h3>
+            <p className="helper-text">All driver point history</p>
+          </div>
+        </div>
+      )}
 
-          {/* Logins */}
-          <h3 style={{ marginTop: '1.5rem', marginBottom: '0.75rem', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
-            Logins (last 24 hours)
-          </h3>
-          <div className="placeholder-grid">
-            <MetricCard label="Login Attempts" value={metrics.logins_last_24h} />
-            <MetricCard
-              label="Failed Logins"
-              value={metrics.failed_logins_last_24h}
-              sub={metrics.logins_last_24h > 0 ? `${Math.round((metrics.failed_logins_last_24h / metrics.logins_last_24h) * 100)}% failure rate` : undefined}
-              highlight={metrics.failed_logins_last_24h > 0 ? 'danger' : undefined}
+      {/* Login Attempts */}
+      {activeTab === 'login-attempts' && (
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h3 style={{ margin: 0 }}>Login Attempts</h3>
+            <input
+              type="search"
+              placeholder="Filter by username..."
+              value={loginFilter}
+              onChange={e => setLoginFilter(e.target.value)}
+              style={{ padding: '0.35rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.85rem' }}
             />
           </div>
+          {loading ? <p>Loading...</p> : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Time</th>
+                    <th style={thStyle}>Username</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>IP Address</th>
+                    <th style={thStyle}>User Agent</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loginAttempts
+                    .filter(a => !loginFilter || a.username.toLowerCase().includes(loginFilter.toLowerCase()))
+                    .map((a, i) => (
+                      <tr key={i} style={{ background: a.success ? 'transparent' : '#fff5f5' }}>
+                        <td style={tdStyle}>{new Date(a.login_time).toLocaleString()}</td>
+                        <td style={tdStyle}>{a.username}</td>
+                        <td style={tdStyle}>
+                          <span style={{
+                            padding: '2px 8px', borderRadius: 9999, fontSize: '0.78rem', fontWeight: 600,
+                            background: a.success ? '#d1fae5' : '#fee2e2',
+                            color: a.success ? '#065f46' : '#991b1b',
+                          }}>
+                            {a.success ? 'Success' : 'Failed'}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>{a.ip_address}</td>
+                        <td style={{ ...tdStyle, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {a.user_agent}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
-          <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-            Metrics auto-refresh every 30 seconds.
-          </p>
-        </>
-      ) : null}
+      {/* Audit Logs */}
+      {activeTab === 'audit-logs' && (
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h3 style={{ margin: 0 }}>Audit Logs</h3>
+            <select
+              value={auditCategory}
+              onChange={e => setAuditCategory(e.target.value)}
+              style={{ padding: '0.35rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.85rem' }}
+            >
+              <option value="">All Categories</option>
+              <option value="point_change">Point Changes</option>
+              <option value="driver_dropped">Driver Dropped</option>
+            </select>
+          </div>
+          {loading ? <p>Loading...</p> : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Category</th>
+                    <th style={thStyle}>Sponsor</th>
+                    <th style={thStyle}>Driver ID</th>
+                    <th style={thStyle}>Points</th>
+                    <th style={thStyle}>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.map((log, i) => (
+                    <tr key={i}>
+                      <td style={tdStyle}>{new Date(log.date).toLocaleString()}</td>
+                      <td style={tdStyle}>{log.category}</td>
+                      <td style={tdStyle}>{log.sponsor_name ?? '—'}</td>
+                      <td style={tdStyle}>{log.driver_id ?? '—'}</td>
+                      <td style={tdStyle}>
+                        {log.points_changed !== null ? (
+                          <span style={{ color: log.points_changed >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+                            {log.points_changed >= 0 ? '+' : ''}{log.points_changed}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td style={tdStyle}>{log.reason ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Driver Logs */}
+      {activeTab === 'driver-logs' && (
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h3 style={{ margin: 0 }}>Driver Logs</h3>
+            <input
+              type="search"
+              placeholder="Filter by username..."
+              value={driverFilter}
+              onChange={e => setDriverFilter(e.target.value)}
+              style={{ padding: '0.35rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.85rem' }}
+            />
+          </div>
+          {loading ? <p>Loading...</p> : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Driver</th>
+                    <th style={thStyle}>Sponsor</th>
+                    <th style={thStyle}>Points</th>
+                    <th style={thStyle}>Reason</th>
+                    <th style={thStyle}>Expires</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {driverLogs
+                    .filter(l => !driverFilter || l.driver_username?.toLowerCase().includes(driverFilter.toLowerCase()))
+                    .map((log, i) => (
+                      <tr key={i}>
+                        <td style={tdStyle}>{new Date(log.date).toLocaleString()}</td>
+                        <td style={tdStyle}>{log.driver_username}</td>
+                        <td style={tdStyle}>{log.sponsor_name ?? '—'}</td>
+                        <td style={tdStyle}>
+                          <span style={{ color: log.points_changed >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+                            {log.points_changed >= 0 ? '+' : ''}{log.points_changed}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>{log.reason}</td>
+                        <td style={tdStyle}>{log.expires_at ? new Date(log.expires_at).toLocaleDateString() : '—'}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Users */}
+      {activeTab === 'users' && (
+        <div className="card">
+          <h3 style={{ marginBottom: '1rem' }}>All Users</h3>
+          {loading ? <p>Loading...</p> : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>ID</th>
+                    <th style={thStyle}>Username</th>
+                    <th style={thStyle}>Email</th>
+                    <th style={thStyle}>Role</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map(u => (
+                    <tr key={u.user_id}>
+                      <td style={tdStyle}>{u.user_id}</td>
+                      <td style={tdStyle}>{u.username}</td>
+                      <td style={tdStyle}>{u.email}</td>
+                      <td style={tdStyle}>
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 9999, fontSize: '0.78rem', fontWeight: 600,
+                          background: u.role === 'admin' ? '#fef3c7' : u.role === 'sponsor' ? '#eff6ff' : '#f0fdf4',
+                          color: u.role === 'admin' ? '#92400e' : u.role === 'sponsor' ? '#1e40af' : '#166534',
+                        }}>
+                          {u.role}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
