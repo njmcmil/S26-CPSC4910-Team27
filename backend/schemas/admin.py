@@ -1,6 +1,10 @@
 from pydantic import BaseModel
 
-
+class DriverSponsorRow(BaseModel):
+    id: int
+    name: str
+    status: str | None
+    total_points:int
 class RedemptionReportRow(BaseModel):
     sponsor_id: int
     sponsor_name: str

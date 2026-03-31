@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
 from auth.auth import require_role
-from schemas.admin import AuditLogResponse, LoginAuditResponse, RedemptionReportResponse
+from schemas.admin import AuditLogResponse, DriverSponsorRow, LoginAuditResponse, RedemptionReportResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -41,18 +41,23 @@ def get_sponsors_for_driver(driver_id: int, cursor):
     """Return all sponsors linked to a given driver via SponsorDrivers."""
     cursor.execute(
         """
-        SELECT u.user_id AS id, COALESCE(sp.company_name, u.username) AS name
+        SELECT 
+            u.user_id AS id, 
+            COALESCE(sp.company_name, u.username) AS name,
+            sd.status,
+            sd.total_points
         FROM SponsorDrivers sd
         JOIN Users u ON sd.sponsor_user_id = u.user_id
         LEFT JOIN SponsorProfiles sp ON u.user_id = sp.user_id
         WHERE sd.driver_user_id = %s
+        ORDER BY name
         """,
         (driver_id,),
     )
     return cursor.fetchall()
 
 
-@router.get("/drivers/{driver_id}/sponsors")
+@router.get("/drivers/{driver_id}/sponsors", response_model=list[DriverSponsorRow])
 def list_driver_sponsors(driver_id: int, current_user: dict = Depends(require_role("admin"))):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -61,7 +66,10 @@ def list_driver_sponsors(driver_id: int, current_user: dict = Depends(require_ro
         cursor.execute("SELECT user_id FROM Users WHERE user_id = %s AND role = 'driver'", (driver_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Driver not found")
-        return get_sponsors_for_driver(driver_id, cursor)
+        rows = get_sponsors_for_driver(driver_id, cursor)
+        for row in rows:
+            row["total_points"] = int(row["total_points"] or 0)
+        return rows
     finally:
         cursor.close()
         conn.close()
