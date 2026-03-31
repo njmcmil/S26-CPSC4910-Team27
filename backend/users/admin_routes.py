@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
 from auth.auth import require_role
-from schemas.admin import RedemptionReportResponse
+from schemas.admin import AuditLogResponse, RedemptionReportResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -137,6 +137,53 @@ def get_redemption_report(current_user: dict = Depends(require_role("admin"))):
             "generated_at": datetime.utcnow().isoformat(),
             "report_rows": rows,
         }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/audit-logs", response_model=AuditLogResponse)
+def get_audit_logs(
+    category: str | None = None,
+    limit: int = 100,
+    current_user: dict = Depends(require_role("admin")),
+):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        capped_limit = min(max(limit, 1), 500)
+        params: list[object] = []
+        query = """
+            SELECT
+                al.date,
+                al.category,
+                al.sponsor_id,
+                COALESCE(sp.company_name, su.username) AS sponsor_name,
+                al.driver_id,
+                al.points_changed,
+                al.reason,
+                al.changed_by_user_id
+            FROM audit_log al
+            LEFT JOIN Users su ON su.user_id = al.sponsor_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = al.sponsor_id
+        """
+
+        if category:
+            query += " WHERE al.category = %s"
+            params.append(category)
+
+        query += " ORDER BY al.date DESC LIMIT %s"
+        params.append(capped_limit)
+
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        for row in rows:
+            if row["date"]:
+                row["date"] = row["date"].isoformat()
+            if row["points_changed"] is not None:
+                row["points_changed"] = int(row["points_changed"])
+
+        return {"audit_logs": rows}
     finally:
         cursor.close()
         conn.close()

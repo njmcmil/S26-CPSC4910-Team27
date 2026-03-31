@@ -18,3 +18,18 @@ class RedemptionReportRow(BaseModel):
 class RedemptionReportResponse(BaseModel):
     generated_at: str
     report_rows: list[RedemptionReportRow]
+
+
+class AuditLogRow(BaseModel):
+    date: str
+    category: str
+    sponsor_id: int | None
+    sponsor_name: str | None
+    driver_id: int | None
+    points_changed: int | None
+    reason: str | None
+    changed_by_user_id: int | None
+
+
+class AuditLogResponse(BaseModel):
+    audit_logs: list[AuditLogRow]
