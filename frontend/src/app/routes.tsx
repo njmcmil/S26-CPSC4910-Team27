@@ -32,6 +32,7 @@ import { SponsorCatalog } from '../features/sponsor/SponsorCatalog';
 import { SponsorPurchaseHistory } from '../features/sponsor/SponsorPurchaseHistory';
 import { SponsorErrorLogs } from '../features/sponsor/SponsorErrorLogs';
 import { SponsorAuditLogs } from '../features/sponsor/SponsorAuditLogs';
+import { SponsorReportsPage } from '../features/sponsor/SponsorReports';
 
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
 import { AdminUsersPage } from '../features/admin/AdminUsers';
@@ -102,6 +103,7 @@ export const router = createBrowserRouter([
               { path: '/sponsor/purchase-history', element: <SponsorPurchaseHistory /> },
               { path: '/sponsor/audit-logs', element: <SponsorAuditLogs /> },
               { path: '/sponsor/error-logs', element: <SponsorErrorLogs /> },
+              { path: '/sponsor/reports', element: <SponsorReportsPage /> },
             ],
           },
 
