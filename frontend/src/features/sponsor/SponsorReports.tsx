@@ -17,11 +17,10 @@ interface PointHistoryRow {
 }
 
 interface AuditLogRow {
-  action_time: string;
-  method: string;
-  path: string;
-  user_id: number;
-  username?: string;
+  date: string;
+  changed_by_user_id: number | null;
+  changed_by_username: string | null;
+  reason: string | null;
 }
 
 type ReportType = 'point-tracking' | 'audit-log';
@@ -123,10 +122,9 @@ export function SponsorReportsPage() {
       downloadCSV(`point_tracking_${now}.csv`, rows);
     } else {
       const rows = (results.data.logs ?? results.data ?? []).map((r: AuditLogRow) => ({
-        action_time: r.action_time,
-        method: r.method,
-        path: r.path,
-        user_id: r.user_id,
+        date: r.date,
+        user: r.changed_by_username ?? '',
+        reason: r.reason ?? '',
       }));
       downloadCSV(`audit_log_${now}.csv`, rows);
     }
@@ -284,22 +282,14 @@ export function SponsorReportsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>
                   <th style={th}>Time</th>
-                  <th style={th}>Method</th>
-                  <th style={th}>Action</th>
                   <th style={th}>User</th>
+                  <th style={th}>Action / Reason</th>
                 </tr></thead>
                 <tbody>{logs.map((r, i) => (
                   <tr key={i}>
-                    <td style={td}>{new Date(r.action_time).toLocaleString()}</td>
-                    <td style={td}>
-                      <span style={{
-                        padding: '2px 8px', borderRadius: 9999, fontSize: '0.75rem', fontWeight: 700,
-                        background: r.method === 'GET' ? '#f0f9ff' : r.method === 'POST' ? '#f0fdf4' : r.method === 'DELETE' ? '#fff5f5' : '#fefce8',
-                        color: r.method === 'GET' ? '#0369a1' : r.method === 'POST' ? '#166534' : r.method === 'DELETE' ? '#991b1b' : '#854d0e',
-                      }}>{r.method}</span>
-                    </td>
-                    <td style={td}>{r.path}</td>
-                    <td style={td}>{r.user_id}</td>
+                    <td style={td}>{new Date(r.date).toLocaleString()}</td>
+                    <td style={td}>{r.changed_by_username ?? '—'}</td>
+                    <td style={td}>{r.reason ?? '—'}</td>
                   </tr>
                 ))}</tbody>
               </table>
