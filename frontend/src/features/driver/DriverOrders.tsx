@@ -31,6 +31,10 @@ export function DriverOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [reportingIssue, setReportingIssue] = useState<Order | null>(null);
+  const [issueType, setIssueType] = useState('');
+  const [issueDescription, setIssueDescription] = useState('');
+  const [submittingIssue, setSubmittingIssue] = useState(false);
 
   const loadOrders = () => {
     setLoading(true);
@@ -60,6 +64,25 @@ export function DriverOrdersPage() {
       setFeedback({ type: 'error', msg: detail });
     } finally {
       setCancelling(null);
+    }
+  };
+
+  const handleReportIssue = async () => {
+    if (!reportingIssue || !issueType || !issueDescription) return;
+    setSubmittingIssue(true);
+    try {
+      await api.post(`/api/driver/orders/${reportingIssue.order_id}/report-issue`, {
+        issue_type: issueType,
+        description: issueDescription,
+      });
+      setFeedback({ type: 'success', msg: 'Issue reported successfully! Our team will review it.' });
+      setReportingIssue(null);
+      setIssueType('');
+      setIssueDescription('');
+    } catch (err: any) {
+      setFeedback({ type: 'error', msg: err?.detail ?? 'Failed to report issue.' });
+    } finally {
+      setSubmittingIssue(false);
     }
   };
 
@@ -119,8 +142,7 @@ export function DriverOrdersPage() {
                   <td style={{ padding: '8px', color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
                     {new Date(order.created_at).toLocaleDateString()}
                   </td>
-                  <td style={{ padding: '8px' }}>
-                    {/* Task 15507: cancel only allowed on pending */}
+                  <td style={{ padding: '8px', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     {order.status === 'pending' && (
                       <button
                         onClick={() => handleCancel(order)}
@@ -134,12 +156,84 @@ export function DriverOrdersPage() {
                         {cancelling === order.order_id ? 'Cancelling…' : 'Cancel'}
                       </button>
                     )}
+                    {order.status !== 'cancelled' && (
+                      <button
+                        onClick={() => setReportingIssue(order)}
+                        style={{
+                          background: 'none', border: '1px solid #f59e0b',
+                          color: '#b45309', borderRadius: 'var(--radius)',
+                          padding: '2px 10px', cursor: 'pointer', fontSize: '0.82rem',
+                        }}
+                      >
+                        Report Issue
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+      )}
+      {reportingIssue && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'var(--color-surface)', borderRadius: 12, padding: '1.5rem',
+            width: '100%', maxWidth: 480, boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+          }}>
+            <h3 style={{ marginBottom: '0.5rem' }}>Report an Issue</h3>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
+              Order: {reportingIssue.item_title}
+            </p>
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                Issue Type
+              </label>
+              <select value={issueType} onChange={e => setIssueType(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.875rem' }}>
+                <option value="">Select an issue type...</option>
+                <option value="not_received">Item Not Received</option>
+                <option value="wrong_item">Wrong Item Received</option>
+                <option value="damaged">Item Arrived Damaged</option>
+                <option value="late_delivery">Late Delivery</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                Description
+              </label>
+              <textarea
+                value={issueDescription}
+                onChange={e => setIssueDescription(e.target.value)}
+                placeholder="Please describe the issue in detail..."
+                rows={4}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.875rem', resize: 'vertical' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button type="button"
+                onClick={() => { setReportingIssue(null); setIssueType(''); setIssueDescription(''); }}
+                style={{ padding: '0.5rem 1rem', borderRadius: 8, border: '1px solid var(--color-border)', background: 'none', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="button"
+                onClick={handleReportIssue}
+                disabled={!issueType || !issueDescription || submittingIssue}
+                style={{
+                  padding: '0.5rem 1.2rem', borderRadius: 8, border: 'none',
+                  background: '#f59e0b', color: '#fff', fontWeight: 700,
+                  cursor: !issueType || !issueDescription ? 'not-allowed' : 'pointer',
+                  opacity: !issueType || !issueDescription ? 0.6 : 1,
+                }}>
+                {submittingIssue ? 'Submitting…' : 'Submit Issue'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );

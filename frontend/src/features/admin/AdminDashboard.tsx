@@ -41,7 +41,20 @@ interface User {
   email: string;
 }
 
-type Tab = 'overview' | 'login-attempts' | 'audit-logs' | 'driver-logs' | 'users';
+interface OrderIssue {
+  issue_id: number;
+  order_id: number;
+  driver_username: string;
+  item_title: string;
+  points_cost: number;
+  issue_type: string;
+  description: string;
+  status: string;
+  created_at: string;
+  admin_notes: string | null;
+}
+
+type Tab = 'overview' | 'login-attempts' | 'audit-logs' | 'driver-logs' | 'users' | 'order-issues';
 
 // ── Tab Button ─────────────────────────────────────────────────────────────
 
@@ -79,6 +92,7 @@ export function AdminDashboardPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [orderIssues, setOrderIssues] = useState<OrderIssue[]>([]);
 
   // Filters
   const [loginFilter, setLoginFilter] = useState('');
@@ -104,6 +118,9 @@ export function AdminDashboardPage() {
       } else if (tab === 'users') {
         const res = await api.get<User[]>('/admin/users');
         setUsers(res);
+      } else if (tab === 'order-issues') {
+        const res = await api.get<{ issues: OrderIssue[] }>('/api/admin/order-issues');
+        setOrderIssues(res.issues);
       }
     } catch {
       setError('Failed to load data.');
@@ -150,6 +167,7 @@ export function AdminDashboardPage() {
         <TabButton label="Audit Logs" active={activeTab === 'audit-logs'} onClick={() => setActiveTab('audit-logs')} />
         <TabButton label="Driver Logs" active={activeTab === 'driver-logs'} onClick={() => setActiveTab('driver-logs')} />
         <TabButton label="Users" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
+        <TabButton label="Order Issues" active={activeTab === 'order-issues'} onClick={() => setActiveTab('order-issues')} />
       </div>
 
       {error && (
@@ -364,6 +382,49 @@ export function AdminDashboardPage() {
                           color: u.role === 'admin' ? '#92400e' : u.role === 'sponsor' ? '#1e40af' : '#166534',
                         }}>
                           {u.role}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+      {activeTab === 'order-issues' && (
+        <div className="card">
+          <h3 style={{ marginBottom: '1rem' }}>Reported Order Issues</h3>
+          {loading ? <p>Loading...</p> : orderIssues.length === 0 ? (
+            <p style={{ color: 'var(--color-text-muted)' }}>No issues reported.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Driver</th>
+                    <th style={thStyle}>Item</th>
+                    <th style={thStyle}>Issue Type</th>
+                    <th style={thStyle}>Description</th>
+                    <th style={thStyle}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orderIssues.map((issue) => (
+                    <tr key={issue.issue_id}>
+                      <td style={tdStyle}>{new Date(issue.created_at).toLocaleString()}</td>
+                      <td style={tdStyle}>{issue.driver_username}</td>
+                      <td style={tdStyle}>{issue.item_title}</td>
+                      <td style={tdStyle}>{issue.issue_type.replace(/_/g, ' ')}</td>
+                      <td style={tdStyle}>{issue.description}</td>
+                      <td style={tdStyle}>
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 9999, fontSize: '0.78rem', fontWeight: 600,
+                          background: issue.status === 'open' ? '#fef3c7' : '#d1fae5',
+                          color: issue.status === 'open' ? '#92400e' : '#065f46',
+                        }}>
+                          {issue.status}
                         </span>
                       </td>
                     </tr>
