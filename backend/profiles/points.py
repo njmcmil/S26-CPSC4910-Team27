@@ -1241,6 +1241,105 @@ async def create_tip(tip_data: TipCreate, current_user: dict = Depends(verify_sp
         conn.close()
 
 
+@router.get("/sponsor/tips", response_model=list[Tip])
+async def get_sponsor_tips(current_user: dict = Depends(verify_sponsor)):
+    """Return all tips created by the current sponsor for dashboard management."""
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT tip_id, sponsor_id AS sponsor_user_id, tip_text, category, active, created_at, updated_at
+            FROM DriverTips
+            WHERE sponsor_id = %s
+            ORDER BY created_at DESC
+        """, (user_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/sponsor/tips/{tip_id}/disable", response_model=Tip)
+async def disable_sponsor_tip(tip_id: int, current_user: dict = Depends(verify_sponsor)):
+    """Disable a sponsor-created tip without deleting it."""
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            "UPDATE DriverTips SET active = FALSE, updated_at = NOW() WHERE tip_id = %s AND sponsor_id = %s",
+            (tip_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        conn.commit()
+
+        cursor.execute("""
+            SELECT tip_id, sponsor_id AS sponsor_user_id, tip_text, category, active, created_at, updated_at
+            FROM DriverTips
+            WHERE tip_id = %s AND sponsor_id = %s
+        """, (tip_id, user_id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/sponsor/tips/{tip_id}/enable", response_model=Tip)
+async def enable_sponsor_tip(tip_id: int, current_user: dict = Depends(verify_sponsor)):
+    """Re-enable a sponsor-created tip."""
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            "UPDATE DriverTips SET active = TRUE, updated_at = NOW() WHERE tip_id = %s AND sponsor_id = %s",
+            (tip_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        conn.commit()
+
+        cursor.execute("""
+            SELECT tip_id, sponsor_id AS sponsor_user_id, tip_text, category, active, created_at, updated_at
+            FROM DriverTips
+            WHERE tip_id = %s AND sponsor_id = %s
+        """, (tip_id, user_id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.delete("/sponsor/tips/{tip_id}")
+async def delete_sponsor_tip(tip_id: int, current_user: dict = Depends(verify_sponsor)):
+    """Delete a sponsor-created tip."""
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("DELETE FROM DriverTipViews WHERE tip_id = %s", (tip_id,))
+        cursor.execute("DELETE FROM DriverTips WHERE tip_id = %s AND sponsor_id = %s", (tip_id, user_id))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        conn.commit()
+        return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 
 # Get all active, unviewed tips (with dynamic min points threshold)
 @router.get("/tips", response_model=list[Tip])

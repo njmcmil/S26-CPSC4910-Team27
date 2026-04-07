@@ -41,9 +41,14 @@ export function HomePage() {
             Go to Dashboard
           </Link>
         ) : (
-          <Link to="/login" className="btn btn-primary">
-            Sign In to Get Started
-          </Link>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Link to="/login" className="btn btn-primary">
+              Sign In
+            </Link>
+            <Link to="/register" className="btn btn-secondary">
+              Create Account
+            </Link>
+          </div>
         )}
       </div>
     </section>

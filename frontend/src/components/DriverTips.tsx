@@ -7,10 +7,7 @@ export default function DriverTips() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const seenThisSession = sessionStorage.getItem('driver_tip_seen') === '1';
-    if (!seenThisSession) {
-      loadTip();
-    }
+    loadTip();
   }, []);
 
   useEffect(() => {
@@ -40,7 +37,6 @@ export default function DriverTips() {
       if (data.length > 0) {
         setTip(data[0]);
         setOpen(true);
-        sessionStorage.setItem('driver_tip_seen', '1');
       } else {
         setTip(null);
         setOpen(false);
@@ -62,6 +58,7 @@ export default function DriverTips() {
 
     try {
       await tipsService.markViewed(tip.tip_id);
+      setTip(null);
       setOpen(false);
     } catch (err) {
       console.error('Failed to mark tip viewed', err);
