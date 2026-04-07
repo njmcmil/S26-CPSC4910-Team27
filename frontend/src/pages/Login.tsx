@@ -194,6 +194,10 @@ export function LoginPage() {
         </div>
       )}
 
+      <p className="mt-2 text-center">
+        New here? <Link to="/register">Create an account</Link>
+      </p>
+
       <p className="mt-2 text-center" style={{ fontSize: '0.875rem' }}>
         <Link to="/">Back to Home</Link>
       </p>

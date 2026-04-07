@@ -272,7 +272,14 @@ async def audit_user_actions(request: Request, call_next):
 # Run scheduler on startup
 @app.on_event("startup")
 def start_scheduler():
-    scheduler.start()
+    if not getattr(scheduler, "running", False):
+        scheduler.start()
+
+
+@app.on_event("shutdown")
+def stop_scheduler():
+    if getattr(scheduler, "running", False):
+        scheduler.shutdown(wait=False)
 
 # --- Security Helpers ---
 def check_inactivity(current_user: dict = Depends(get_current_user)):

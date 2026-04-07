@@ -360,6 +360,114 @@ body {
   padding-top: 1rem;
 }
 
+.dashboard-tabbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 1.4rem 0 1rem;
+}
+
+.dashboard-tablink {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.dashboard-tablink:hover {
+  background: #eef5fb;
+  color: var(--color-primary);
+}
+
+.dashboard-overview-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.dashboard-action-list,
+.dashboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dashboard-action-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: #f8fafc;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+
+.dashboard-action-card:hover {
+  border-color: #b9d3e4;
+  background: #eef5fb;
+}
+
+.dashboard-action-card strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.dashboard-action-card span,
+.dashboard-list-sub {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.dashboard-list-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dashboard-list-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.dashboard-list-title {
+  font-weight: 700;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-shipped {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-cancelled {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
 /* ── Home page features ── */
 .home-features {
   display: grid;
