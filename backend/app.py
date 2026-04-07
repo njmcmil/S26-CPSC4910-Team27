@@ -98,6 +98,7 @@ origins = [
     "http://localhost:5173",      # Vite dev server
     "http://127.0.0.1:5173",
     "http://52.200.244.222:5173", # EC2 frontend
+    "https://good-driver-app-team27-emhfeqdndxgrdybe.eastus-01.azurewebsites.net",
 ]
 
 app.add_middleware(
