@@ -8,6 +8,13 @@ export interface LoginRequest {
   remember_device?: boolean;
 }
 
+export interface CreateUserRequest {
+  username: string;
+  email: string;
+  password: string;
+  role: Exclude<UserRole, 'admin'>;
+}
+
 export interface LoginResponse {
   user_id: number;
   username: string;

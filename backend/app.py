@@ -98,6 +98,7 @@ origins = [
     "http://localhost:5173",      # Vite dev server
     "http://127.0.0.1:5173",
     "http://52.200.244.222:5173", # EC2 frontend
+    "https://good-driver-app-team27-emhfeqdndxgrdybe.eastus-01.azurewebsites.net",
 ]
 
 app.add_middleware(
@@ -271,7 +272,14 @@ async def audit_user_actions(request: Request, call_next):
 # Run scheduler on startup
 @app.on_event("startup")
 def start_scheduler():
-    scheduler.start()
+    if not getattr(scheduler, "running", False):
+        scheduler.start()
+
+
+@app.on_event("shutdown")
+def stop_scheduler():
+    if getattr(scheduler, "running", False):
+        scheduler.shutdown(wait=False)
 
 # --- Security Helpers ---
 def check_inactivity(current_user: dict = Depends(get_current_user)):

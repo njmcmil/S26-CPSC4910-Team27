@@ -43,12 +43,34 @@ export function SponsorDashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [drivers, applications, defaults, activityRes] = await Promise.all([
+      const [driversRes, applicationsRes, defaultsRes, activityRes] = await Promise.allSettled([
         api.get<SponsorDriver[]>('/sponsor/drivers'),
         sponsorService.getPendingApplications(),
         pointsService.getSponsorRewardDefaults(),
         api.get<{ activity: RecentActivity[] }>('/api/sponsor/recent-activity?limit=5'),
       ]);
+
+      const drivers = driversRes.status === 'fulfilled' ? driversRes.value : [];
+      const applications = applicationsRes.status === 'fulfilled' ? applicationsRes.value : [];
+      const defaults = defaultsRes.status === 'fulfilled'
+        ? defaultsRes.value
+        : ({
+            dollar_per_point: 0,
+            earn_rate: 0,
+            expiration_days: null,
+            max_points_per_day: null,
+            max_points_per_month: null,
+          } as SponsorRewardDefaults);
+      const recentActivity = activityRes.status === 'fulfilled' ? activityRes.value.activity : [];
+
+      if (
+        driversRes.status === 'rejected' &&
+        applicationsRes.status === 'rejected' &&
+        defaultsRes.status === 'rejected' &&
+        activityRes.status === 'rejected'
+      ) {
+        throw new Error('Failed to load dashboard data.');
+      }
 
       const totalPoints = drivers.reduce(
         (sum, d) => sum + (d.points_balance || 0),
@@ -59,8 +81,8 @@ export function SponsorDashboardPage() {
         activeDrivers: drivers.length,
         pendingApplications: applications.length,
         totalPointsAllocated: totalPoints,
-        dollarPerPoint: (defaults as SponsorRewardDefaults).dollar_per_point,
-        recentActivity: activityRes.activity,
+        dollarPerPoint: defaults.dollar_per_point,
+        recentActivity,
       });
     } catch (err) {
       const apiErr = err as ApiError;
@@ -110,6 +132,13 @@ export function SponsorDashboardPage() {
       <p className="mt-1" style={{ color: 'var(--color-text-muted)' }}>
         Welcome back, {user?.username}.
       </p>
+
+      <div className="dashboard-tabbar">
+        <Link to="/sponsor/drivers" className="dashboard-tablink">Drivers</Link>
+        <Link to="/sponsor/points" className="dashboard-tablink">Points</Link>
+        <Link to="/sponsor/reports" className="dashboard-tablink">Reports</Link>
+        <Link to="/sponsor/catalog" className="dashboard-tablink">Catalog</Link>
+      </div>
 
       {/* ================= METRICS ================= */}
       <div className="metrics-grid mt-2">
@@ -170,6 +199,53 @@ export function SponsorDashboardPage() {
         </Link>
       </div>
 
+      <div className="dashboard-overview-grid mt-2">
+        <div className="card">
+          <h3>Quick Actions</h3>
+          <div className="dashboard-action-list">
+            <Link to="/sponsor/applications" className="dashboard-action-card">
+              <strong>Review Applications</strong>
+              <span>Approve or reject pending drivers for your program.</span>
+            </Link>
+            <Link to="/sponsor/points" className="dashboard-action-card">
+              <strong>Adjust Points</strong>
+              <span>Add, deduct, or bulk-update driver balances.</span>
+            </Link>
+            <Link to="/sponsor/reports" className="dashboard-action-card">
+              <strong>Generate Reports</strong>
+              <span>Inspect driver behavior and point activity with filters.</span>
+            </Link>
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>Program Snapshot</h3>
+          <div className="dashboard-list">
+            <div className="dashboard-list-row">
+              <div>
+                <div className="dashboard-list-title">Active drivers</div>
+                <div className="dashboard-list-sub">Currently enrolled and earning</div>
+              </div>
+              <strong>{data.activeDrivers}</strong>
+            </div>
+            <div className="dashboard-list-row">
+              <div>
+                <div className="dashboard-list-title">Pending applications</div>
+                <div className="dashboard-list-sub">Awaiting sponsor review</div>
+              </div>
+              <strong>{data.pendingApplications}</strong>
+            </div>
+            <div className="dashboard-list-row">
+              <div>
+                <div className="dashboard-list-title">Points allocated</div>
+                <div className="dashboard-list-sub">Current total across active drivers</div>
+              </div>
+              <strong>{data.totalPointsAllocated.toLocaleString()}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ================= RECENT ACTIVITY ================= */}
       <h3 style={{ marginTop: '2rem', marginBottom: '0.75rem' }}>
         Recent Point Activity
@@ -220,9 +296,8 @@ export function SponsorDashboardPage() {
         </div>
       )}
 
-      {/* ================= SPONSOR TIPS SECTION ================= */}
       <h3 style={{ marginTop: '2.5rem', marginBottom: '0.75rem' }}>
-        Sponsor Tips
+        Catalog And Points Tips
       </h3>
 
       <div className="card">

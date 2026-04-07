@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 
 import { HomePage } from '../pages/Home';
 import { LoginPage } from '../pages/Login';
+import { RegisterPage } from '../pages/Register';
 import { AboutPage } from '../pages/About';
 import { SettingsPage } from '../pages/Settings';
 import { NotFoundPage } from '../pages/NotFound';
@@ -63,6 +64,7 @@ export const router = createBrowserRouter([
       { path: '/', element: <HomePage /> },
       { path: '/about', element: <AboutPage /> },
       { path: '/login', element: <LoginPage /> },
+      { path: '/register', element: <RegisterPage /> },
 
       /* ---------------- PROTECTED ---------------- */
       {
@@ -100,6 +102,7 @@ export const router = createBrowserRouter([
               { path: '/sponsor/points', element: <SponsorPointsPage /> },
               { path: '/sponsor/reward-settings', element: <SponsorRewardSettingsPage /> },
               { path: '/sponsor/catalog', element: <SponsorCatalog /> },
+              { path: '/sponsor/reports', element: <SponsorReportsPage /> },
               { path: '/sponsor/purchase-history', element: <SponsorPurchaseHistory /> },
               { path: '/sponsor/audit-logs', element: <SponsorAuditLogs /> },
               { path: '/sponsor/error-logs', element: <SponsorErrorLogs /> },

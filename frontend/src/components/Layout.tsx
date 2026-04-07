@@ -53,9 +53,34 @@ function NotificationBell() {
         type="button"
         aria-label={`Notifications, ${unread} unread`}
         onClick={() => setOpen(o => !o)}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', position: 'relative', padding: '0.25rem' }}
+        style={{
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          position: 'relative',
+          padding: '0.25rem',
+          width: 34,
+          height: 34,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#fff',
+        }}
       >
-        🔔
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V10a6 6 0 1 0-12 0v4.2a2 2 0 0 1-.6 1.4L4 17h5" />
+          <path d="M10 20a2 2 0 0 0 4 0" />
+        </svg>
         {unread > 0 && (
           <span style={{
             position: 'absolute', top: -2, right: -4,
