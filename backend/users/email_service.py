@@ -292,6 +292,56 @@ def send_sponsor_order_placed_email(
     """
     return _send(to_email, subject, html, plain)
 
+def send_sponsor_account_deactivated_email(
+    to_email: str,
+    username: str,
+    company_name: str | None = None,
+    reason: str | None = None,
+) -> bool:
+    org = f" ({company_name})" if company_name else ""
+    reason_text = reason or "No reason provided."
+    subject = "Your Sponsor Account Has Been Deactivated - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        f"Your sponsor account{org} has been deactivated by an administrator.\n\n"
+        f"Reason: {reason_text}\n\n"
+        "If you believe this is an error or have questions, please contact support."
+    )
+    html = f"""
+        <h2>Sponsor Account Deactivated</h2>
+        <p>Hello {username},</p>
+        <p>Your sponsor account{org} has been <strong>deactivated</strong> by an administrator.</p>
+        <p><strong>Reason:</strong> {reason_text}</p>
+        <p>If you believe this is an error or have questions, please contact support.</p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_sponsor_account_banned_email(
+    to_email: str,
+    username: str,
+    company_name: str | None = None,
+    reason: str | None = None,
+) -> bool:
+    org = f" ({company_name})" if company_name else ""
+    reason_text = reason or "No reason provided."
+    subject = "Your Sponsor Account Has Been Banned - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        f"Your sponsor account{org} has been banned by an administrator.\n\n"
+        f"Reason: {reason_text}\n\n"
+        "If you believe this is an error, please contact support."
+    )
+    html = f"""
+        <h2>Sponsor Account Banned</h2>
+        <p>Hello {username},</p>
+        <p>Your sponsor account{org} has been <strong>banned</strong> by an administrator.</p>
+        <p><strong>Reason:</strong> {reason_text}</p>
+        <p>If you believe this is an error, please contact support.</p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
 def send_order_success_email(
     to_email: str,
     username: str,

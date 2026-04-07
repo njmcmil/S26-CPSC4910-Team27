@@ -1,5 +1,28 @@
 from pydantic import BaseModel
 
+
+class AccountStatusChangeRequest(BaseModel):
+    new_status: str
+    reason: str | None = None
+
+
+class SponsorAdminRow(BaseModel):
+    user_id: int
+    username: str
+    email: str
+    company_name: str | None
+    account_status: str
+
+
+class DriverAdminRow(BaseModel):
+    user_id: int
+    username: str
+    email: str
+    first_name: str | None
+    last_name: str | None
+    account_status: str
+
+
 class DriverSponsorRow(BaseModel):
     id: int
     name: str
