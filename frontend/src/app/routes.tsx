@@ -106,6 +106,7 @@ export const router = createBrowserRouter([
               { path: '/sponsor/purchase-history', element: <SponsorPurchaseHistory /> },
               { path: '/sponsor/audit-logs', element: <SponsorAuditLogs /> },
               { path: '/sponsor/error-logs', element: <SponsorErrorLogs /> },
+              { path: '/sponsor/reports', element: <SponsorReportsPage /> },
             ],
           },
 

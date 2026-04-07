@@ -226,7 +226,6 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
         items: [
           { to: '/sponsor/reports', label: 'Reports' },
           { to: '/sponsor/purchase-history', label: 'Purchase History' },
-          { to: '/sponsor/audit-logs', label: 'Audit Logs' },
           { to: '/sponsor/error-logs', label: 'Error Logs' },
         ],
       },
