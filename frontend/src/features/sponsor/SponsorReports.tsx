@@ -87,8 +87,9 @@ export function SponsorReportsPage() {
   const [driversLoading, setDriversLoading] = useState(true);
   const [driversError, setDriversError] = useState('');
 
+  const today = toDateInputValue(new Date());
   const defaultStart = toDateInputValue(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000));
-  const defaultEnd = toDateInputValue(new Date());
+  const defaultEnd = today;
 
   const [selectedDriverId, setSelectedDriverId] = useState('');
   const [startDate, setStartDate] = useState(defaultStart);
@@ -284,6 +285,7 @@ export function SponsorReportsPage() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
+              max={today}
               style={{ padding: '0.55rem 0.7rem', borderRadius: 8, border: '1px solid var(--color-border)' }}
             />
           </div>
@@ -297,6 +299,7 @@ export function SponsorReportsPage() {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
+              max={today}
               style={{ padding: '0.55rem 0.7rem', borderRadius: 8, border: '1px solid var(--color-border)' }}
             />
           </div>
@@ -309,6 +312,32 @@ export function SponsorReportsPage() {
               Export CSV
             </Button>
           </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: '0.85rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '0.5rem',
+            alignItems: 'center',
+          }}
+        >
+          <span
+            style={{
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              color: '#1d4ed8',
+              background: '#dbeafe',
+              borderRadius: 999,
+              padding: '0.3rem 0.65rem',
+            }}
+          >
+            Range: {startDate} to {endDate}
+          </span>
+          <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+            Dates are limited through {today} so sponsors only report on current or past activity.
+          </span>
         </div>
       </div>
 
@@ -441,6 +470,30 @@ export function SponsorReportsPage() {
               </div>
             ) : (
               <p className="placeholder-msg">No point activity matched the selected range.</p>
+            )}
+
+            {recentBehavior && (
+              <div
+                style={{
+                  marginTop: '1rem',
+                  padding: '0.9rem 1rem',
+                  borderRadius: 10,
+                  background: '#f8fafc',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: '0.3rem' }}>Sponsor Readout</div>
+                <div style={{ color: 'var(--color-text-muted)', lineHeight: 1.55 }}>
+                  {selectedDriver ? formatDriverName(selectedDriver) : 'This driver'} currently has{' '}
+                  <strong>{report.current_points.toLocaleString()} points</strong>, with a net change of{' '}
+                  <strong>
+                    {totals.netChange >= 0 ? '+' : ''}
+                    {totals.netChange.toLocaleString()}
+                  </strong>{' '}
+                  across the selected period. The most frequent adjustment reason was{' '}
+                  <strong>{recentBehavior.topReason ? recentBehavior.topReason[0] : 'not available'}</strong>.
+                </div>
+              </div>
             )}
           </div>
 
