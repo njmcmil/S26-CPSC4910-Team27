@@ -91,7 +91,7 @@ export function SponsorReportsPage() {
         if (startDate) params.set('start_date', startDate);
         if (endDate) params.set('end_date', endDate);
         const qs = params.toString();
-        const data = await api.get<any>(`/sponsor/drivers/${driverId}/point-history${qs ? '?' + qs : ''}`);
+        const data = await api.get<any>(`/api/sponsor/drivers/${driverId}/point-history${qs ? '?' + qs : ''}`);
         setResults({ type: 'point-tracking', data });
       } else {
         const params = new URLSearchParams();
