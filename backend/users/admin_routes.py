@@ -941,8 +941,9 @@ def update_sponsor_status(
             )
 
         cursor.execute(
-            "UPDATE SponsorProfiles SET account_status = %s WHERE user_id = %s",
-            (new_status, user_id),
+            "INSERT INTO SponsorProfiles (user_id, account_status) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE account_status = VALUES(account_status)",
+            (user_id, new_status),
         )
         cursor.execute(
             """
@@ -1033,8 +1034,9 @@ def update_driver_status(
             )
 
         cursor.execute(
-            "UPDATE DriverProfiles SET account_status = %s WHERE user_id = %s",
-            (new_status, user_id),
+            "INSERT INTO DriverProfiles (user_id, account_status) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE account_status = VALUES(account_status)",
+            (user_id, new_status),
         )
         cursor.execute(
             """
