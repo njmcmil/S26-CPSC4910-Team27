@@ -138,6 +138,7 @@ export function SponsorDashboardPage() {
         <Link to="/sponsor/points" className="dashboard-tablink">Points</Link>
         <Link to="/sponsor/reports" className="dashboard-tablink">Reports</Link>
         <Link to="/sponsor/catalog" className="dashboard-tablink">Catalog</Link>
+        <Link to="/sponsor/profile" className="dashboard-tablink">Edit Profile</Link>
       </div>
 
       {/* ================= METRICS ================= */}
@@ -214,6 +215,10 @@ export function SponsorDashboardPage() {
             <Link to="/sponsor/reports" className="dashboard-action-card">
               <strong>Generate Reports</strong>
               <span>Inspect driver behavior and point activity with filters.</span>
+            </Link>
+            <Link to="/sponsor/profile" className="dashboard-action-card">
+              <strong>Edit Profile</strong>
+              <span>Update sponsor contact details, company information, and organization settings.</span>
             </Link>
           </div>
         </div>
