@@ -16,6 +16,29 @@ const ROLE_HOME: Record<UserRole, string> = {
 
 type AccountRole = 'driver' | 'sponsor';
 
+const PASSWORD_REQUIREMENTS = [
+  {
+    label: 'At least 8 characters',
+    isMet: (value: string) => value.length >= 8,
+  },
+  {
+    label: 'At least one uppercase letter',
+    isMet: (value: string) => /[A-Z]/.test(value),
+  },
+  {
+    label: 'At least one lowercase letter',
+    isMet: (value: string) => /[a-z]/.test(value),
+  },
+  {
+    label: 'At least one number',
+    isMet: (value: string) => /\d/.test(value),
+  },
+  {
+    label: 'At least one special character: !@#$%^&*(),.?":{}|<>',
+    isMet: (value: string) => /[!@#$%^&*(),.?":{}|<>]/.test(value),
+  },
+] as const;
+
 export function RegisterPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -29,6 +52,12 @@ export function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+
+  const unmetPasswordRequirements = PASSWORD_REQUIREMENTS.filter(
+    (requirement) => !requirement.isMet(password),
+  );
+  const hasStartedPassword = password.length > 0;
+  const passwordRequirementsMet = unmetPasswordRequirements.length === 0;
 
   useEffect(() => {
     if (user) {
@@ -122,8 +151,23 @@ export function RegisterPage() {
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          helperText="Use a strong password that you have not used elsewhere."
+          helperText="Your password must meet all of the requirements below."
         />
+
+        <div className="register-password-rules" aria-live="polite">
+          <p className="register-password-rules__title">Password requirements</p>
+          {passwordRequirementsMet && hasStartedPassword ? (
+            <p className="register-password-rules__success">
+              All password requirements are met.
+            </p>
+          ) : (
+            <ul className="register-password-rules__list">
+              {unmetPasswordRequirements.map((requirement) => (
+                <li key={requirement.label}>{requirement.label}</li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <FormField
           label="Confirm Password"
