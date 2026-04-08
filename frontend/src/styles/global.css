@@ -355,6 +355,40 @@ body {
 }
 
 /* ── Forgot password section ── */
+
+.register-password-rules {
+  margin: -0.25rem 0 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-surface) 82%, white 18%);
+}
+
+.register-password-rules__title {
+  margin: 0 0 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.register-password-rules__list {
+  margin: 0;
+  padding-left: 1.15rem;
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+}
+
+.register-password-rules__list li + li {
+  margin-top: 0.25rem;
+}
+
+.register-password-rules__success {
+  margin: 0;
+  color: #1f7a46;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
 .forgot-section {
   border-top: 1px solid var(--color-border);
   padding-top: 1rem;

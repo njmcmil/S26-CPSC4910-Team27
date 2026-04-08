@@ -10,4 +10,4 @@ uvicorn app:app --reload
 How to run frontend locally:
 project root ->
 cd frontend
-npm run <branch>
+npm run dev
