@@ -8,7 +8,7 @@ from schemas.points import (
     PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest,
     TipCreate, Tip, TipViewCreate, AccrualStatusUpdate, BulkPointUpdateRequest,
     SponsorRewardDefaults, PointHistoryItem, PointHistoryResponse,
-    BulkPointUploadResponse,
+    BulkPointUploadResponse, BulkPointChangeResponse,
 )
 from typing import Optional
 
@@ -425,7 +425,7 @@ async def add_driver_points(
 
 
 
-@router.post("/sponsor/points/bulk-update", response_model=PointChangeResponse)
+@router.post("/sponsor/points/bulk-update", response_model=BulkPointChangeResponse)
 async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_user: dict = Depends(verify_sponsor)):
     user_id = current_user['user_id']
     conn = get_connection()
@@ -450,30 +450,34 @@ async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_use
             """, (datetime.now(), user_id, driver_id, request.points, request.reason, current_user['user_id']))
             updated_drivers.append({"driver_id": driver_id, "new_total": new_total})
 
-        cursor.execute(
-            "SELECT email, username FROM Users WHERE user_id = %s",
-            (driver_id,)
-        )
-        driver_user = cursor.fetchone()
-
-        if driver_user:
             cursor.execute(
-                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                "SELECT email, username FROM Users WHERE user_id = %s",
                 (driver_id,)
             )
-            pref = cursor.fetchone()
-            if not pref or pref.get("points_email_enabled", True):
-                send_points_notification(
-                    to_email=driver_user["email"],
-                    username=driver_user["username"],
-                    points_changed=request.points,
-                    reason=request.reason,
-                    new_total=new_total
+            driver_user = cursor.fetchone()
+
+            if driver_user:
+                cursor.execute(
+                    "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                    (driver_id,)
                 )
+                pref = cursor.fetchone()
+                if not pref or pref.get("points_email_enabled", True):
+                    send_points_notification(
+                        to_email=driver_user["email"],
+                        username=driver_user["username"],
+                        points_changed=request.points,
+                        reason=request.reason,
+                        new_total=new_total
+                    )
 
         conn.commit()        
-        
-        return {"success": True, "updated_drivers": updated_drivers}
+
+        return {
+            "success": True,
+            "message": f"Updated {len(updated_drivers)} driver{'s' if len(updated_drivers) != 1 else ''}.",
+            "updated_drivers": updated_drivers,
+        }
 
     finally:
         cursor.close()

@@ -20,12 +20,14 @@ interface SponsorDriver {
 }
 
 type AdjustmentType = 'add' | 'deduct';
+type SelectionMode = 'single' | 'multiple' | 'all';
 
 export function SponsorPointsPage() {
   // Driver list
   const [drivers, setDrivers] = useState<SponsorDriver[]>([]);
   const [driversLoading, setDriversLoading] = useState(true);
   const [driversError, setDriversError] = useState('');
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>('single');
   const [selectedDriverIds, setSelectedDriverIds] = useState<number[]>([]);
 
   // Form state
@@ -66,8 +68,17 @@ export function SponsorPointsPage() {
   const selectedDriver = drivers.find(
     (d) => d.driver_user_id === Number(selectedDriverId),
   );
-  const allDriversSelected = drivers.length > 0 && selectedDriverIds.length === drivers.length;
-  const bulkMode = selectedDriverIds.length > 0;
+  const effectiveDriverIds =
+    selectionMode === 'all'
+      ? drivers.map((d) => d.driver_user_id)
+      : selectionMode === 'multiple'
+        ? selectedDriverIds
+        : selectedDriverId
+          ? [Number(selectedDriverId)]
+          : [];
+  const bulkMode = selectionMode !== 'single';
+  const allDriversSelected = selectionMode === 'all';
+  const selectedDriverCount = effectiveDriverIds.length;
 
   const toggleDriverSelection = (driverId: number) => {
     setSelectedDriverIds((prev) =>
@@ -79,8 +90,25 @@ export function SponsorPointsPage() {
     setError('');
   };
 
+  const handleSelectionModeChange = (mode: SelectionMode) => {
+    setSelectionMode(mode);
+    setSuccessMsg('');
+    setError('');
+    setShowHistory(false);
+
+    if (mode !== 'single') {
+      setSelectedDriverId('');
+    }
+
+    if (mode !== 'multiple') {
+      setSelectedDriverIds([]);
+    }
+  };
+
   const toggleSelectAllDrivers = () => {
-    setSelectedDriverIds(allDriversSelected ? [] : drivers.map((d) => d.driver_user_id));
+    setSelectedDriverIds(
+      selectedDriverIds.length === drivers.length ? [] : drivers.map((d) => d.driver_user_id),
+    );
     setSuccessMsg('');
     setError('');
   };
@@ -90,8 +118,17 @@ export function SponsorPointsPage() {
     setError('');
     setSuccessMsg('');
 
-    if (!selectedDriverId && !bulkMode) {
+    if (selectionMode === 'single' && !selectedDriverId) {
       setError('Please select a driver.');
+      return;
+    }
+
+    if (selectionMode !== 'single' && effectiveDriverIds.length === 0) {
+      setError(
+        selectionMode === 'multiple'
+          ? 'Please select at least one driver.'
+          : 'There are no drivers available to update.',
+      );
       return;
     }
 
@@ -110,15 +147,17 @@ export function SponsorPointsPage() {
     try {
       if (bulkMode) {
         const res = await pointsService.bulkUpdatePoints({
-          driver_ids: selectedDriverIds,
+          driver_ids: effectiveDriverIds,
           points: adjustmentType === 'add' ? pointsNum : -pointsNum,
           reason: reason.trim(),
         });
 
         setSuccessMsg(
-          `${adjustmentType === 'add' ? 'Updated' : 'Deducted from'} ${res.updated_drivers.length} drivers.`,
+          `${adjustmentType === 'add' ? 'Updated' : 'Deducted from'} ${res.updated_drivers.length} driver${res.updated_drivers.length === 1 ? '' : 's'}.`,
         );
-        setSelectedDriverIds([]);
+        if (selectionMode === 'multiple') {
+          setSelectedDriverIds([]);
+        }
         setDrivers((prev) =>
           prev.map((driver) => {
             const updated = res.updated_drivers.find(
@@ -195,102 +234,133 @@ export function SponsorPointsPage() {
 
           <form onSubmit={handleSubmit} noValidate>
             <div className="form-group">
-              <label style={{ display: 'block', marginBottom: '0.5rem' }}>Bulk Driver Selection</label>
-              <div
-                style={{
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius)',
-                  padding: '0.75rem',
-                  maxHeight: '16rem',
-                  overflowY: 'auto',
-                  background: 'var(--color-surface, #fff)',
-                }}
+              <label htmlFor="points-selection-mode">Who should this update apply to?</label>
+              <select
+                id="points-selection-mode"
+                value={selectionMode}
+                onChange={(e) => handleSelectionModeChange(e.target.value as SelectionMode)}
+                style={{ width: '100%', padding: '0.5rem', fontSize: '1rem' }}
               >
-                <label
+                <option value="single">One driver</option>
+                <option value="multiple">Multiple drivers</option>
+                <option value="all">All drivers</option>
+              </select>
+              <p className="helper-text">
+                Choose a single driver, hand-pick multiple drivers, or apply the update to everyone in your program.
+              </p>
+            </div>
+
+            {selectionMode === 'single' ? (
+              <div className="form-group">
+                <label htmlFor="points-driver">Driver</label>
+                <select
+                  id="points-driver"
+                  value={selectedDriverId}
+                  onChange={(e) => {
+                    setSelectedDriverId(e.target.value);
+                    setSuccessMsg('');
+                    setError('');
+                    setShowHistory(false);
+                  }}
+                  style={{ width: '100%', padding: '0.5rem', fontSize: '1rem' }}
+                >
+                  <option value="">-- Select a driver --</option>
+                  {drivers.map((d) => (
+                    <option key={d.driver_user_id} value={d.driver_user_id}>
+                      {driverDisplayName(d)} ({d.username}) — {d.points_balance.toLocaleString()} pts
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : selectionMode === 'multiple' ? (
+              <div className="form-group">
+                <label style={{ display: 'block', marginBottom: '0.5rem' }}>Drivers</label>
+                <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'auto 1fr auto',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    fontWeight: 600,
-                    marginBottom: '0.75rem',
-                    paddingBottom: '0.5rem',
-                    borderBottom: '1px solid var(--color-border)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius)',
+                    padding: '0.75rem',
+                    maxHeight: '16rem',
+                    overflowY: 'auto',
+                    background: 'var(--color-surface, #fff)',
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={allDriversSelected}
-                    onChange={toggleSelectAllDrivers}
-                  />
-                  <span>Select all drivers</span>
-                  <span style={{ color: 'var(--color-text-muted)', fontWeight: 500 }}>
-                    {drivers.length} total
-                  </span>
-                </label>
-
-                {drivers.map((driver) => (
                   <label
-                    key={driver.driver_user_id}
                     style={{
                       display: 'grid',
                       gridTemplateColumns: 'auto 1fr auto',
                       alignItems: 'center',
-                      gap: '0.75rem',
-                      padding: '0.5rem 0',
-                      borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+                      gap: '0.5rem',
+                      fontWeight: 600,
+                      marginBottom: '0.75rem',
+                      paddingBottom: '0.5rem',
+                      borderBottom: '1px solid var(--color-border)',
                     }}
                   >
                     <input
                       type="checkbox"
-                      checked={selectedDriverIds.includes(driver.driver_user_id)}
-                      onChange={() => toggleDriverSelection(driver.driver_user_id)}
+                      checked={selectedDriverIds.length === drivers.length && drivers.length > 0}
+                      onChange={toggleSelectAllDrivers}
                     />
-                    <span style={{ minWidth: 0 }}>
-                      <strong>{driverDisplayName(driver)}</strong> ({driver.username})
-                    </span>
-                    <span
-                      style={{
-                        whiteSpace: 'nowrap',
-                        fontVariantNumeric: 'tabular-nums',
-                        color: 'var(--color-text-muted)',
-                        justifySelf: 'end',
-                      }}
-                    >
-                      {driver.points_balance.toLocaleString()} pts
+                    <span>Select all listed drivers</span>
+                    <span style={{ color: 'var(--color-text-muted)', fontWeight: 500 }}>
+                      {selectedDriverIds.length}/{drivers.length}
                     </span>
                   </label>
-                ))}
-              </div>
-              <p className="helper-text">
-                Select multiple drivers here for a bulk update, or leave all unchecked to update one driver below.
-              </p>
-            </div>
 
-            {/* Driver selector */}
-            <div className="form-group">
-              <label htmlFor="points-driver">Driver</label>
-              <select
-                id="points-driver"
-                value={selectedDriverId}
-                disabled={bulkMode}
-                onChange={(e) => {
-                  setSelectedDriverId(e.target.value);
-                  setSuccessMsg('');
-                  setError('');
-                  setShowHistory(false);
-                }}
-                style={{ width: '100%', padding: '0.5rem', fontSize: '1rem' }}
-              >
-                <option value="">-- Select a driver --</option>
-                {drivers.map((d) => (
-                  <option key={d.driver_user_id} value={d.driver_user_id}>
-                    {driverDisplayName(d)} ({d.username}) —{' '}
-                    {d.points_balance.toLocaleString()} pts
-                  </option>
-                ))}
-              </select>
-            </div>
+                  {drivers.map((driver) => (
+                    <label
+                      key={driver.driver_user_id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'auto 1fr auto',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        padding: '0.5rem 0',
+                        borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedDriverIds.includes(driver.driver_user_id)}
+                        onChange={() => toggleDriverSelection(driver.driver_user_id)}
+                      />
+                      <span style={{ minWidth: 0 }}>
+                        <strong>{driverDisplayName(driver)}</strong> ({driver.username})
+                      </span>
+                      <span
+                        style={{
+                          whiteSpace: 'nowrap',
+                          fontVariantNumeric: 'tabular-nums',
+                          color: 'var(--color-text-muted)',
+                          justifySelf: 'end',
+                        }}
+                      >
+                        {driver.points_balance.toLocaleString()} pts
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="helper-text">
+                  Pick any combination of drivers for a bulk point update.
+                </p>
+              </div>
+            ) : (
+              <div className="form-group">
+                <label>All Drivers</label>
+                <div
+                  style={{
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius)',
+                    padding: '0.85rem 1rem',
+                    background: 'var(--color-surface, #fff)',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  This update will apply to all {drivers.length} enrolled drivers.
+                </div>
+              </div>
+            )}
 
             {/* Action type */}
             <div className="form-group">
@@ -330,14 +400,18 @@ export function SponsorPointsPage() {
               <Button
                 type="submit"
                 loading={submitting}
-                disabled={!selectedDriverId && !bulkMode}
+                disabled={selectedDriverCount === 0}
               >
                 {submitting
                   ? 'Submitting...'
                   : bulkMode
-                    ? adjustmentType === 'add'
-                      ? 'Add Points to Selected Drivers'
-                      : 'Deduct Points from Selected Drivers'
+                    ? selectionMode === 'all'
+                      ? adjustmentType === 'add'
+                        ? 'Add Points to All Drivers'
+                        : 'Deduct Points from All Drivers'
+                      : adjustmentType === 'add'
+                        ? 'Add Points to Selected Drivers'
+                        : 'Deduct Points from Selected Drivers'
                     : adjustmentType === 'add'
                       ? 'Add Points'
                       : 'Deduct Points'}

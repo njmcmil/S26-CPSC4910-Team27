@@ -34,6 +34,17 @@ class BulkPointUpdateRequest(BaseModel):
     reason: str
 
 
+class BulkPointChangeResult(BaseModel):
+    driver_id: int
+    new_total: float
+
+
+class BulkPointChangeResponse(BaseModel):
+    success: bool
+    message: str
+    updated_drivers: List[BulkPointChangeResult]
+
+
 class BulkPointUploadError(BaseModel):
     line_number: int
     raw_line: str
