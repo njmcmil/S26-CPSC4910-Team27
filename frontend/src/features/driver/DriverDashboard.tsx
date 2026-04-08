@@ -120,6 +120,7 @@ export function DriverDashboardPage() {
         <Link to="/driver/catalog" className="dashboard-tablink">Catalog</Link>
         <Link to="/driver/orders" className="dashboard-tablink">My Orders</Link>
         <Link to="/driver/applications" className="dashboard-tablink">Applications</Link>
+        <Link to="/driver/profile" className="dashboard-tablink">Edit Profile</Link>
       </div>
 
       <div className="metrics-grid mt-2">
@@ -162,6 +163,10 @@ export function DriverDashboardPage() {
             <Link to="/driver/orders" className="dashboard-action-card">
               <strong>Manage Orders</strong>
               <span>Track pending redemptions and cancel when needed.</span>
+            </Link>
+            <Link to="/driver/profile" className="dashboard-action-card">
+              <strong>Edit Profile</strong>
+              <span>Update your personal details, license, and vehicle information.</span>
             </Link>
           </div>
         </div>

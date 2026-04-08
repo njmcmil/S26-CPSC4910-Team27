@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { sponsorService } from '../services/sponsorService';
+import { Button } from '../components/Button';
 
 
 interface DriverApplication {
@@ -86,20 +87,21 @@ export function SponsorApplicationsPage() {
             <strong>{app.username}</strong> ({app.email})
           </p>
 
-          <div className="actions mt-1">
-            <button
-              className="btn-primary"
+          <div className="mt-1" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Button
+              type="button"
               onClick={() => approve(app.application_id)}
             >
               Approve
-            </button>
+            </Button>
 
-            <button
-              className="btn-danger ml-2"
+            <Button
+              type="button"
+              variant="danger"
               onClick={() => reject(app.application_id)}
             >
               Reject
-            </button>
+            </Button>
           </div>
         </div>
       ))}

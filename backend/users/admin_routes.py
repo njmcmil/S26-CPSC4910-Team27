@@ -877,9 +877,7 @@ def get_driver_logs(
         cursor.close()
         conn.close()
 
-# ── Sponsor account status management ─────────────────────────────────────────
-
-VALID_SPONSOR_STATUSES = {"active", "inactive", "banned"}
+# ── Sponsor account-status management ──────────────────────────────────────
 VALID_SPONSOR_TRANSITIONS: dict[str, set[str]] = {
     "active":   {"inactive", "banned"},
     "inactive": {"active"},
@@ -888,7 +886,6 @@ VALID_SPONSOR_TRANSITIONS: dict[str, set[str]] = {
 
 @router.get("/sponsors", response_model=list[SponsorAdminRow])
 def list_sponsors_admin(current_user: dict = Depends(require_role("admin"))):
-    """List all sponsors with their account status for admin management."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -902,7 +899,7 @@ def list_sponsors_admin(current_user: dict = Depends(require_role("admin"))):
             FROM Users u
             LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id
             WHERE u.role = 'sponsor'
-            ORDER BY COALESCE(sp.company_name, u.username)
+            ORDER BY u.username
         """)
         return cursor.fetchall()
     finally:
@@ -910,96 +907,68 @@ def list_sponsors_admin(current_user: dict = Depends(require_role("admin"))):
         conn.close()
 
 
-@router.patch("/sponsors/{user_id}/status")
+@router.post("/sponsors/{user_id}/status")
 def update_sponsor_status(
     user_id: int,
     body: AccountStatusChangeRequest,
     current_user: dict = Depends(require_role("admin")),
 ):
-    """Admin: change a sponsor's account_status (active / inactive / banned)."""
-    new_status = body.new_status.lower()
-    if new_status not in VALID_SPONSOR_STATUSES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid status '{new_status}'. Must be one of: {', '.join(sorted(VALID_SPONSOR_STATUSES))}",
-        )
-
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # Fetch current sponsor
-        cursor.execute("""
-            SELECT u.user_id, u.username, u.email,
-                   sp.company_name,
-                   COALESCE(sp.account_status, 'active') AS account_status
-            FROM Users u
-            LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id
-            WHERE u.user_id = %s AND u.role = 'sponsor'
-        """, (user_id,))
-        sponsor = cursor.fetchone()
-        if not sponsor:
+        cursor.execute(
+            "SELECT u.user_id, u.username, u.email, COALESCE(sp.account_status, 'active') AS account_status, sp.company_name "
+            "FROM Users u LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id "
+            "WHERE u.user_id = %s AND u.role = 'sponsor'",
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="Sponsor not found")
 
-        current_status = sponsor["account_status"]
-        if current_status == new_status:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Sponsor is already '{new_status}'.",
-            )
+        current_status = row["account_status"]
+        new_status = body.new_status.lower()
+
+        if new_status == current_status:
+            raise HTTPException(status_code=409, detail=f"Sponsor is already {current_status}")
 
         allowed = VALID_SPONSOR_TRANSITIONS.get(current_status, set())
         if new_status not in allowed:
             raise HTTPException(
                 status_code=422,
-                detail=f"Cannot transition from '{current_status}' to '{new_status}'.",
+                detail=f"Cannot transition sponsor from '{current_status}' to '{new_status}'",
             )
 
-        # Apply status change
         cursor.execute(
-            "UPDATE SponsorProfiles SET account_status = %s WHERE user_id = %s",
-            (new_status, user_id),
+            "INSERT INTO SponsorProfiles (user_id, account_status) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE account_status = VALUES(account_status)",
+            (user_id, new_status),
         )
-
-        # Audit log
-        reason_text = body.reason or f"Admin changed status from {current_status} to {new_status}"
         cursor.execute(
             """
-            INSERT INTO audit_log (category, date, sponsor_id, reason, changed_by_user_id)
-            VALUES ('account_status_change', NOW(), %s, %s, %s)
+            INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES (NOW(), 'account_status_change', %s, NULL, NULL, %s, %s)
             """,
-            (user_id, reason_text, current_user["user_id"]),
+            (user_id, body.reason, current_user["user_id"]),
         )
         conn.commit()
 
-        # Email notifications
         if new_status == "inactive":
             send_sponsor_account_deactivated_email(
-                to_email=sponsor["email"],
-                username=sponsor["username"],
-                company_name=sponsor["company_name"],
-                reason=body.reason,
+                row["email"], row["username"], row["company_name"], body.reason
             )
         elif new_status == "banned":
             send_sponsor_account_banned_email(
-                to_email=sponsor["email"],
-                username=sponsor["username"],
-                company_name=sponsor["company_name"],
-                reason=body.reason,
+                row["email"], row["username"], row["company_name"], body.reason
             )
 
-        return {
-            "message": f"Sponsor '{sponsor['username']}' status updated to '{new_status}'.",
-            "user_id": user_id,
-            "new_status": new_status,
-        }
+        return {"message": f"Sponsor status updated to '{new_status}'", "new_status": new_status}
     finally:
         cursor.close()
         conn.close()
 
 
-# ── Driver account status management ──────────────────────────────────────────
-
-VALID_DRIVER_STATUSES = {"active", "inactive"}
+# ── Driver account-status management ────────────────────────────────────────
 VALID_DRIVER_TRANSITIONS: dict[str, set[str]] = {
     "active":   {"inactive"},
     "inactive": {"active"},
@@ -1007,7 +976,6 @@ VALID_DRIVER_TRANSITIONS: dict[str, set[str]] = {
 
 @router.get("/drivers", response_model=list[DriverAdminRow])
 def list_drivers_admin(current_user: dict = Depends(require_role("admin"))):
-    """List all drivers with their account status for admin management."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -1031,68 +999,53 @@ def list_drivers_admin(current_user: dict = Depends(require_role("admin"))):
         conn.close()
 
 
-@router.patch("/drivers/{user_id}/status")
+@router.post("/drivers/{user_id}/status")
 def update_driver_status(
     user_id: int,
     body: AccountStatusChangeRequest,
     current_user: dict = Depends(require_role("admin")),
 ):
-    """Admin: change a driver's account_status (active / inactive)."""
-    new_status = body.new_status.lower()
-    if new_status not in VALID_DRIVER_STATUSES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid status '{new_status}'. Must be one of: {', '.join(sorted(VALID_DRIVER_STATUSES))}",
-        )
-
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("""
-            SELECT u.user_id, u.username,
-                   COALESCE(dp.account_status, 'active') AS account_status
-            FROM Users u
-            LEFT JOIN DriverProfiles dp ON dp.user_id = u.user_id
-            WHERE u.user_id = %s AND u.role = 'driver'
-        """, (user_id,))
-        driver = cursor.fetchone()
-        if not driver:
+        cursor.execute(
+            "SELECT u.user_id, u.username, COALESCE(dp.account_status, 'active') AS account_status "
+            "FROM Users u LEFT JOIN DriverProfiles dp ON dp.user_id = u.user_id "
+            "WHERE u.user_id = %s AND u.role = 'driver'",
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="Driver not found")
 
-        current_status = driver["account_status"]
-        if current_status == new_status:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Driver is already '{new_status}'.",
-            )
+        current_status = row["account_status"]
+        new_status = body.new_status.lower()
+
+        if new_status == current_status:
+            raise HTTPException(status_code=409, detail=f"Driver is already {current_status}")
 
         allowed = VALID_DRIVER_TRANSITIONS.get(current_status, set())
         if new_status not in allowed:
             raise HTTPException(
                 status_code=422,
-                detail=f"Cannot transition from '{current_status}' to '{new_status}'.",
+                detail=f"Cannot transition driver from '{current_status}' to '{new_status}'",
             )
 
         cursor.execute(
-            "UPDATE DriverProfiles SET account_status = %s WHERE user_id = %s",
-            (new_status, user_id),
+            "INSERT INTO DriverProfiles (user_id, account_status) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE account_status = VALUES(account_status)",
+            (user_id, new_status),
         )
-
-        reason_text = body.reason or f"Admin changed status from {current_status} to {new_status}"
         cursor.execute(
             """
-            INSERT INTO audit_log (category, date, driver_id, reason, changed_by_user_id)
-            VALUES ('account_status_change', NOW(), %s, %s, %s)
+            INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES (NOW(), 'account_status_change', NULL, %s, NULL, %s, %s)
             """,
-            (user_id, reason_text, current_user["user_id"]),
+            (user_id, body.reason, current_user["user_id"]),
         )
         conn.commit()
 
-        return {
-            "message": f"Driver '{driver['username']}' status updated to '{new_status}'.",
-            "user_id": user_id,
-            "new_status": new_status,
-        }
+        return {"message": f"Driver status updated to '{new_status}'", "new_status": new_status}
     finally:
         cursor.close()
         conn.close()

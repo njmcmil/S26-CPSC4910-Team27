@@ -1392,6 +1392,111 @@ def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_cur
         cursor.close()
         conn.close()
 
+@app.post("/api/driver/orders/{order_id}/report-issue")
+def report_order_issue(
+    order_id: int,
+    body: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Driver reports an issue with an order."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    driver_id = current_user["user_id"]
+    issue_type = body.get("issue_type")
+    description = body.get("description")
+    if not issue_type or not description:
+        raise HTTPException(status_code=400, detail="issue_type and description required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT order_id FROM Orders WHERE order_id = %s AND driver_user_id = %s",
+            (order_id, driver_id)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Order not found")
+        cursor.execute(
+            """
+            INSERT INTO OrderIssues (order_id, driver_user_id, issue_type, description)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (order_id, driver_id, issue_type, description)
+        )
+        conn.commit()
+        return {"success": True, "message": "Issue reported successfully"}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/api/admin/order-issues")
+def get_order_issues(
+    status: str = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Admin views all reported order issues."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT oi.issue_id, oi.order_id, oi.issue_type, oi.description,
+                   oi.status, oi.created_at, oi.resolved_at, oi.admin_notes,
+                   u.username AS driver_username,
+                   o.item_title, o.points_cost
+            FROM OrderIssues oi
+            JOIN Users u ON u.user_id = oi.driver_user_id
+            JOIN Orders o ON o.order_id = oi.order_id
+        """
+        params = []
+        if status:
+            query += " WHERE oi.status = %s"
+            params.append(status)
+        query += " ORDER BY oi.created_at DESC"
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        for row in rows:
+            if row["created_at"]:
+                row["created_at"] = row["created_at"].isoformat()
+            if row["resolved_at"]:
+                row["resolved_at"] = row["resolved_at"].isoformat()
+        return {"issues": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.put("/api/admin/order-issues/{issue_id}")
+def update_order_issue(
+    issue_id: int,
+    body: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Admin updates an order issue status."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    status = body.get("status")
+    admin_notes = body.get("admin_notes")
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        resolved_at = "NOW()" if status == "resolved" else "NULL"
+        cursor.execute(
+            f"""
+            UPDATE OrderIssues 
+            SET status = %s, admin_notes = %s,
+                resolved_at = {resolved_at}
+            WHERE issue_id = %s
+            """,
+            (status, admin_notes, issue_id)
+        )
+        conn.commit()
+        return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
+
 
 # ==============================================================================
 # ORDERS: DRIVER ENDPOINTS 
