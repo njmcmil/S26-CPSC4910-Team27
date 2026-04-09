@@ -926,9 +926,9 @@ async def get_driver_point_history(
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Get current total
+        # Get current total - sum across all sponsors for multi-sponsor drivers
         cursor.execute("""
-            SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s
+            SELECT SUM(total_points) AS total_points FROM SponsorDrivers WHERE driver_user_id = %s
         """, (driver_id,))
         current = cursor.fetchone()
 
