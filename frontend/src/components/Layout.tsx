@@ -341,6 +341,45 @@ function GroupedSidebar({ nav }: { nav: GroupedNav }) {
   );
 }
 
+/* ── Sponsor Switcher (driver only, multi-sponsor) ── */
+
+function SponsorSwitcher() {
+  const { sponsors, activeSponsorId, setActiveSponsorId } = useAuth();
+
+  if (sponsors.length <= 1) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <label
+        htmlFor="sponsor-switcher"
+        style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}
+      >
+        Sponsor:
+      </label>
+      <select
+        id="sponsor-switcher"
+        value={activeSponsorId ?? ''}
+        onChange={(e) => setActiveSponsorId(Number(e.target.value))}
+        style={{
+          fontSize: '0.85rem',
+          padding: '0.25rem 0.5rem',
+          borderRadius: 6,
+          border: '1px solid rgba(255,255,255,0.3)',
+          background: 'rgba(255,255,255,0.15)',
+          color: '#fff',
+          cursor: 'pointer',
+        }}
+      >
+        {sponsors.map((s) => (
+          <option key={s.sponsor_user_id} value={s.sponsor_user_id} style={{ color: '#000' }}>
+            {s.sponsor_name} ({s.total_points} pts)
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /* ── Main layout ── */
 
 export function Layout() {
@@ -370,6 +409,7 @@ export function Layout() {
               {ROLE_LABELS[user.role]}
             </span>
             <span className="header-username">{user.username}</span>
+            {user.role === 'driver' && <SponsorSwitcher />}
             {user.role === 'driver' && <NotificationBell />}
             <Button variant="secondary" onClick={handleLogout} type="button">
               Log out
