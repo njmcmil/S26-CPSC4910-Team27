@@ -385,7 +385,7 @@ async def add_driver_points(
         
         # Get updated point total
         cursor.execute(
-            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s",
+            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
             (request.driver_id,)
         )
         new_total = cursor.fetchone()['total_points']
@@ -648,7 +648,7 @@ async def deduct_driver_points(
 
         conn.commit()
 
-        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (request.driver_id,))
+        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s", (request.driver_id,))
         new_total = cursor.fetchone()['total_points']
 
         # Send email if driver has notifications enabled
