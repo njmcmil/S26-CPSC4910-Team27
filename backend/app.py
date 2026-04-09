@@ -385,6 +385,34 @@ def get_about_public():
         cursor.close()
         conn.close()
 
+@app.get("/api/driver/sponsors")
+def get_driver_sponsors(current_user: dict = Depends(get_current_user)):
+    """Return all sponsors for the logged-in driver."""
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT sd.sponsor_user_id, sd.total_points,
+                   COALESCE(sp.company_name, u.username) AS sponsor_name
+            FROM SponsorDrivers sd
+            JOIN Users u ON u.user_id = sd.sponsor_user_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = sd.sponsor_user_id
+            WHERE sd.driver_user_id = %s
+            ORDER BY sponsor_name ASC
+            """,
+            (current_user["user_id"],)
+        )
+        sponsors = cursor.fetchall()
+        for s in sponsors:
+            s["total_points"] = int(s["total_points"] or 0)
+        return {"sponsors": sponsors}
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.get("/api/driver/notification-preferences")
 def get_notification_preferences(current_user: dict = Depends(get_current_user)):
     """Get notification preferences for the logged-in driver."""
@@ -1050,17 +1078,23 @@ def unsave_product(item_id: str, current_user: dict = Depends(get_current_user))
 # ==============================================================================
 
 @app.get("/api/driver/catalog")
-def get_driver_catalog(current_user: dict = Depends(get_current_user)):
+def get_driver_catalog(current_user: dict = Depends(get_current_user), sponsor_id: int = None):
     if current_user["role"] != "driver":
         raise HTTPException(status_code=403, detail="Driver access required")
     driver_id = current_user["user_id"]
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute(
-            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (driver_id,)
-        )
+        if sponsor_id:
+            cursor.execute(
+                "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+                (driver_id, sponsor_id)
+            )
+        else:
+            cursor.execute(
+                "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s LIMIT 1",
+                (driver_id,)
+            )
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="No sponsor relationship found")
@@ -1156,10 +1190,17 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute(
-            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (driver_id,)
-        )
+        sponsor_id_from_body = body.get("sponsor_id")
+        if sponsor_id_from_body:
+            cursor.execute(
+                "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+                (driver_id, sponsor_id_from_body)
+            )
+        else:
+            cursor.execute(
+                "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s LIMIT 1",
+                (driver_id,)
+            )
         driver_row = cursor.fetchone()
         if not driver_row:
             raise HTTPException(status_code=404, detail="No sponsor relationship found")
