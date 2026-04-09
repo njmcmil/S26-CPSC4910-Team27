@@ -66,7 +66,10 @@ function clearAuth() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSponsorId, setActiveSponsorId] = useState<number | null>(null);
+  const [activeSponsorId, setActiveSponsorId] = useState<number | null>(() => {
+    const stored = localStorage.getItem('activeSponsorId');
+    return stored ? parseInt(stored) : null;
+  });
   const [sponsors, setSponsors] = useState<SponsorOption[]>([]);
 
   // Restore session on mount
@@ -86,7 +89,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .then((data: { sponsors: SponsorOption[] }) => {
           setSponsors(data.sponsors);
           if (data.sponsors.length > 0 && !activeSponsorId) {
-            setActiveSponsorId(data.sponsors[0].sponsor_user_id);
+            const stored = localStorage.getItem('activeSponsorId');
+            const storedId = stored ? parseInt(stored) : null;
+            const validId = storedId && data.sponsors.some(s => s.sponsor_user_id === storedId)
+              ? storedId
+              : data.sponsors[0].sponsor_user_id;
+            setActiveSponsorId(validId);
+            localStorage.setItem('activeSponsorId', String(validId));
           }
         })
         .catch(() => {});
@@ -130,6 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSponsors([]);
     setActiveSponsorId(null);
+    localStorage.removeItem('activeSponsorId');
     clearAuth();
   }, []);
 
@@ -143,10 +153,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+ const persistSponsorId = useCallback((id: number) => {
+    setActiveSponsorId(id);
+    localStorage.setItem('activeSponsorId', String(id));
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, login, logout, activeSponsorId, setActiveSponsorId, sponsors }),
-    [user, loading, login, logout, activeSponsorId, sponsors],
-  );
+    () => ({ user, loading, login, logout, activeSponsorId, setActiveSponsorId: persistSponsorId, sponsors }),
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
