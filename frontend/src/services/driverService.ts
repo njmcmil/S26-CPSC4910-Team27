@@ -51,10 +51,11 @@ export const driverService = {
   },
 
   /** Fetch driver's point history */
-  getPoints(): Promise<PointHistoryResponse> {
-    return api.get<PointHistoryResponse>(
-      '/api/driver/points/history'
-    );
+ getPoints(sponsorId?: number): Promise<PointHistoryResponse> {
+    const url = sponsorId
+      ? `/api/driver/points/history?sponsor_id=${sponsorId}`
+      : '/api/driver/points/history';
+    return api.get<PointHistoryResponse>(url);
   },
 
   getApplicationSponsors(): Promise<DriverApplicationSponsor[]> {
