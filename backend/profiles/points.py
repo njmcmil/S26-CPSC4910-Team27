@@ -789,11 +789,10 @@ async def get_driver_point_history_for_sponsor(
         # Cap limit to prevent abuse
         limit = min(limit, 500)
 
-        # Get current point total
-        cursor.execute(
-            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (driver_id,)
-        )
+        # Get current total - sum across all sponsors for multi-sponsor drivers
+        cursor.execute("""
+            SELECT SUM(total_points) AS total_points FROM SponsorDrivers WHERE driver_user_id = %s
+        """, (driver_id,))
         current = cursor.fetchone()
         current_points = current['total_points'] if current else 0
 
@@ -1363,7 +1362,7 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
     try:
         # Get driver's sponsor and points/accrual status
         cursor.execute(
-            "SELECT sponsor_user_id, total_points, points_paused FROM SponsorDrivers WHERE driver_user_id = %s",
+            "SELECT sponsor_user_id, total_points, points_paused FROM SponsorDrivers WHERE driver_user_id = %s LIMIT 1",
             (driver_id,)
         )
         driver = cursor.fetchone()
