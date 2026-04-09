@@ -25,7 +25,7 @@ interface DashboardActivity {
 }
 
 export function DriverDashboardPage() {
-  const { user } = useAuth();
+  const { user, activeSponsorId, sponsors: sponsorOptions } = useAuth();
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [sponsors, setSponsors] = useState<DriverApplicationSponsor[]>([]);
   const [recentActivity, setRecentActivity] = useState<DashboardActivity[]>([]);
@@ -40,7 +40,7 @@ export function DriverDashboardPage() {
       try {
         const [profileRes, pointsRes, ordersRes, sponsorsRes] = await Promise.allSettled([
           driverService.getProfile(),
-          driverService.getPoints(),
+          driverService.getPoints(activeSponsorId ?? undefined),
           api.get<{ orders: DriverOrder[] }>('/api/driver/orders'),
           driverService.getApplicationSponsors(),
         ]);
@@ -80,16 +80,19 @@ export function DriverDashboardPage() {
     };
 
     loadDashboard();
-  }, []);
+  }, [activeSponsorId]);
 
   const pendingOrders = useMemo(
     () => orders.filter((order) => order.status === 'pending').length,
     [orders],
   );
 
+  const activeSponsor = sponsorOptions.find(s => s.sponsor_user_id === activeSponsorId);
   const currentSponsor = sponsors.find((sponsor) => sponsor.is_current_sponsor) ?? null;
   const sponsorHeadline = currentSponsor ? currentSponsor.sponsor_name : 'Not assigned';
   const sponsorLabel = currentSponsor
+    ? `Balance: ${activeSponsor.total_points.toLocaleString()} pts`
+    : currentSponsor
     ? 'You currently have an active sponsor connection.'
     : 'No sponsor is assigned yet. Apply to a sponsor to join a rewards program.';
 
