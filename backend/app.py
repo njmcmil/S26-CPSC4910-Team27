@@ -1245,10 +1245,13 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
             )
         )
         conn.commit()
-        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (driver_id,))
-        new_balance = cursor.fetchone()["total_points"]
+        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s", (driver_id, sponsor_id))
+        new_balance_row = cursor.fetchone()
+        new_balance = new_balance_row["total_points"] if new_balance_row else 0
+
         cursor.execute("SELECT stock_quantity FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s", (item_id, sponsor_id))
-        new_stock = cursor.fetchone()["stock_quantity"]
+        new_stock_row = cursor.fetchone()
+        new_stock = new_stock_row["stock_quantity"] if new_stock_row else 0
 
         cursor.execute(
             "SELECT orders_email_enabled FROM NotificationPreferences WHERE user_id = %s",
