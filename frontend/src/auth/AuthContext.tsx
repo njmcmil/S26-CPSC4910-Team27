@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from 'react';
 import type { AuthUser, LoginRequest, UserRole } from '../types';
 import { authService } from '../services/authService';
-import { setToken, setUnauthorizedHandler } from '../services/apiClient';
+import { setToken, setUnauthorizedHandler, api } from '../services/apiClient';
 
 export interface SponsorOption {
   sponsor_user_id: number;
@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (user?.role === 'driver') {
       api.get<{ sponsors: SponsorOption[] }>('/api/driver/sponsors')
-        .then((data) => {
+        .then((data: { sponsors: SponsorOption[] }) => {
           setSponsors(data.sponsors);
           if (data.sponsors.length > 0 && !activeSponsorId) {
             setActiveSponsorId(data.sponsors[0].sponsor_user_id);
@@ -144,8 +144,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout }),
-    [user, loading, login, logout],
+    () => ({ user, loading, login, logout, activeSponsorId, setActiveSponsorId, sponsors }),
+    [user, loading, login, logout, activeSponsorId, sponsors],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
