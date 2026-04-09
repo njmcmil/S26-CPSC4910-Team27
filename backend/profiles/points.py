@@ -425,7 +425,7 @@ async def add_driver_points(
 
 
 
-@router.post("/sponsor/points/bulk-update", response_model=BulkPointChangeResponse)
+@router.post("/sponsor/points/bulk-update")
 async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_user: dict = Depends(verify_sponsor)):
     user_id = current_user['user_id']
     conn = get_connection()
