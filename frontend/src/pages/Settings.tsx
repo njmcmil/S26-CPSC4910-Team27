@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { authService } from '../services/authService';
@@ -11,33 +11,90 @@ import type { TrustedDevice, ApiError } from '../types';
 import { api } from '../services/apiClient';
 
 type Tab = 'devices' | 'notifications' | 'password';
+type SettingsTab = Tab | 'accessibility';
+const KEYBOARD_MODE_STORAGE_KEY = 'gdip_keyboard_mode';
+
+function saveKeyboardModePreference(enabled: boolean) {
+  localStorage.setItem(KEYBOARD_MODE_STORAGE_KEY, enabled ? 'true' : 'false');
+  window.dispatchEvent(new Event('gdip-keyboard-mode-changed'));
+}
+
+function loadKeyboardModePreference() {
+  return localStorage.getItem(KEYBOARD_MODE_STORAGE_KEY) === 'true';
+}
 
 export function SettingsPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>('devices');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('devices');
+  const tabRefs = useRef<Record<SettingsTab, HTMLButtonElement | null>>({
+    devices: null,
+    notifications: null,
+    password: null,
+    accessibility: null,
+  });
 
-  const tabs: { id: Tab; label: string }[] = [
+  const tabs: { id: SettingsTab; label: string }[] = [
     { id: 'devices', label: 'Trusted Devices' },
     ...(user?.role === 'driver'
       ? [{ id: 'notifications' as const, label: 'Notifications' }]
       : []),
     { id: 'password', label: 'Change Password' },
+    { id: 'accessibility', label: 'Accessibility' },
   ];
+
+  const focusTab = (tabId: SettingsTab) => {
+    setActiveTab(tabId);
+    window.requestAnimationFrame(() => {
+      tabRefs.current[tabId]?.focus();
+    });
+  };
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    const lastIndex = tabs.length - 1;
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusTab(tabs[currentIndex === lastIndex ? 0 : currentIndex + 1].id);
+      return;
+    }
+
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusTab(tabs[currentIndex === 0 ? lastIndex : currentIndex - 1].id);
+      return;
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault();
+      focusTab(tabs[0].id);
+      return;
+    }
+
+    if (event.key === 'End') {
+      event.preventDefault();
+      focusTab(tabs[lastIndex].id);
+    }
+  };
 
   return (
     <section aria-labelledby="settings-heading">
       <h2 id="settings-heading">Settings</h2>
 
       <div className="tabs mt-1" role="tablist" aria-label="Settings sections">
-        {tabs.map((tab) => (
+        {tabs.map((tab, index) => (
           <button
             key={tab.id}
             role="tab"
             id={`tab-${tab.id}`}
             aria-selected={activeTab === tab.id}
             aria-controls={`panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
             className={`tab-btn${activeTab === tab.id ? ' tab-active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+            ref={(node) => {
+              tabRefs.current[tab.id] = node;
+            }}
             type="button"
           >
             {tab.label}
@@ -50,10 +107,12 @@ export function SettingsPage() {
         id={`panel-${activeTab}`}
         aria-labelledby={`tab-${activeTab}`}
         className="tab-panel card"
+        tabIndex={0}
       >
         {activeTab === 'devices' && <TrustedDevicesPanel />}
         {activeTab === 'notifications' && <NotificationsPanel />}
         {activeTab === 'password' && <ChangePasswordPanel />}
+        {activeTab === 'accessibility' && <AccessibilityPanel />}
       </div>
     </section>
   );
@@ -354,6 +413,77 @@ function ChangePasswordPanel() {
           {submitting ? 'Changing...' : 'Change Password'}
         </Button>
       </form>
+    </>
+  );
+}
+
+function AccessibilityPanel() {
+  const [keyboardMode, setKeyboardMode] = useState(loadKeyboardModePreference);
+  const [saved, setSaved] = useState('');
+
+  const handleChange = (enabled: boolean) => {
+    setKeyboardMode(enabled);
+    saveKeyboardModePreference(enabled);
+    setSaved(enabled ? 'Keyboard navigation mode enabled.' : 'Keyboard navigation mode disabled.');
+  };
+
+  return (
+    <>
+      <h3>Accessibility</h3>
+      <p className="helper-text mt-1">
+        Keyboard navigation works across the whole site for every user. This setting keeps
+        stronger focus indicators on so it is easier to move through pages without a mouse.
+      </p>
+
+      <div aria-live="polite" aria-atomic="true">
+        {saved && <Alert variant="success">{saved}</Alert>}
+      </div>
+
+      <div className="checkbox-group mt-2">
+        <input
+          type="checkbox"
+          id="keyboard-mode"
+          checked={keyboardMode}
+          onChange={(e) => handleChange(e.target.checked)}
+        />
+        <div>
+          <label htmlFor="keyboard-mode">Keyboard navigation mode</label>
+          <p className="helper-text">
+            Always show stronger focus highlights and keyboard-friendly navigation cues across the app.
+          </p>
+        </div>
+      </div>
+
+      <div className="settings-accessibility-note mt-2">
+        <strong>This applies to all pages and roles:</strong>
+        <ul className="settings-accessibility-list">
+          <li>Forms can be submitted with the keyboard</li>
+          <li>Dashboard overview actions are keyboard reachable</li>
+          <li>Focus moves more clearly through tabs, links, buttons, and navigation</li>
+        </ul>
+      </div>
+
+      <div className="settings-accessibility-note mt-2">
+        <strong>Keyboard instructions:</strong>
+        <ul className="settings-accessibility-list">
+          <li><kbd>Tab</kbd> moves forward through links, buttons, tabs, and form fields</li>
+          <li><kbd>Shift</kbd> + <kbd>Tab</kbd> moves backward</li>
+          <li><kbd>Enter</kbd> activates the focused link or button</li>
+          <li><kbd>Space</kbd> activates buttons and checkboxes</li>
+          <li>Use the arrow keys to move through tab rows and similar keyboard-controlled sections</li>
+          <li><kbd>Esc</kbd> returns to your role overview dashboard when keyboard mode is enabled</li>
+        </ul>
+      </div>
+
+      <p className="helper-text mt-2">
+        Login and Create Account support both mouse and keyboard use at all times. The keyboard
+        mode setting adds stronger keyboard cues, but it does not turn basic keyboard access on or off.
+      </p>
+
+      <p className="helper-text mt-2">
+        On macOS, browser keyboard navigation may also need to be enabled at the system or browser
+        level for Tab to move through all links and controls on a page.
+      </p>
     </>
   );
 }

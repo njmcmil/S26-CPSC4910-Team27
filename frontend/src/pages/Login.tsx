@@ -108,6 +108,7 @@ export function LoginPage() {
           id="login-username"
           type="text"
           autoComplete="username"
+          autoFocus
           required
           value={username}
           onChange={(e) => setUsername(e.target.value)}

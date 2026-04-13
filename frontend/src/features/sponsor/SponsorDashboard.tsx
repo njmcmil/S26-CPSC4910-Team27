@@ -8,6 +8,8 @@ import { Spinner } from '../../components/Spinner';
 import type { SponsorRewardDefaults, ApiError } from '../../types';
 import SponsorTips from './SponsorTips';
 
+const KEYBOARD_MODE_STORAGE_KEY = 'gdip_keyboard_mode';
+
 interface SponsorDriver {
   driver_user_id: number;
   username: string;
@@ -38,6 +40,22 @@ export function SponsorDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [keyboardMode, setKeyboardMode] = useState(false);
+
+  useEffect(() => {
+    const syncKeyboardMode = () => {
+      setKeyboardMode(localStorage.getItem(KEYBOARD_MODE_STORAGE_KEY) === 'true');
+    };
+
+    syncKeyboardMode();
+    window.addEventListener('storage', syncKeyboardMode);
+    window.addEventListener('gdip-keyboard-mode-changed', syncKeyboardMode);
+
+    return () => {
+      window.removeEventListener('storage', syncKeyboardMode);
+      window.removeEventListener('gdip-keyboard-mode-changed', syncKeyboardMode);
+    };
+  }, []);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -133,76 +151,12 @@ export function SponsorDashboardPage() {
         Welcome back, {user?.username}.
       </p>
 
-      <div className="dashboard-tabbar">
-        <Link to="/sponsor/drivers" className="dashboard-tablink">Drivers</Link>
-        <Link to="/sponsor/points" className="dashboard-tablink">Points</Link>
-        <Link to="/sponsor/reports" className="dashboard-tablink">Reports</Link>
-        <Link to="/sponsor/catalog" className="dashboard-tablink">Catalog</Link>
-        <Link to="/sponsor/profile" className="dashboard-tablink">Edit Profile</Link>
-      </div>
-
-      {/* ================= METRICS ================= */}
-      <div className="metrics-grid mt-2">
-        <Link
-          to="/sponsor/drivers"
-          style={{ textDecoration: 'none', color: 'inherit' }}
-        >
-          <div className="metric-card">
-            <span className="metric-card-label">Active Drivers</span>
-            <span className="metric-card-value">{data.activeDrivers}</span>
-            <span className="metric-card-sub">enrolled drivers</span>
-          </div>
-        </Link>
-
-        <Link
-          to="/sponsor/applications"
-          style={{ textDecoration: 'none', color: 'inherit' }}
-        >
-          <div className="metric-card">
-            <span className="metric-card-label">
-              Pending Applications
-            </span>
-            <span className="metric-card-value">
-              {data.pendingApplications}
-            </span>
-            <span className="metric-card-sub">awaiting review</span>
-          </div>
-        </Link>
-
-        <Link
-          to="/sponsor/points"
-          style={{ textDecoration: 'none', color: 'inherit' }}
-        >
-          <div className="metric-card">
-            <span className="metric-card-label">
-              Total Points Allocated
-            </span>
-            <span className="metric-card-value">
-              {data.totalPointsAllocated.toLocaleString()}
-            </span>
-            <span className="metric-card-sub">
-              across all drivers
-            </span>
-          </div>
-        </Link>
-
-        <Link
-          to="/sponsor/reward-settings"
-          style={{ textDecoration: 'none', color: 'inherit' }}
-        >
-          <div className="metric-card">
-            <span className="metric-card-label">Point Value</span>
-            <span className="metric-card-value">
-              ${data.dollarPerPoint.toFixed(2)}
-            </span>
-            <span className="metric-card-sub">per point</span>
-          </div>
-        </Link>
-      </div>
-
-      <div className="dashboard-overview-grid mt-2">
-        <div className="card">
-          <h3>Quick Actions</h3>
+      {keyboardMode && (
+        <div className="card mt-2">
+          <h3>Overview Shortcuts</h3>
+          <p className="helper-text" style={{ marginBottom: '0.75rem' }}>
+            Tab through these primary actions first, then press Enter to open the highlighted one.
+          </p>
           <div className="dashboard-action-list">
             <Link to="/sponsor/applications" className="dashboard-action-card">
               <strong>Review Applications</strong>
@@ -222,7 +176,76 @@ export function SponsorDashboardPage() {
             </Link>
           </div>
         </div>
+      )}
 
+      <div className="dashboard-tabbar">
+        <Link to="/sponsor/drivers" className="dashboard-tablink">Drivers</Link>
+        <Link to="/sponsor/points" className="dashboard-tablink">Points</Link>
+        <Link to="/sponsor/reports" className="dashboard-tablink">Reports</Link>
+        <Link to="/sponsor/catalog" className="dashboard-tablink">Catalog</Link>
+        <Link to="/sponsor/profile" className="dashboard-tablink">Edit Profile</Link>
+      </div>
+
+      {/* ================= METRICS ================= */}
+      <div className="metrics-grid mt-2">
+        <Link
+          to="/sponsor/drivers"
+          className="dashboard-metric-link"
+        >
+          <div className="metric-card">
+            <span className="metric-card-label">Active Drivers</span>
+            <span className="metric-card-value">{data.activeDrivers}</span>
+            <span className="metric-card-sub">enrolled drivers</span>
+          </div>
+        </Link>
+
+        <Link
+          to="/sponsor/applications"
+          className="dashboard-metric-link"
+        >
+          <div className="metric-card">
+            <span className="metric-card-label">
+              Pending Applications
+            </span>
+            <span className="metric-card-value">
+              {data.pendingApplications}
+            </span>
+            <span className="metric-card-sub">awaiting review</span>
+          </div>
+        </Link>
+
+        <Link
+          to="/sponsor/points"
+          className="dashboard-metric-link"
+        >
+          <div className="metric-card">
+            <span className="metric-card-label">
+              Total Points Allocated
+            </span>
+            <span className="metric-card-value">
+              {data.totalPointsAllocated.toLocaleString()}
+            </span>
+            <span className="metric-card-sub">
+              across all drivers
+            </span>
+          </div>
+        </Link>
+
+        <Link
+          to="/sponsor/reward-settings"
+          className="dashboard-metric-link"
+        >
+          <div className="metric-card">
+            <span className="metric-card-label">Point Value</span>
+            <span className="metric-card-value">
+              ${data.dollarPerPoint.toFixed(2)}
+            </span>
+            <span className="metric-card-sub">per point</span>
+          </div>
+        </Link>
+      </div>
+
+      <div className="dashboard-overview-grid mt-2">
         <div className="card">
           <h3>Program Snapshot</h3>
           <div className="dashboard-list">
@@ -249,6 +272,16 @@ export function SponsorDashboardPage() {
             </div>
           </div>
         </div>
+
+        {keyboardMode && (
+          <div className="card">
+            <h3>Keyboard Help</h3>
+            <p className="helper-text">
+              Enter activates the currently focused button or link, and the overview shortcuts above
+              are placed before the secondary page links on purpose.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ================= RECENT ACTIVITY ================= */}

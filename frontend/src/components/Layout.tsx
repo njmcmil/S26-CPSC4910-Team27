@@ -1,9 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from './Button';
 import { api } from '../services/apiClient';
 import type { UserRole } from '../types';
+
+const KEYBOARD_MODE_STORAGE_KEY = 'gdip_keyboard_mode';
+const ROLE_HOME: Record<UserRole, string> = {
+  driver: '/driver/dashboard',
+  sponsor: '/sponsor/dashboard',
+  admin: '/admin/dashboard',
+};
 
 /* ── Notification Bell (driver only) ── */
 
@@ -18,6 +25,7 @@ function NotificationBell() {
   const [notifications, setNotifications] = useState<DriverNotification[]>([]);
   const [open, setOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bellRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
     try {
@@ -34,6 +42,30 @@ function NotificationBell() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!bellRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
   const unread = notifications.filter(n => !n.is_read).length;
 
   const dismiss = async (notificationId: number) => {
@@ -48,11 +80,14 @@ function NotificationBell() {
   };
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div ref={bellRef} style={{ position: 'relative' }}>
       <button
         type="button"
         aria-label={`Notifications, ${unread} unread`}
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls="driver-notifications-panel"
         style={{
           background: 'none',
           border: 'none',
@@ -94,7 +129,7 @@ function NotificationBell() {
       </button>
 
       {open && (
-        <div style={{
+        <div id="driver-notifications-panel" style={{
           position: 'absolute', right: 0, top: '2.2rem',
           background: '#fff', border: '1px solid var(--color-border)',
           borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
@@ -303,6 +338,7 @@ function renderNavLink(item: NavItem) {
 
 function SidebarGroup({ group }: { group: NavGroup }) {
   const [open, setOpen] = useState(group.defaultOpen);
+  const groupId = `sidebar-group-${group.label.toLowerCase().replace(/\s+/g, '-')}`;
 
   return (
     <div className="sidebar-group">
@@ -311,13 +347,18 @@ function SidebarGroup({ group }: { group: NavGroup }) {
         className="sidebar-group-toggle"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
+        aria-controls={groupId}
       >
         {group.label}
         <span className={`sidebar-group-chevron ${open ? 'expanded' : ''}`}>
           &#9654;
         </span>
       </button>
-      <ul className={`sidebar-group-items ${open ? 'expanded' : 'collapsed'}`} role="list">
+      <ul
+        id={groupId}
+        className={`sidebar-group-items ${open ? 'expanded' : 'collapsed'}`}
+        role="list"
+      >
         {group.items.map(renderNavLink)}
       </ul>
     </div>
@@ -345,7 +386,74 @@ function GroupedSidebar({ nav }: { nav: GroupedNav }) {
 
 export function Layout() {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
+  const mainRef = useRef<HTMLElement | null>(null);
+  const [keyboardMode, setKeyboardMode] = useState(false);
+
+  useEffect(() => {
+    const applyKeyboardMode = () => {
+      const enabled = localStorage.getItem(KEYBOARD_MODE_STORAGE_KEY) === 'true';
+      setKeyboardMode(enabled);
+      document.documentElement.dataset.keyboardMode = enabled ? 'enabled' : 'default';
+    };
+
+    applyKeyboardMode();
+    window.addEventListener('storage', applyKeyboardMode);
+    window.addEventListener('gdip-keyboard-mode-changed', applyKeyboardMode);
+
+    return () => {
+      window.removeEventListener('storage', applyKeyboardMode);
+      window.removeEventListener('gdip-keyboard-mode-changed', applyKeyboardMode);
+    };
+  }, []);
+
+  useEffect(() => {
+    const rafId = window.requestAnimationFrame(() => {
+      const main = mainRef.current;
+      if (!main) return;
+
+      const heading = main.querySelector<HTMLElement>('h1, h2, [data-page-heading]');
+      if (heading) {
+        const hadTabIndex = heading.hasAttribute('tabindex');
+        if (!hadTabIndex) {
+          heading.setAttribute('tabindex', '-1');
+        }
+        heading.focus();
+      } else {
+        main.focus();
+      }
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!keyboardMode || !user) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      const isEditable =
+        tagName === 'input' ||
+        tagName === 'textarea' ||
+        tagName === 'select' ||
+        !!target?.isContentEditable;
+
+      if (isEditable) return;
+
+      const homePath = ROLE_HOME[user.role];
+      if (location.pathname === homePath) return;
+
+      event.preventDefault();
+      navigate(homePath);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [keyboardMode, location.pathname, navigate, user]);
 
   const handleLogout = async () => {
     await logout();
@@ -385,7 +493,7 @@ export function Layout() {
           </nav>
         )}
 
-        <main id="main-content" className="app-content">
+        <main id="main-content" className="app-content" ref={mainRef} tabIndex={-1}>
           <Outlet />
         </main>
       </div>

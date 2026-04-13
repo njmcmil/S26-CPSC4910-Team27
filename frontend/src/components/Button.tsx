@@ -11,11 +11,13 @@ export function Button({
   loading = false,
   children,
   disabled,
+  type = 'button',
   ...rest
 }: ButtonProps) {
   return (
     <button
       className={`btn btn-${variant}`}
+      type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       {...rest}
