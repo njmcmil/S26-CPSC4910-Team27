@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 
 export interface CartItem {
   item_id: string;
+  sponsor_user_id: number;
+  sponsor_name: string;
   title: string;
   points_cost: number;
   image_url: string | null;
@@ -13,7 +15,7 @@ export interface CartItem {
 interface CartState {
   items: CartItem[];
   addItem: (item: Omit<CartItem, 'quantity'>) => void;
-  removeItem: (item_id: string) => void;
+  removeItem: (item_id: string, sponsor_user_id?: number) => void;
   clearCart: () => void;
   totalPoints: number;
   totalCount: number;
@@ -26,7 +28,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const addItem = useCallback((item: Omit<CartItem, 'quantity'>) => {
     setItems(prev => {
-      const existing = prev.find(i => i.item_id === item.item_id);
+      const existing = prev.find(
+        i => i.item_id === item.item_id && i.sponsor_user_id === item.sponsor_user_id,
+      );
       if (existing) {
         // Already in cart — don't add duplicates, just notify (handled in UI)
         return prev;
@@ -35,8 +39,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const removeItem = useCallback((item_id: string) => {
-    setItems(prev => prev.filter(i => i.item_id !== item_id));
+  const removeItem = useCallback((item_id: string, sponsor_user_id?: number) => {
+    setItems(prev =>
+      prev.filter(i =>
+        sponsor_user_id == null
+          ? i.item_id !== item_id
+          : !(i.item_id === item_id && i.sponsor_user_id === sponsor_user_id),
+      ),
+    );
   }, []);
 
   const clearCart = useCallback(() => setItems([]), []);

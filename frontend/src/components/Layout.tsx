@@ -179,6 +179,75 @@ function NotificationBell() {
   );
 }
 
+function KeyboardHelpDock() {
+  const [open, setOpen] = useState(false);
+  const [keyboardMode, setKeyboardMode] = useState(
+    () => localStorage.getItem(KEYBOARD_MODE_STORAGE_KEY) === 'true',
+  );
+
+  useEffect(() => {
+    const syncKeyboardMode = () => {
+      setKeyboardMode(localStorage.getItem(KEYBOARD_MODE_STORAGE_KEY) === 'true');
+    };
+
+    window.addEventListener('storage', syncKeyboardMode);
+    window.addEventListener('gdip-keyboard-mode-changed', syncKeyboardMode);
+
+    return () => {
+      window.removeEventListener('storage', syncKeyboardMode);
+      window.removeEventListener('gdip-keyboard-mode-changed', syncKeyboardMode);
+    };
+  }, []);
+
+  const toggleKeyboardMode = () => {
+    const next = !keyboardMode;
+    localStorage.setItem(KEYBOARD_MODE_STORAGE_KEY, next ? 'true' : 'false');
+    window.dispatchEvent(new Event('gdip-keyboard-mode-changed'));
+    setKeyboardMode(next);
+  };
+
+  return (
+    <div className="keyboard-help-dock">
+      <button
+        type="button"
+        className="keyboard-help-trigger"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-controls="keyboard-help-panel"
+      >
+        <span aria-hidden="true">⌨</span>
+        <span>Keyboard</span>
+        {keyboardMode && <span className="keyboard-help-enabled-indicator" aria-hidden="true">✓</span>}
+      </button>
+
+      {open && (
+        <div id="keyboard-help-panel" className="keyboard-help-panel">
+          <strong>Keyboard Controls</strong>
+          <div className="keyboard-help-status-row">
+            <span className={`keyboard-help-status ${keyboardMode ? 'on' : 'off'}`}>
+              {keyboardMode ? 'Keyboard mode is on' : 'Keyboard mode is off'}
+            </span>
+            <button
+              type="button"
+              className="keyboard-help-toggle"
+              onClick={toggleKeyboardMode}
+            >
+              Turn {keyboardMode ? 'Off' : 'On'}
+            </button>
+          </div>
+          <ul className="keyboard-help-list">
+            <li><kbd>Tab</kbd>: next control</li>
+            <li><kbd>Shift</kbd> + <kbd>Tab</kbd>: previous control</li>
+            <li><kbd>Enter</kbd>: open focused link or button</li>
+            <li><kbd>Space</kbd>: activate buttons and checkboxes</li>
+            <li><kbd>Esc</kbd>: return to overview in keyboard mode</li>
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Types ── */
 
 interface NavItem {
@@ -497,6 +566,8 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+
+      <KeyboardHelpDock />
     </>
   );
 }

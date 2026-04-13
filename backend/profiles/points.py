@@ -757,14 +757,18 @@ async def get_driver_point_history_for_sponsor(
         # Verify driver belongs to this sponsor (skip for admin)
         if role == 'sponsor':
             cursor.execute(
-                "SELECT sponsor_user_id FROM SponsorDrivers WHERE driver_user_id = %s",
-                (driver_id,)
+                """
+                SELECT sponsor_user_id, total_points
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s AND sponsor_user_id = %s
+                LIMIT 1
+                """,
+                (driver_id, user_id),
             )
             row = cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Driver not found")
-            if row['sponsor_user_id'] != user_id:
-                raise HTTPException(status_code=403, detail="Driver does not belong to your organization")
+            current_points = row['total_points']
 
         # Parse and validate date filters (#14014)
         if start_date:
@@ -790,12 +794,19 @@ async def get_driver_point_history_for_sponsor(
         limit = min(limit, 500)
 
         # Get current point total
-        cursor.execute(
-            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (driver_id,)
-        )
-        current = cursor.fetchone()
-        current_points = current['total_points'] if current else 0
+        if role == 'admin':
+            cursor.execute(
+                """
+                SELECT total_points
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s
+                ORDER BY sponsor_driver_id DESC
+                LIMIT 1
+                """,
+                (driver_id,),
+            )
+            current = cursor.fetchone()
+            current_points = current['total_points'] if current else 0
 
         # Get total count for the filtered range
         cursor.execute("""

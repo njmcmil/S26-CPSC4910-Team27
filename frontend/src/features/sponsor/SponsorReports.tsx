@@ -140,6 +140,7 @@ export function SponsorReportsPage() {
       </p>
 
       {/* Report type tabs */}
+      <h3 style={{ marginTop: '1.25rem', marginBottom: '0.75rem' }}>Report Type</h3>
       <div style={{ display: 'flex', gap: '0.5rem', margin: '1.25rem 0 1rem', flexWrap: 'wrap' }}>
         {([
           ['point-tracking', 'Driver Point Tracking'],
@@ -234,10 +235,11 @@ export function SponsorReportsPage() {
         const currentPoints = results.data.current_points ?? 0;
         return (
           <div className="card" style={{ overflowX: 'auto' }}>
+            <h3 style={{ marginBottom: '1rem' }}>Report Results</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <h3 style={{ margin: 0 }}>
+              <h4 style={{ margin: 0 }}>
                 Point History — {selectedDriver?.username}
-              </h3>
+              </h4>
               <div style={{ background: '#eff6ff', borderRadius: 8, padding: '0.4rem 0.9rem', fontSize: '0.9rem', fontWeight: 600, color: '#1e40af' }}>
                 Current Balance: {currentPoints.toLocaleString()} pts
               </div>
@@ -275,7 +277,8 @@ export function SponsorReportsPage() {
         const logs: AuditLogRow[] = results.data.logs ?? results.data ?? [];
         return (
           <div className="card" style={{ overflowX: 'auto' }}>
-            <h3 style={{ marginBottom: '1rem' }}>Audit Log</h3>
+            <h3 style={{ marginBottom: '1rem' }}>Report Results</h3>
+            <h4 style={{ marginBottom: '1rem' }}>Audit Log</h4>
             {logs.length === 0 ? (
               <p style={{ color: 'var(--color-text-muted)' }}>No audit log entries found.</p>
             ) : (
