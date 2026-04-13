@@ -179,22 +179,38 @@ export function AdminDashboardPage() {
       {/* Overview */}
       {activeTab === 'overview' && (
         <div className="placeholder-grid mt-2">
-          <div className="card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('users')}>
+          <button
+            type="button"
+            className="card dashboard-overview-button"
+            onClick={() => setActiveTab('users')}
+          >
             <h3>Users</h3>
             <p className="helper-text">View all users</p>
-          </div>
-          <div className="card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('login-attempts')}>
+          </button>
+          <button
+            type="button"
+            className="card dashboard-overview-button"
+            onClick={() => setActiveTab('login-attempts')}
+          >
             <h3>Login Attempts</h3>
             <p className="helper-text">Monitor suspicious activity</p>
-          </div>
-          <div className="card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('audit-logs')}>
+          </button>
+          <button
+            type="button"
+            className="card dashboard-overview-button"
+            onClick={() => setActiveTab('audit-logs')}
+          >
             <h3>Audit Logs</h3>
             <p className="helper-text">Every system change</p>
-          </div>
-          <div className="card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('driver-logs')}>
+          </button>
+          <button
+            type="button"
+            className="card dashboard-overview-button"
+            onClick={() => setActiveTab('driver-logs')}
+          >
             <h3>Driver Logs</h3>
             <p className="helper-text">All driver point history</p>
-          </div>
+          </button>
         </div>
       )}
 

@@ -128,6 +128,7 @@ export function RegisterPage() {
           id="register-username"
           type="text"
           autoComplete="username"
+          autoFocus
           required
           value={username}
           onChange={(e) => setUsername(e.target.value)}

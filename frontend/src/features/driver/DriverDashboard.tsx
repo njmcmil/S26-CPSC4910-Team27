@@ -8,6 +8,8 @@ import DriverTips from '../../components/DriverTips';
 import type { ApiError, DriverProfile } from '../../types';
 import type { DriverApplicationSponsor } from '../../services/driverService';
 
+const KEYBOARD_MODE_STORAGE_KEY = 'gdip_keyboard_mode';
+
 interface DriverOrder {
   order_id: number;
   item_id: string;
@@ -32,6 +34,22 @@ export function DriverDashboardPage() {
   const [orders, setOrders] = useState<DriverOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [keyboardMode, setKeyboardMode] = useState(false);
+
+  useEffect(() => {
+    const syncKeyboardMode = () => {
+      setKeyboardMode(localStorage.getItem(KEYBOARD_MODE_STORAGE_KEY) === 'true');
+    };
+
+    syncKeyboardMode();
+    window.addEventListener('storage', syncKeyboardMode);
+    window.addEventListener('gdip-keyboard-mode-changed', syncKeyboardMode);
+
+    return () => {
+      window.removeEventListener('storage', syncKeyboardMode);
+      window.removeEventListener('gdip-keyboard-mode-changed', syncKeyboardMode);
+    };
+  }, []);
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -115,6 +133,33 @@ export function DriverDashboardPage() {
         Welcome back, {user?.username}. Here is a quick look at your rewards activity.
       </p>
 
+      {keyboardMode && (
+        <div className="card mt-2">
+          <h3>Overview Shortcuts</h3>
+          <p className="helper-text" style={{ marginBottom: '0.75rem' }}>
+            Tab through these primary actions first, then press Enter to open the highlighted one.
+          </p>
+          <div className="dashboard-action-list">
+            <Link to="/driver/catalog" className="dashboard-action-card">
+              <strong>Browse Catalog</strong>
+              <span>Redeem your points for sponsor rewards.</span>
+            </Link>
+            <Link to="/driver/points" className="dashboard-action-card">
+              <strong>View Point History</strong>
+              <span>See every award and deduction in your account.</span>
+            </Link>
+            <Link to="/driver/orders" className="dashboard-action-card">
+              <strong>Manage Orders</strong>
+              <span>Track pending redemptions and cancel when needed.</span>
+            </Link>
+            <Link to="/driver/profile" className="dashboard-action-card">
+              <strong>Edit Profile</strong>
+              <span>Update your personal details, license, and vehicle information.</span>
+            </Link>
+          </div>
+        </div>
+      )}
+
       <div className="dashboard-tabbar">
         <Link to="/driver/points" className="dashboard-tablink">Points</Link>
         <Link to="/driver/catalog" className="dashboard-tablink">Catalog</Link>
@@ -150,28 +195,6 @@ export function DriverDashboardPage() {
 
       <div className="dashboard-overview-grid mt-2">
         <div className="card">
-          <h3>Quick Actions</h3>
-          <div className="dashboard-action-list">
-            <Link to="/driver/catalog" className="dashboard-action-card">
-              <strong>Browse Catalog</strong>
-              <span>Redeem your points for sponsor rewards.</span>
-            </Link>
-            <Link to="/driver/points" className="dashboard-action-card">
-              <strong>View Point History</strong>
-              <span>See every award and deduction in your account.</span>
-            </Link>
-            <Link to="/driver/orders" className="dashboard-action-card">
-              <strong>Manage Orders</strong>
-              <span>Track pending redemptions and cancel when needed.</span>
-            </Link>
-            <Link to="/driver/profile" className="dashboard-action-card">
-              <strong>Edit Profile</strong>
-              <span>Update your personal details, license, and vehicle information.</span>
-            </Link>
-          </div>
-        </div>
-
-        <div className="card">
           <h3>Recent Point Activity</h3>
           {recentActivity.length === 0 ? (
             <p className="placeholder-msg">No recent point activity yet.</p>
@@ -194,6 +217,15 @@ export function DriverDashboardPage() {
             </div>
           )}
         </div>
+
+        {keyboardMode && (
+          <div className="card">
+            <h3>Keyboard Help</h3>
+            <p className="helper-text">
+              Enter activates the currently focused button or link, just like clicking it with the mouse.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="dashboard-overview-grid mt-2">
