@@ -1,5 +1,5 @@
 import { useEffect, useState} from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../services/apiClient'
 
 interface CatalogItemDetail {
@@ -17,9 +17,15 @@ interface CatalogItemDetail {
     item_specifics: { name: string; value: string }[];
 }
 
+function getCatalogImageAlt(title: string) {
+  return `Reward catalog image for ${title}`;
+}
+
 export function DriverProductDetail() {
     const { itemId } = useParams<{ itemId: string }>();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const sponsorUserId = searchParams.get('sponsor_user_id');
       const [item, setItem] = useState<CatalogItemDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,8 +37,8 @@ export function DriverProductDetail() {
     if (!itemId) return;
     setLoading(true);
     Promise.all([
-        api.get<CatalogItemDetail>(`/api/driver/catalog/${itemId}`),
-        api.get<{ current_points: number; items: unknown[] }>('/api/driver/catalog'),
+        api.get<CatalogItemDetail>(`/api/driver/catalog/${itemId}?sponsor_user_id=${sponsorUserId ?? ''}`),
+        api.get<{ current_points: number; items: unknown[] }>(`/api/driver/catalog?sponsor_user_id=${sponsorUserId ?? ''}`),
     ])
     .then(([detail, catalog]) => {
       setItem(detail);
@@ -49,7 +55,7 @@ export function DriverProductDetail() {
     try {
       const res = await api.post<{ message: string; new_points_balance: number; remaining_stock: number }>(
         '/api/driver/catalog/purchase',
-        { item_id: item.item_id }
+        { item_id: item.item_id, sponsor_user_id: sponsorUserId ? Number(sponsorUserId) : undefined }
       );
       setCurrentPoints(res.new_points_balance);
       setItem(prev => prev ? { ...prev, stock_quantity: res.remaining_stock } : prev);
@@ -69,12 +75,16 @@ export function DriverProductDetail() {
 
   const canAfford = currentPoints >= item.points_cost;
   const inStock = item.stock_quantity > 0;
+  const purchaseChecks = [
+    { label: 'Enough points available', met: canAfford },
+    { label: 'Item currently in stock', met: inStock },
+  ];
 
   return (
     <section className="card" aria-labelledby="product-detail-heading">
       <button
         type="button"
-        onClick={() => navigate(-1)}
+        onClick={() => navigate(`/driver/catalog${sponsorUserId ? `?sponsor_user_id=${sponsorUserId}` : ''}`)}
         style={{ marginBottom: '1rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', fontWeight: 600 }}
       >
         ← Back to Catalog
@@ -97,7 +107,7 @@ export function DriverProductDetail() {
           {item.image_url ? (
             <img
               src={item.image_url}
-              alt={item.title}
+              alt={getCatalogImageAlt(item.title)}
               style={{ width: 240, height: 240, objectFit: 'contain', borderRadius: 8, border: '1px solid var(--color-border)' }}
             />
           ) : (
@@ -106,7 +116,7 @@ export function DriverProductDetail() {
           {item.additional_images.length > 0 && (
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
               {item.additional_images.slice(0, 4).map((url, i) => (
-                <img key={i} src={url} alt="" style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--color-border)' }} />
+                <img key={i} src={url} alt={`Additional view ${i + 1} for ${item.title}`} style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--color-border)' }} />
               ))}
             </div>
           )}
@@ -149,10 +159,25 @@ export function DriverProductDetail() {
             )}
           </p>
 
+          <div className="catalog-status-checker" aria-label={`Purchase status for ${item.title}`} style={{ marginBottom: '0.9rem' }}>
+            {purchaseChecks.map((check) => (
+              <div
+                key={check.label}
+                className={`catalog-status-row ${check.met ? 'met' : 'blocked'}`}
+              >
+                <span aria-hidden="true" className="catalog-status-icon">
+                  {check.met ? '✓' : '✕'}
+                </span>
+                <span>{check.label}</span>
+              </div>
+            ))}
+          </div>
+
           <button
+            type="button"
             disabled={!canAfford || !inStock || purchasing}
             onClick={handleRedeem}
-            className="btn-primary"
+            className="catalog-primary-button"
           >
             {purchasing ? 'Redeeming…' : !inStock ? 'Out of Stock' : !canAfford ? 'Not Enough Points' : 'Redeem'}
           </button>

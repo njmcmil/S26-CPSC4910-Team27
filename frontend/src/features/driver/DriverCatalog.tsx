@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../services/apiClient';
 import { useCart } from '../../auth/CartContext';
 import type { CartItem } from '../../auth/CartContext';
+import { driverService, type DriverApplicationSponsor } from '../../services/driverService';
 
 interface CatalogItem {
   item_id: string;
@@ -19,12 +20,18 @@ interface Props {
   previewMode?: boolean;
 }
 
+function getCatalogImageAlt(title: string) {
+  return `Reward catalog image for ${title}`;
+}
+
 const DEBOUNCE_MS = 250;
 const POLL_INTERVAL_MS = 30_000;
 
 export function DriverCatalog({ previewMode = false }: Props) {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [points, setPoints] = useState<number>(0);
+  const [sponsors, setSponsors] = useState<DriverApplicationSponsor[]>([]);
+  const [selectedSponsorId, setSelectedSponsorId] = useState('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -32,6 +39,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const { addItem, items: cartItems, totalCount } = useCart();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // client-side search
   const [searchInput, setSearchInput] = useState('');
@@ -53,15 +61,25 @@ export function DriverCatalog({ previewMode = false }: Props) {
         : items,
     [items, searchQuery]
   );
+  const availableSponsors = sponsors.filter((sponsor) => sponsor.is_current_sponsor);
+  const selectedSponsor = availableSponsors.find(
+    (sponsor) => String(sponsor.sponsor_user_id) === selectedSponsorId,
+  );
 
   const loadCatalog = async (silent = false) => {
+    if (!selectedSponsorId) {
+      setItems([]);
+      setPoints(0);
+      if (!silent) setLoading(false);
+      return;
+    }
     if (!silent) setLoading(true);
     setError(null);
     try {
       // US-38: returns current_points for balance check
       // US-39: returns stock_quantity per item
       const res = await api.get<{ current_points: number; items: CatalogItem[] }>(
-        '/api/driver/catalog'
+        `/api/driver/catalog?sponsor_user_id=${selectedSponsorId}`
       );
       setPoints(res.current_points);
       setItems(res.items);
@@ -74,8 +92,14 @@ export function DriverCatalog({ previewMode = false }: Props) {
   };
 
   const loadSaved = async () => {
+    if (!selectedSponsorId) {
+      setSavedIds(new Set());
+      return;
+    }
     try {
-      const res = await api.get<{ saved_item_ids: string[] }>('/api/driver/saved-products');
+      const res = await api.get<{ saved_item_ids: string[] }>(
+        `/api/driver/saved-products?sponsor_user_id=${selectedSponsorId}`,
+      );
       setSavedIds(new Set(res.saved_item_ids));
     } catch {
       // silently fail- save buttons just won't reflect server state
@@ -83,17 +107,46 @@ export function DriverCatalog({ previewMode = false }: Props) {
   };
 
   useEffect(() => {
+    if (previewMode) return;
+
+    driverService.getApplicationSponsors()
+      .then((res) => {
+        const currentSponsors = res.filter((sponsor) => sponsor.is_current_sponsor);
+        setSponsors(currentSponsors);
+
+        const requestedSponsorId = searchParams.get('sponsor_user_id');
+        const initialSponsorId =
+          requestedSponsorId && currentSponsors.some((s) => String(s.sponsor_user_id) === requestedSponsorId)
+            ? requestedSponsorId
+            : currentSponsors[0]
+              ? String(currentSponsors[0].sponsor_user_id)
+              : '';
+
+        setSelectedSponsorId(initialSponsorId);
+      })
+      .catch(() => {});
+  }, [previewMode, searchParams]);
+
+  useEffect(() => {
+    if (previewMode || !selectedSponsorId) return;
+
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('sponsor_user_id', selectedSponsorId);
+      return next;
+    }, { replace: true });
+
     loadCatalog();
-    if (!previewMode) {
-      loadSaved();
-      pollRef.current = setInterval(() => loadCatalog(true), POLL_INTERVAL_MS);
-    }
+    loadSaved();
+    pollRef.current = setInterval(() => loadCatalog(true), POLL_INTERVAL_MS);
+
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [previewMode]);
+  }, [previewMode, selectedSponsorId]);
 
   const toggleSave = async (item_id: string) => {
+    if (!selectedSponsorId) return;
     const alreadySaved = savedIds.has(item_id);
     // Optimistic update
     setSavedIds(prev => {
@@ -103,9 +156,12 @@ export function DriverCatalog({ previewMode = false }: Props) {
     });
     try {
       if (alreadySaved) {
-        await api.delete(`/api/driver/saved-products/${item_id}`);
+        await api.delete(`/api/driver/saved-products/${item_id}?sponsor_user_id=${selectedSponsorId}`);
       } else {
-        await api.post('/api/driver/saved-products', { item_id });
+        await api.post('/api/driver/saved-products', {
+          item_id,
+          sponsor_user_id: Number(selectedSponsorId),
+        });
       }
     } catch {
       // Revert on failure
@@ -118,17 +174,33 @@ export function DriverCatalog({ previewMode = false }: Props) {
   };
 
   const handleAddToCart = (item: CatalogItem) => {
+    if (!selectedSponsorId || !selectedSponsor) return;
     if (previewMode) return;
     setFeedback(null);
 
-    const alreadyInCart = cartItems.some(i => i.item_id === item.item_id);
+    const alreadyInCart = cartItems.some(
+      i => i.item_id === item.item_id && i.sponsor_user_id === Number(selectedSponsorId),
+    );
     if (alreadyInCart) {
       setFeedback({ type: 'error', msg: `'${item.title}' is already in your cart.` });
       return;
     }
 
+    const otherSponsorItems = cartItems.filter(
+      (cartItem) => cartItem.sponsor_user_id !== Number(selectedSponsorId),
+    );
+    if (otherSponsorItems.length > 0) {
+      setFeedback({
+        type: 'error',
+        msg: `Your cart currently contains items from ${otherSponsorItems[0].sponsor_name}. Please check out or clear the cart before shopping a different sponsor catalog.`,
+      });
+      return;
+    }
+
     const cartItem: Omit<CartItem, 'quantity'> = {
       item_id: item.item_id,
+      sponsor_user_id: Number(selectedSponsorId),
+      sponsor_name: selectedSponsor.sponsor_name,
       title: item.title,
       points_cost: item.points_cost,
       image_url: item.image_url,
@@ -148,7 +220,10 @@ export function DriverCatalog({ previewMode = false }: Props) {
     }, 2000);
   };
 
-  const isInCart = (item_id: string) => cartItems.some(i => i.item_id === item_id);
+  const isInCart = (item_id: string) =>
+    cartItems.some(
+      i => i.item_id === item_id && i.sponsor_user_id === Number(selectedSponsorId),
+    );
 
   return (
     <section className="catalog-page" aria-labelledby="driver-catalog-heading">
@@ -171,6 +246,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
             <button
               onClick={() => navigate('/driver/cart')}
               className="catalog-cart-button"
+              type="button"
             >
               View Cart
               <span className="catalog-cart-badge">{totalCount}</span>
@@ -184,6 +260,22 @@ export function DriverCatalog({ previewMode = false }: Props) {
       
         {!previewMode && (
           <div className="catalog-toolbar card">
+            <select
+              value={selectedSponsorId}
+              onChange={(e) => setSelectedSponsorId(e.target.value)}
+              aria-label="Select sponsor catalog"
+              className="catalog-select"
+            >
+              {availableSponsors.length === 0 ? (
+                <option value="">No sponsor catalogs available</option>
+              ) : (
+                availableSponsors.map((sponsor) => (
+                  <option key={sponsor.sponsor_user_id} value={sponsor.sponsor_user_id}>
+                    {sponsor.sponsor_name}
+                  </option>
+                ))
+              )}
+            </select>
             <input
               type="search"
               placeholder="Search catalog…"
@@ -208,6 +300,8 @@ export function DriverCatalog({ previewMode = false }: Props) {
 
         {loading ? (
           <p>Loading catalog...</p>
+        ) : !previewMode && availableSponsors.length === 0 ? (
+          <p>No active sponsor catalogs are available for your account yet.</p>
         ) : (
           <div className="catalog-grid">
             {visibleItems.length === 0 ? (
@@ -220,20 +314,25 @@ export function DriverCatalog({ previewMode = false }: Props) {
                 const justAdded = addedIds.has(item.item_id);
                 const isSaved = savedIds.has(item.item_id);
                 const stockClass = !inStock ? 'out' : item.stock_quantity <= 3 ? 'low' : 'ok';
-                const detailPath = `/driver/catalog/${item.item_id}`;
+                const detailPath = `/driver/catalog/${item.item_id}?sponsor_user_id=${selectedSponsorId}`;
+                const purchaseChecks = [
+                  { label: 'Enough points', met: canAfford },
+                  { label: 'Item in stock', met: inStock },
+                  { label: 'Not already in cart', met: !inCart },
+                ];
 
                 return (
                   <div key={item.item_id} className="product-card">
                     {!previewMode ? (
                       <Link to={detailPath} className="catalog-image-link">
                         {item.image_url ? (
-                          <img src={item.image_url} alt={item.title} className="catalog-product-image" />
+                          <img src={item.image_url} alt={getCatalogImageAlt(item.title)} className="catalog-product-image" />
                         ) : (
                           <div className="image-placeholder">No Image</div>
                         )}
                       </Link>
                     ) : item.image_url ? (
-                      <img src={item.image_url} alt={item.title} className="catalog-product-image" />
+                      <img src={item.image_url} alt={getCatalogImageAlt(item.title)} className="catalog-product-image" />
                     ) : (
                       <div className="image-placeholder">No Image</div>
                     )}
@@ -263,6 +362,22 @@ export function DriverCatalog({ previewMode = false }: Props) {
                     )}
 
                     {!previewMode && (
+                      <div className="catalog-status-checker" aria-label={`Purchase status for ${item.title}`}>
+                        {purchaseChecks.map((check) => (
+                          <div
+                            key={check.label}
+                            className={`catalog-status-row ${check.met ? 'met' : 'blocked'}`}
+                          >
+                            <span aria-hidden="true" className="catalog-status-icon">
+                              {check.met ? '✓' : '✕'}
+                            </span>
+                            <span>{check.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {!previewMode && (
                       <Link
                         to={detailPath}
                         className="catalog-link"
@@ -282,6 +397,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
                     )}
 
                     <button
+                      type="button"
                       disabled={previewMode || !inStock}
                       onClick={() => handleAddToCart(item)}
                       className="catalog-primary-button"

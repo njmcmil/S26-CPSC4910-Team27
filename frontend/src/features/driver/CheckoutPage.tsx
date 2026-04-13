@@ -18,8 +18,15 @@ export function CheckoutPage() {
       return;
     }
 
+    const sponsorUserId = items[0]?.sponsor_user_id;
+    if (!sponsorUserId) {
+      setError('Could not determine which sponsor catalog this order belongs to.');
+      setLoading(false);
+      return;
+    }
+
     // Fetch fresh point balance
-    api.get<{ current_points: number; items: unknown[] }>('/api/driver/catalog')
+    api.get<{ current_points: number; items: unknown[] }>(`/api/driver/catalog?sponsor_user_id=${sponsorUserId}`)
       .then(res => setCurrentPoints(res.current_points))
       .catch(() => setError('Could not load your point balance.'))
       .finally(() => setLoading(false));
@@ -36,7 +43,10 @@ export function CheckoutPage() {
     try {
       // Place each item as a purchase
       for (const item of items) {
-        await api.post('/api/driver/catalog/purchase', { item_id: item.item_id });
+        await api.post('/api/driver/catalog/purchase', {
+          item_id: item.item_id,
+          sponsor_user_id: item.sponsor_user_id,
+        });
       }
       clearCart();
       navigate('/driver/order-confirmation', { replace: true });

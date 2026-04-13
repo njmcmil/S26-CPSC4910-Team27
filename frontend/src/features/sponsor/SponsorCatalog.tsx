@@ -14,6 +14,10 @@ interface SponsorCatalogItemRow {
   is_active?: boolean;
 }
 
+function getCatalogImageAlt(title: string) {
+  return `Catalog product image for ${title}`;
+}
+
 export function SponsorCatalog() {
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState<string>('laptop');
@@ -342,7 +346,7 @@ export function SponsorCatalog() {
                 {product.image?.imageUrl ? (
                   <img
                     src={product.image.imageUrl}
-                    alt={product.title}
+                    alt={getCatalogImageAlt(product.title)}
                     className="catalog-product-image"
                   />
                 ) : (

@@ -14,6 +14,7 @@ export function CartPage() {
           Browse the catalog and add items to get started.
         </p>
         <button
+          type="button"
           onClick={() => navigate('/driver/catalog')}
           style={{
             background: '#2563eb', color: '#fff', border: 'none',
@@ -32,6 +33,7 @@ export function CartPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h2 style={{ margin: 0 }}>Your Cart ({totalCount} item{totalCount !== 1 ? 's' : ''})</h2>
         <button
+          type="button"
           onClick={() => navigate('/driver/catalog')}
           style={{
             background: 'none', border: '1px solid #d1d5db', borderRadius: 8,
@@ -92,7 +94,8 @@ export function CartPage() {
 
             {/* Remove */}
             <button
-              onClick={() => removeItem(item.item_id)}
+              type="button"
+              onClick={() => removeItem(item.item_id, item.sponsor_user_id)}
               style={{
                 background: 'none', border: '1px solid #fca5a5', borderRadius: 8,
                 padding: '0.35rem 0.75rem', cursor: 'pointer',
@@ -119,6 +122,7 @@ export function CartPage() {
         </div>
 
         <button
+          type="button"
           onClick={() => navigate('/driver/checkout')}
           style={{
             background: '#2563eb', color: '#fff', border: 'none',

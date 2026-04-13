@@ -971,17 +971,23 @@ def read_users(current_user: dict = Depends(get_current_user)):
 # ==============================================================================
 
 @app.get("/api/driver/saved-products")
-def get_saved_products(current_user: dict = Depends(get_current_user)):
+def get_saved_products(sponsor_user_id: int | None = None, current_user: dict = Depends(get_current_user)):
     """Return item_ids the driver has saved."""
     if current_user["role"] != "driver":
         raise HTTPException(status_code=403, detail="Driver access required")
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute(
-            "SELECT item_id FROM SavedProducts WHERE driver_user_id = %s",
-            (current_user["user_id"],)
-        )
+        if sponsor_user_id is not None:
+            cursor.execute(
+                "SELECT item_id FROM SavedProducts WHERE driver_user_id = %s AND sponsor_user_id = %s",
+                (current_user["user_id"], sponsor_user_id)
+            )
+        else:
+            cursor.execute(
+                "SELECT item_id FROM SavedProducts WHERE driver_user_id = %s",
+                (current_user["user_id"],)
+            )
         rows = cursor.fetchall()
         return {"saved_item_ids": [r["item_id"] for r in rows]}
     finally:
@@ -995,21 +1001,28 @@ def save_product(body: dict, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "driver":
         raise HTTPException(status_code=403, detail="Driver access required")
     item_id = body.get("item_id")
+    sponsor_id = body.get("sponsor_user_id")
     if not item_id:
         raise HTTPException(status_code=400, detail="item_id required")
+    if not sponsor_id:
+        raise HTTPException(status_code=400, detail="sponsor_user_id required")
 
     driver_id = current_user["user_id"]
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT sponsor_user_id FROM SponsorDrivers WHERE driver_user_id = %s",
-            (driver_id,)
+            """
+            SELECT sponsor_user_id
+            FROM SponsorDrivers
+            WHERE driver_user_id = %s AND sponsor_user_id = %s
+            LIMIT 1
+            """,
+            (driver_id, sponsor_id)
         )
         row = cursor.fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="No sponsor found for driver")
-        sponsor_id = row["sponsor_user_id"]
+            raise HTTPException(status_code=404, detail="Sponsor relationship not found for driver")
 
         cursor.execute(
             """
@@ -1028,17 +1041,23 @@ def save_product(body: dict, current_user: dict = Depends(get_current_user)):
 
 
 @app.delete("/api/driver/saved-products/{item_id}")
-def unsave_product(item_id: str, current_user: dict = Depends(get_current_user)):
+def unsave_product(item_id: str, sponsor_user_id: int | None = None, current_user: dict = Depends(get_current_user)):
     """Remove a saved catalog item for the driver."""
     if current_user["role"] != "driver":
         raise HTTPException(status_code=403, detail="Driver access required")
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute(
-            "DELETE FROM SavedProducts WHERE driver_user_id = %s AND item_id = %s",
-            (current_user["user_id"], item_id)
-        )
+        if sponsor_user_id is not None:
+            cursor.execute(
+                "DELETE FROM SavedProducts WHERE driver_user_id = %s AND sponsor_user_id = %s AND item_id = %s",
+                (current_user["user_id"], sponsor_user_id, item_id)
+            )
+        else:
+            cursor.execute(
+                "DELETE FROM SavedProducts WHERE driver_user_id = %s AND item_id = %s",
+                (current_user["user_id"], item_id)
+            )
         conn.commit()
         return {"success": True}
     finally:
@@ -1050,17 +1069,34 @@ def unsave_product(item_id: str, current_user: dict = Depends(get_current_user))
 # ==============================================================================
 
 @app.get("/api/driver/catalog")
-def get_driver_catalog(current_user: dict = Depends(get_current_user)):
+def get_driver_catalog(sponsor_user_id: int | None = None, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "driver":
         raise HTTPException(status_code=403, detail="Driver access required")
     driver_id = current_user["user_id"]
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute(
-            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (driver_id,)
-        )
+        if sponsor_user_id is not None:
+            cursor.execute(
+                """
+                SELECT sponsor_user_id, total_points
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s AND sponsor_user_id = %s
+                LIMIT 1
+                """,
+                (driver_id, sponsor_user_id)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT sponsor_user_id, total_points
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s
+                ORDER BY sponsor_driver_id DESC
+                LIMIT 1
+                """,
+                (driver_id,)
+            )
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="No sponsor relationship found")
@@ -1083,7 +1119,7 @@ def get_driver_catalog(current_user: dict = Depends(get_current_user)):
         conn.close()
 
 @app.get("/api/driver/catalog/{item_id}")
-def get_driver_catalog_item(item_id: str, current_user: dict = Depends(get_current_user)):
+def get_driver_catalog_item(item_id: str, sponsor_user_id: int | None = None, current_user: dict = Depends(get_current_user)):
     """
     Task 15510: sponsor-scoped product detail for a driver.
     Returns SponsorCatalog row merged with eBay extended details.
@@ -1094,10 +1130,27 @@ def get_driver_catalog_item(item_id: str, current_user: dict = Depends(get_curre
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute(
-            "SELECT sponsor_user_id FROM SponsorDrivers WHERE driver_user_id = %s",
-            (driver_id,)
-        )
+        if sponsor_user_id is not None:
+            cursor.execute(
+                """
+                SELECT sponsor_user_id
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s AND sponsor_user_id = %s
+                LIMIT 1
+                """,
+                (driver_id, sponsor_user_id)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT sponsor_user_id
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s
+                ORDER BY sponsor_driver_id DESC
+                LIMIT 1
+                """,
+                (driver_id,)
+            )
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="No sponsor relationship found")
@@ -1148,8 +1201,11 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
         raise HTTPException(status_code=403, detail="Driver access required")
     driver_id = current_user["user_id"]
     item_id = body.get("item_id")
+    sponsor_user_id = body.get("sponsor_user_id")
     if not item_id:
         raise HTTPException(status_code=400, detail="item_id required")
+    if not sponsor_user_id:
+        raise HTTPException(status_code=400, detail="sponsor_user_id required")
     ip = get_request_ip(http_request)
     agent = http_request.headers.get("User-Agent")
     device_name, browser_name, os_name = parse_login_device_details(agent)
@@ -1157,8 +1213,13 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (driver_id,)
+            """
+            SELECT sponsor_user_id, total_points
+            FROM SponsorDrivers
+            WHERE driver_user_id = %s AND sponsor_user_id = %s
+            LIMIT 1
+            """,
+            (driver_id, sponsor_user_id)
         )
         driver_row = cursor.fetchone()
         if not driver_row:
