@@ -385,6 +385,33 @@ def get_about_public():
         cursor.close()
         conn.close()
 
+ @app.get("/api/driver/sponsors")
+def get_driver_sponsors(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "driver":
+        raise HTTPException(status_code=403, detail="Driver access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT sd.sponsor_user_id, sd.total_points,
+                   COALESCE(sp.company_name, u.username) AS sponsor_name
+            FROM SponsorDrivers sd
+            JOIN Users u ON u.user_id = sd.sponsor_user_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = sd.sponsor_user_id
+            WHERE sd.driver_user_id = %s
+            ORDER BY sponsor_name ASC
+            """,
+            (current_user["user_id"],)
+        )
+        sponsors = cursor.fetchall()
+        for s in sponsors:
+            s["total_points"] = int(s["total_points"] or 0)
+        return {"sponsors": sponsors}
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.get("/api/driver/notification-preferences")
 def get_notification_preferences(current_user: dict = Depends(get_current_user)):
     """Get notification preferences for the logged-in driver."""
@@ -1238,8 +1265,8 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
         if item["stock_quantity"] <= 0:
             raise HTTPException(status_code=400, detail="This item is out of stock.")
         cursor.execute(
-            "UPDATE SponsorDrivers SET total_points = total_points - %s WHERE driver_user_id = %s",
-            (item["points_cost"], driver_id)
+            "UPDATE SponsorDrivers SET total_points = total_points - %s WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (item["points_cost"], driver_id, sponsor_id)
         )
         cursor.execute(
             "UPDATE SponsorCatalog SET stock_quantity = stock_quantity - 1 WHERE item_id = %s AND sponsor_user_id = %s",
@@ -1265,8 +1292,9 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
             )
         )
         conn.commit()
-        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (driver_id,))
-        new_balance = cursor.fetchone()["total_points"]
+        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s", (driver_id, sponsor_id))
+        new_balance_row = cursor.fetchone(); 
+        new_balance = cursor.fetchone()["total_points"] if new_balance_row else 0
         cursor.execute("SELECT stock_quantity FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s", (item_id, sponsor_id))
         new_stock = cursor.fetchone()["stock_quantity"]
 
