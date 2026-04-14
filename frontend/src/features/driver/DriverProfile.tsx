@@ -126,8 +126,10 @@ function ProfileEditForm({
   const [saveError, setSaveError] = useState('');
 
   const set = (field: keyof EditForm, value: string) => {
-    setSaveError('');
     setForm((prev) => ({ ...prev, [field]: value }));
+    // Only clear the per-field validation error when the user edits that field.
+    // The top-level saveError persists until the next submit so users can see
+    // what went wrong while they're correcting it.
     if (fieldErrors[field]) {
       setFieldErrors((prev) => { const n = { ...prev }; delete n[field]; return n; });
     }

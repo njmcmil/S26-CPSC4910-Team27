@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 
+export type AlertVariant = 'error' | 'success' | 'info' | 'warning';
+
 interface AlertProps {
-  variant: 'error' | 'success' | 'info';
+  variant: AlertVariant;
   children: ReactNode;
 }
 

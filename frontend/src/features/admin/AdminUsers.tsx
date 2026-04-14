@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/apiClient';
+import { Alert } from '../../components/Alert';
 
 interface UserRow {
   user_id: number;
@@ -71,9 +72,9 @@ export function AdminUsersPage() {
 
       {loading && <p className="mt-2">Loading…</p>}
       {error && (
-        <p className="mt-2" style={{ color: 'var(--color-error, red)' }} role="alert">
-          {error}
-        </p>
+        <div className="mt-2">
+          <Alert variant="error">{error}</Alert>
+        </div>
       )}
 
       {!loading && !error && (

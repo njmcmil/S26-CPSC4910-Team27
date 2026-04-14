@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from './Button';
+import { Breadcrumbs } from './Breadcrumbs';
+import { useBreadcrumbs } from '../hooks/useBreadcrumbs';
 import { api } from '../services/apiClient';
 import type { UserRole } from '../types';
 
@@ -498,6 +500,7 @@ export function Layout() {
   const navigate = useNavigate();
   const mainRef = useRef<HTMLElement | null>(null);
   const [keyboardMode, setKeyboardMode] = useState(false);
+  const breadcrumbs = useBreadcrumbs();
 
   useEffect(() => {
     const applyKeyboardMode = () => {
@@ -603,6 +606,7 @@ export function Layout() {
         )}
 
         <main id="main-content" className="app-content" ref={mainRef} tabIndex={-1}>
+          {user && <Breadcrumbs items={breadcrumbs} />}
           <Outlet />
         </main>
       </div>

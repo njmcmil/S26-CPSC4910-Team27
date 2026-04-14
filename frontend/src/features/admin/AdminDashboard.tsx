@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { api } from '../../services/apiClient';
+import { Alert } from '../../components/Alert';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -56,28 +57,14 @@ interface OrderIssue {
 
 type Tab = 'overview' | 'login-attempts' | 'audit-logs' | 'driver-logs' | 'users' | 'order-issues';
 
-// ── Tab Button ─────────────────────────────────────────────────────────────
-
-function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        padding: '0.5rem 1rem',
-        borderRadius: 8,
-        border: 'none',
-        background: active ? '#2563eb' : 'var(--color-surface)',
-        color: active ? '#fff' : 'var(--color-text)',
-        fontWeight: active ? 700 : 400,
-        cursor: 'pointer',
-        fontSize: '0.9rem',
-      }}
-    >
-      {label}
-    </button>
-  );
-}
+const TAB_CONFIG: { id: Tab; label: string }[] = [
+  { id: 'overview',       label: 'Overview' },
+  { id: 'login-attempts', label: 'Login Attempts' },
+  { id: 'audit-logs',     label: 'Audit Logs' },
+  { id: 'driver-logs',    label: 'Driver Logs' },
+  { id: 'users',          label: 'Users' },
+  { id: 'order-issues',   label: 'Order Issues' },
+];
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────
 
@@ -123,7 +110,7 @@ export function AdminDashboardPage() {
         setOrderIssues(res.issues);
       }
     } catch {
-      setError('Failed to load data.');
+      setError('Failed to load data. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -160,25 +147,52 @@ export function AdminDashboardPage() {
       <h2 id="admin-heading">Admin Dashboard</h2>
       <p className="mt-1">Welcome back, {user?.username}.</p>
 
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', margin: '1.5rem 0 1rem' }}>
-        <TabButton label="Overview" active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
-        <TabButton label="Login Attempts" active={activeTab === 'login-attempts'} onClick={() => setActiveTab('login-attempts')} />
-        <TabButton label="Audit Logs" active={activeTab === 'audit-logs'} onClick={() => setActiveTab('audit-logs')} />
-        <TabButton label="Driver Logs" active={activeTab === 'driver-logs'} onClick={() => setActiveTab('driver-logs')} />
-        <TabButton label="Users" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
-        <TabButton label="Order Issues" active={activeTab === 'order-issues'} onClick={() => setActiveTab('order-issues')} />
+      {/* ── Tab bar — proper ARIA tab pattern ── */}
+      <div
+        role="tablist"
+        aria-label="Admin dashboard sections"
+        style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', margin: '1.5rem 0 1rem' }}
+      >
+        {TAB_CONFIG.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`tab-${id}`}
+            aria-selected={activeTab === id}
+            aria-controls={`panel-${id}`}
+            onClick={() => setActiveTab(id)}
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: 8,
+              border: activeTab === id ? 'none' : '1px solid var(--color-border)',
+              background: activeTab === id ? '#2563eb' : 'var(--color-surface)',
+              color: activeTab === id ? '#fff' : 'var(--color-text)',
+              fontWeight: activeTab === id ? 700 : 400,
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {error && (
-        <div style={{ background: '#fee2e2', color: '#991b1b', padding: '0.75rem 1rem', borderRadius: 8, marginBottom: '1rem' }}>
-          {error}
+        <div className="mt-1" style={{ marginBottom: '1rem' }}>
+          <Alert variant="error">{error}</Alert>
         </div>
       )}
 
-      {/* Overview */}
+      {/* ── Overview ── */}
       {activeTab === 'overview' && (
-        <div className="placeholder-grid mt-2">
+        <div
+          role="tabpanel"
+          id="panel-overview"
+          aria-labelledby="tab-overview"
+          tabIndex={0}
+          className="placeholder-grid mt-2"
+        >
           <button
             type="button"
             className="card dashboard-overview-button"
@@ -214,9 +228,15 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      {/* Login Attempts */}
+      {/* ── Login Attempts ── */}
       {activeTab === 'login-attempts' && (
-        <div className="card">
+        <div
+          role="tabpanel"
+          id="panel-login-attempts"
+          aria-labelledby="tab-login-attempts"
+          tabIndex={0}
+          className="card"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <h3 style={{ margin: 0 }}>Login Attempts</h3>
             <input
@@ -224,6 +244,7 @@ export function AdminDashboardPage() {
               placeholder="Filter by username..."
               value={loginFilter}
               onChange={e => setLoginFilter(e.target.value)}
+              aria-label="Filter login attempts by username"
               style={{ padding: '0.35rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.85rem' }}
             />
           </div>
@@ -268,14 +289,21 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      {/* Audit Logs */}
+      {/* ── Audit Logs ── */}
       {activeTab === 'audit-logs' && (
-        <div className="card">
+        <div
+          role="tabpanel"
+          id="panel-audit-logs"
+          aria-labelledby="tab-audit-logs"
+          tabIndex={0}
+          className="card"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <h3 style={{ margin: 0 }}>Audit Logs</h3>
             <select
               value={auditCategory}
               onChange={e => setAuditCategory(e.target.value)}
+              aria-label="Filter audit logs by category"
               style={{ padding: '0.35rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.85rem' }}
             >
               <option value="">All Categories</option>
@@ -320,9 +348,15 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      {/* Driver Logs */}
+      {/* ── Driver Logs ── */}
       {activeTab === 'driver-logs' && (
-        <div className="card">
+        <div
+          role="tabpanel"
+          id="panel-driver-logs"
+          aria-labelledby="tab-driver-logs"
+          tabIndex={0}
+          className="card"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <h3 style={{ margin: 0 }}>Driver Logs</h3>
             <input
@@ -330,6 +364,7 @@ export function AdminDashboardPage() {
               placeholder="Filter by username..."
               value={driverFilter}
               onChange={e => setDriverFilter(e.target.value)}
+              aria-label="Filter driver logs by username"
               style={{ padding: '0.35rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.85rem' }}
             />
           </div>
@@ -370,9 +405,15 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      {/* Users */}
+      {/* ── Users ── */}
       {activeTab === 'users' && (
-        <div className="card">
+        <div
+          role="tabpanel"
+          id="panel-users"
+          aria-labelledby="tab-users"
+          tabIndex={0}
+          className="card"
+        >
           <h3 style={{ marginBottom: '1rem' }}>All Users</h3>
           {loading ? <p>Loading...</p> : (
             <div style={{ overflowX: 'auto' }}>
@@ -408,8 +449,16 @@ export function AdminDashboardPage() {
           )}
         </div>
       )}
+
+      {/* ── Order Issues ── */}
       {activeTab === 'order-issues' && (
-        <div className="card">
+        <div
+          role="tabpanel"
+          id="panel-order-issues"
+          aria-labelledby="tab-order-issues"
+          tabIndex={0}
+          className="card"
+        >
           <h3 style={{ marginBottom: '1rem' }}>Reported Order Issues</h3>
           {loading ? <p>Loading...</p> : orderIssues.length === 0 ? (
             <p style={{ color: 'var(--color-text-muted)' }}>No issues reported.</p>

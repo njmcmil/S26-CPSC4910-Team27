@@ -86,14 +86,14 @@ export function SponsorPointsPage() {
         ? prev.filter((id) => id !== driverId)
         : [...prev, driverId],
     );
+    // Clear success message when selection changes, but leave error visible so
+    // users can see what went wrong while they're fixing the selection.
     setSuccessMsg('');
-    setError('');
   };
 
   const handleSelectionModeChange = (mode: SelectionMode) => {
     setSelectionMode(mode);
     setSuccessMsg('');
-    setError('');
     setShowHistory(false);
 
     if (mode !== 'single') {
@@ -110,7 +110,6 @@ export function SponsorPointsPage() {
       selectedDriverIds.length === drivers.length ? [] : drivers.map((d) => d.driver_user_id),
     );
     setSuccessMsg('');
-    setError('');
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -259,7 +258,6 @@ export function SponsorPointsPage() {
                   onChange={(e) => {
                     setSelectedDriverId(e.target.value);
                     setSuccessMsg('');
-                    setError('');
                     setShowHistory(false);
                   }}
                   style={{ width: '100%', padding: '0.5rem', fontSize: '1rem' }}
