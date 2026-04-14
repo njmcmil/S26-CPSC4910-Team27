@@ -4,6 +4,7 @@ import { Spinner } from '../components/Spinner';
 import { Alert } from '../components/Alert';
 import { Button } from '../components/Button';
 import type { ApiError, PointTransaction as PointTx } from '../types';
+import { useAuth } from '../auth/AuthContext';
 
 interface PointTransaction {
   date: string;
@@ -22,6 +23,7 @@ interface GroupedTransactions {
 }
 
 export function PointsPage() {
+  const { activeSponsorId } = useAuth();
   const [data, setData] = useState<PointsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -31,12 +33,12 @@ export function PointsPage() {
     setLoading(true);
     setError('');
     try {
-      const pointsData = await pointsService.getPoints();
+      const pointsData = await pointsService.getPoints(activeSponsorId ?? undefined);
       setData(pointsData);
 
       // Fetch full history with expires_at data 
       try {
-        const historyData = await pointsService.getDriverPointHistory();
+        const historyData = await pointsService.getDriverPointHistory(activeSponsorId ?? undefined);
         const now = new Date();
         const expiring = historyData.history
           .filter(
@@ -60,7 +62,7 @@ export function PointsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeSponsorId]);
 
   useEffect(() => {
     fetchPoints();
