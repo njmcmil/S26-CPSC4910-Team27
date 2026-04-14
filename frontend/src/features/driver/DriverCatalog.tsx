@@ -4,6 +4,7 @@ import { api } from '../../services/apiClient';
 import { useCart } from '../../auth/CartContext';
 import type { CartItem } from '../../auth/CartContext';
 import { driverService, type DriverApplicationSponsor } from '../../services/driverService';
+import { useAuth } from '../../auth/AuthContext';
 
 interface CatalogItem {
   item_id: string;
@@ -31,13 +32,16 @@ export function DriverCatalog({ previewMode = false }: Props) {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [points, setPoints] = useState<number>(0);
   const [sponsors, setSponsors] = useState<DriverApplicationSponsor[]>([]);
-  const [selectedSponsorId, setSelectedSponsorId] = useState('');
+  const [selectedSponsorId, setSelectedSponsorId] = useState( 
+    () => activeSponsorId ? String(activeSponsorId) : '' 
+  ); 
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const { addItem, items: cartItems, totalCount } = useCart();
+  const { activeSponsorId, setActiveSponsorId, sponsors: authSponsors } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -105,6 +109,12 @@ export function DriverCatalog({ previewMode = false }: Props) {
       // silently fail- save buttons just won't reflect server state
     }
   };
+
+  useEffect(() => {
+    if (activeSponsorId && String(activeSponsorId) !== selectedSponsorId) {
+      setSelectedSponsorId(String(activeSponsorId));
+    }
+  }, [activeSponsorId]);
 
   useEffect(() => {
     if (previewMode) return;
@@ -262,7 +272,10 @@ export function DriverCatalog({ previewMode = false }: Props) {
           <div className="catalog-toolbar card">
             <select
               value={selectedSponsorId}
-              onChange={(e) => setSelectedSponsorId(e.target.value)}
+              onChange={(e) => {
+                setSelectedSponsorId(e.target.value);
+                setActiveSponsorId(Number(e.target.value)); 
+              }} 
               aria-label="Select sponsor catalog"
               className="catalog-select"
             >
