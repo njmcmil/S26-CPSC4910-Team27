@@ -371,7 +371,7 @@ async def add_driver_points(
             # If expiration_days column doesn't exist or query fails, default to None
             expiration_days = None
         
-        expires_at = (datetime.now() + timedelta(days=expiration_days)) if expiration_days else None
+        expires_at = (datetime.now() + timedelta(days=int(expiration_days))) if expiration_days else None
 
         # Update driver points
         cursor.execute(
@@ -554,7 +554,7 @@ async def upload_driver_points(
                 continue
 
             new_total = driver["total_points"] + record["points"]
-            expires_at = (datetime.now() + timedelta(days=expiration_days)) if expiration_days else None
+            expires_at = (datetime.now() + timedelta(days=int(expiration_days))) if expiration_days else None
 
             cursor.execute(
                 """
