@@ -1,0 +1,1481 @@
+from fastapi import APIRouter, Depends, HTTPException, Cookie, UploadFile, File
+from datetime import datetime, timedelta
+from shared.db import get_connection
+from auth.auth import get_current_user
+from users.email_service import send_points_notification
+
+from schemas.points import (
+    PointChangeRequest, SponsorSettings, PointChangeResponse, ExpirationPolicyRequest,
+    TipCreate, Tip, TipViewCreate, AccrualStatusUpdate, BulkPointUpdateRequest,
+    SponsorRewardDefaults, PointHistoryItem, PointHistoryResponse,
+    BulkPointUploadResponse, BulkPointChangeResponse,
+)
+from typing import Optional
+
+
+router = APIRouter()
+
+# Add verify_admin function
+def verify_admin(current_user: dict = Depends(get_current_user)):
+    """Verify user is an admin"""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+# verify_sponsor function
+def verify_sponsor(current_user: dict = Depends(get_current_user)):
+    """Verify user is a sponsor"""
+    if current_user.get('role') != 'sponsor':
+        raise HTTPException(status_code=403, detail="Sponsor access required")
+    return current_user
+
+
+def parse_points_upload_file(content: str) -> tuple[list[dict], list[dict]]:
+    """Parse username|points|reason rows into valid records plus line-level errors."""
+    records = []
+    errors = []
+
+    for line_num, raw_line in enumerate(content.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        fields = [field.strip() for field in line.split("|")]
+        if len(fields) != 3:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": f"Expected 3 fields (username|points|reason), got {len(fields)}.",
+            })
+            continue
+
+        username, points_raw, reason = fields
+        if not username:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": "Username is required.",
+            })
+            continue
+
+        try:
+            points_value = int(points_raw)
+        except ValueError:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": f"Points value '{points_raw}' is not a valid integer.",
+            })
+            continue
+
+        if points_value <= 0:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": "Points must be a positive integer.",
+            })
+            continue
+
+        if len(reason) < 3:
+            errors.append({
+                "line_number": line_num,
+                "raw_line": raw_line,
+                "reason": "Reason must be at least 3 characters.",
+            })
+            continue
+
+        records.append({
+            "line_number": line_num,
+            "raw_line": raw_line,
+            "username": username,
+            "points": points_value,
+            "reason": reason,
+        })
+
+    return records, errors
+
+# ============= SPONSOR ENDPOINTS =============
+
+@router.get("/sponsor/settings")
+async def get_sponsor_settings(
+    current_user: dict = Depends(verify_sponsor)
+):
+    """Get sponsor settings including negative points setting"""
+    
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT allow_negative_points
+            FROM SponsorProfiles
+            WHERE user_id = %s
+        """, (user_id,))
+        
+        settings = cursor.fetchone()
+        if not settings:
+            return {"allow_negative_points": False}
+        
+        return settings
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+# Post Endpoints
+
+@router.put("/sponsor/settings")
+async def update_sponsor_settings(
+    settings: SponsorSettings,
+    current_user: dict = Depends(verify_sponsor)
+):
+    """Update sponsor settings"""
+    
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            UPDATE SponsorProfiles
+            SET allow_negative_points = %s
+            WHERE user_id = %s
+        """, (settings.allow_negative_points, user_id))
+        
+        conn.commit()
+        return {"success": True, "settings": settings}
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/sponsor/reward-defaults")
+async def get_sponsor_reward_defaults(
+    current_user: dict = Depends(verify_sponsor)
+):
+    """Get default reward settings for the current sponsor (#13984)"""
+    # NOTE: get_user_by_id returns {user_id, username, role, ...} — no 'sponsor_id'.
+    # Use user_id to look up SponsorProfiles (keyed by user_id), matching sponsor_profile.py pattern.
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT dollar_per_point, earn_rate, expiration_days,
+                   max_points_per_day, max_points_per_month, order_success_delay_minutes
+            FROM SponsorProfiles
+            WHERE user_id = %s
+        """, (user_id,))
+
+        row = cursor.fetchone()
+        if not row:
+            # Return sensible defaults if sponsor profile not found
+            return SponsorRewardDefaults()
+
+        return {
+            "dollar_per_point": float(row['dollar_per_point']) if row['dollar_per_point'] is not None else 0.01,
+            "earn_rate": float(row['earn_rate']) if row['earn_rate'] is not None else 1.0,
+            "expiration_days": row['expiration_days'],
+            "max_points_per_day": row['max_points_per_day'],
+            "max_points_per_month": row['max_points_per_month'],
+            "order_success_delay_minutes": row['order_success_delay_minutes'] or 60,
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/sponsor/reward-defaults")
+async def update_sponsor_reward_defaults(
+    defaults: SponsorRewardDefaults,
+    current_user: dict = Depends(verify_sponsor)
+):
+    """Update default reward settings for the current sponsor (#13984)"""
+    user_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True) 
+
+    try:
+        # Read current dollar_per_point before updating (for history tracking)
+        cursor.execute(
+            "SELECT dollar_per_point FROM SponsorProfiles WHERE user_id = %s",
+            (user_id,)
+        )
+        existing = cursor.fetchone()
+        old_dpp = float(existing['dollar_per_point']) if existing and existing['dollar_per_point'] is not None else 0.01
+        
+        cursor.execute("""
+            INSERT INTO SponsorProfiles
+                (user_id, dollar_per_point, earn_rate, expiration_days, max_points_per_day, max_points_per_month, order_success_delay_minutes)
+            VALUES
+                (%s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                dollar_per_point = VALUES(dollar_per_point),
+                earn_rate = VALUES(earn_rate),
+                expiration_days = VALUES(expiration_days),
+                max_points_per_day = VALUES(max_points_per_day),
+                max_points_per_month = VALUES(max_points_per_month),
+                order_success_delay_minutes = VALUES(order_success_delay_minutes)
+        """, (
+            user_id,
+            defaults.dollar_per_point,
+            defaults.earn_rate,
+            defaults.expiration_days,
+            defaults.max_points_per_day,
+            defaults.max_points_per_month,
+            defaults.order_success_delay_minutes,
+        ))
+
+        # Log history if dollar_per_point actually changed
+        if defaults.dollar_per_point != old_dpp:
+            cursor.execute("""
+                INSERT INTO sponsor_point_value_history
+                    (sponsor_id, old_value, new_value, changed_by_user_id, changed_at)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (user_id, old_dpp, defaults.dollar_per_point, user_id, datetime.now()))
+
+        conn.commit()
+        return {"success": True, "defaults": defaults.model_dump()}
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.get("/sponsor/reward-defaults/history")
+async def get_sponsor_reward_defaults_history(
+    current_user: dict = Depends(verify_sponsor)
+):
+    """Get history of dollar_per_point changes for the current sponsor"""
+    user_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT
+                h.id,
+                h.old_value,
+                h.new_value,
+                h.changed_by_user_id,
+                h.changed_at,
+                u.username AS changed_by_username
+            FROM sponsor_point_value_history h
+            LEFT JOIN Users u ON h.changed_by_user_id = u.user_id
+            WHERE h.sponsor_id = %s
+            ORDER BY h.changed_at DESC
+        """, (user_id,))
+
+        rows = cursor.fetchall()
+        history = []
+        for row in rows:
+            history.append({
+                "id": row["id"],
+                "old_value": float(row["old_value"]),
+                "new_value": float(row["new_value"]),
+                "changed_by_user_id": row["changed_by_user_id"],
+                "changed_by_username": row["changed_by_username"],
+                "changed_at": row["changed_at"].isoformat() if row["changed_at"] else None,
+            })
+
+        return {"history": history}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/sponsor/recent-activity")
+async def get_sponsor_recent_activity(
+    limit: int = 5,
+    current_user: dict = Depends(verify_sponsor),
+):
+    """Return the last N point-change audit events for the sponsor's drivers."""
+    user_id = current_user["user_id"]
+    limit = min(max(limit, 1), 50)
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT
+                a.date,
+                a.driver_id,
+                a.points_changed,
+                a.reason,
+                p.first_name  AS driver_first_name,
+                p.last_name   AS driver_last_name
+            FROM audit_log a
+            LEFT JOIN Profiles p ON a.driver_id = p.user_id
+            WHERE a.category = 'point_change'
+              AND a.sponsor_id = %s
+            ORDER BY a.date DESC
+            LIMIT %s
+        """, (user_id, limit))
+
+        rows = cursor.fetchall()
+
+        activity = []
+        for r in rows:
+            activity.append({
+                "date": r["date"].isoformat() if r["date"] else None,
+                "driver_id": r["driver_id"],
+                "points_changed": r["points_changed"],
+                "reason": r["reason"],
+                "driver_first_name": r["driver_first_name"] or "",
+                "driver_last_name": r["driver_last_name"] or "",
+            })
+
+        return {"activity": activity}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/sponsor/points/add", response_model=PointChangeResponse)
+async def add_driver_points(
+    request: PointChangeRequest,
+    current_user: dict = Depends(verify_sponsor)
+):
+    """Sponsor adds points to a driver (reason required)"""
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Verify driver belongs to this sponsor
+        cursor.execute(
+            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
+            (request.driver_id,)
+        )
+        driver = cursor.fetchone()
+
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+
+        user_id = current_user['user_id']
+        if driver['sponsor_user_id'] != user_id:
+            raise HTTPException(status_code=403, detail="Driver does not belong to your organization")
+
+        # Look up sponsor's expiration_days to compute expires_at (#13990)
+        # Use user_id since SponsorProfiles is keyed by user_id (not sponsor_id)
+        cursor.execute(
+            "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
+            (current_user['user_id'],)
+        )
+        sp_row = cursor.fetchone()
+        expiration_days = sp_row['expiration_days'] if sp_row and sp_row.get('expiration_days') else None
+        expires_at = (datetime.now() + timedelta(days=expiration_days)) if expiration_days else None
+
+        # Update driver points
+        cursor.execute(
+            "UPDATE SponsorDrivers SET total_points = total_points + %s WHERE driver_user_id = %s",
+            (request.points, request.driver_id)
+        )
+
+        # Log the point change automatically (with expires_at, #13990)
+        cursor.execute("""
+            INSERT INTO audit_log
+            (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
+            VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
+        """, (datetime.now(), user_id, request.driver_id, request.points, request.reason, current_user['user_id'], expires_at))
+        
+        conn.commit()
+        
+        # Get updated point total
+        cursor.execute(
+            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s",
+            (request.driver_id,)
+        )
+        new_total = cursor.fetchone()['total_points']
+
+        # Send email if driver has notifications enabled
+        cursor.execute(
+            "SELECT email, username FROM Users WHERE user_id = %s",
+            (request.driver_id,)
+        )
+        driver_user = cursor.fetchone()
+        if driver_user:
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (request.driver_id,)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver_user["email"],
+                    username=driver_user["username"],
+                    points_changed=request.points,
+                    reason=request.reason,
+                    new_total=new_total
+                )
+        
+        return {
+            "success": True,
+            "message": f"Added {request.points} points",
+            "new_total": new_total
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+@router.post("/sponsor/points/bulk-update", response_model=BulkPointChangeResponse)
+async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_user: dict = Depends(verify_sponsor)):
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        updated_drivers = []
+        for driver_id in request.driver_ids:
+            cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s", (driver_id, user_id))
+            driver = cursor.fetchone()
+            if not driver:
+                continue
+
+            # Prevent negative points
+            new_total = max(0, driver['total_points'] + request.points)
+
+            cursor.execute("UPDATE SponsorDrivers SET total_points = %s WHERE driver_user_id = %s", (new_total, driver_id))
+            # Log audit
+            cursor.execute("""
+                INSERT INTO audit_log (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                VALUES ('point_change', %s, %s, %s, %s, %s, %s)
+            """, (datetime.now(), user_id, driver_id, request.points, request.reason, current_user['user_id']))
+            updated_drivers.append({"driver_id": driver_id, "new_total": new_total})
+
+            cursor.execute(
+                "SELECT email, username FROM Users WHERE user_id = %s",
+                (driver_id,)
+            )
+            driver_user = cursor.fetchone()
+
+            if driver_user:
+                cursor.execute(
+                    "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                    (driver_id,)
+                )
+                pref = cursor.fetchone()
+                if not pref or pref.get("points_email_enabled", True):
+                    send_points_notification(
+                        to_email=driver_user["email"],
+                        username=driver_user["username"],
+                        points_changed=request.points,
+                        reason=request.reason,
+                        new_total=new_total
+                    )
+
+        conn.commit()        
+
+        return {
+            "success": True,
+            "message": f"Updated {len(updated_drivers)} driver{'s' if len(updated_drivers) != 1 else ''}.",
+            "updated_drivers": updated_drivers,
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/sponsor/points/upload", response_model=BulkPointUploadResponse)
+async def upload_driver_points(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(verify_sponsor),
+):
+    user_id = current_user["user_id"]
+    raw_bytes = await file.read()
+    try:
+        content = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded text.")
+
+    records, errors = parse_points_upload_file(content)
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
+            (user_id,)
+        )
+        sponsor_profile = cursor.fetchone()
+        expiration_days = sponsor_profile["expiration_days"] if sponsor_profile and sponsor_profile.get("expiration_days") else None
+
+        updated_driver_ids = []
+        total_points_added = 0
+
+        for record in records:
+            cursor.execute(
+                """
+                SELECT u.user_id, u.email, u.username, sd.total_points
+                FROM Users u
+                JOIN SponsorDrivers sd
+                  ON sd.driver_user_id = u.user_id
+                WHERE u.username = %s
+                  AND sd.sponsor_user_id = %s
+                """,
+                (record["username"], user_id)
+            )
+            driver = cursor.fetchone()
+
+            if not driver:
+                errors.append({
+                    "line_number": record["line_number"],
+                    "raw_line": record["raw_line"],
+                    "reason": f"Driver '{record['username']}' not found for your organization.",
+                })
+                continue
+
+            new_total = driver["total_points"] + record["points"]
+            expires_at = (datetime.now() + timedelta(days=expiration_days)) if expiration_days else None
+
+            cursor.execute(
+                """
+                UPDATE SponsorDrivers
+                SET total_points = total_points + %s
+                WHERE driver_user_id = %s AND sponsor_user_id = %s
+                """,
+                (record["points"], driver["user_id"], user_id)
+            )
+            cursor.execute(
+                """
+                INSERT INTO audit_log
+                (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
+                VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    datetime.now(),
+                    user_id,
+                    driver["user_id"],
+                    record["points"],
+                    record["reason"],
+                    user_id,
+                    expires_at,
+                )
+            )
+
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (driver["user_id"],)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver["email"],
+                    username=driver["username"],
+                    points_changed=record["points"],
+                    reason=record["reason"],
+                    new_total=new_total,
+                )
+
+            updated_driver_ids.append(driver["user_id"])
+            total_points_added += record["points"]
+
+        conn.commit()
+
+        return {
+            "success": True,
+            "rows_processed": len(records),
+            "rows_updated": len(updated_driver_ids),
+            "total_points_added": total_points_added,
+            "updated_drivers": updated_driver_ids,
+            "errors": errors,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+@router.post("/sponsor/points/deduct", response_model=PointChangeResponse)
+async def deduct_driver_points(
+    request: PointChangeRequest,
+    current_user: dict = Depends(verify_sponsor)
+):
+    """Sponsor deducts points from a driver (reason required)"""
+    
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        user_id = current_user['user_id']
+
+        # Get sponsor settings and driver info
+        cursor.execute("""
+            SELECT s.allow_negative_points, d.total_points
+            FROM SponsorProfiles s
+            JOIN SponsorDrivers d ON d.sponsor_user_id = s.user_id
+            WHERE d.driver_user_id = %s AND s.user_id = %s
+        """, (request.driver_id, user_id))
+        
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="Driver not found or unauthorized")
+        
+        allow_negative = result['allow_negative_points']
+        current_points = result['total_points']
+        
+        # Check if deduction would make points negative
+        if not allow_negative and (current_points - request.points) < 0:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Insufficient points. Balance would be {current_points - request.points}."
+            )
+        
+        # Update driver points (deduct)
+        cursor.execute("""
+            UPDATE SponsorDrivers
+            SET total_points = total_points - %s
+            WHERE driver_user_id = %s
+        """, (request.points, request.driver_id))
+
+        # Log the audit trail
+        cursor.execute("""
+            INSERT INTO audit_log
+            (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES ('point_change', %s, %s, %s, %s, %s, %s)
+        """, (datetime.now(), user_id, request.driver_id, -request.points, request.reason, current_user['user_id']))
+
+        conn.commit()
+
+        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (request.driver_id,))
+        new_total = cursor.fetchone()['total_points']
+
+        # Send email if driver has notifications enabled
+        cursor.execute(
+            "SELECT email, username FROM Users WHERE user_id = %s",
+            (request.driver_id,)
+        )
+        driver_user = cursor.fetchone()
+        if driver_user:
+            cursor.execute(
+                "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
+                (request.driver_id,)
+            )
+            pref = cursor.fetchone()
+            if not pref or pref.get("points_email_enabled", True):
+                send_points_notification(
+                    to_email=driver_user["email"],
+                    username=driver_user["username"],
+                    points_changed=-request.points,
+                    reason=request.reason,
+                    new_total=new_total
+                )
+        
+        return {
+            "success": True, 
+            "message": f"Deducted {request.points} points",
+            "new_total": new_total
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# NOTE: Sponsor driver list endpoint lives in sponsor_profile.py at GET /sponsor/drivers.
+# Removed duplicate GET /api/sponsor/drivers to avoid conflicting response shapes
+# and divergent point sources. Single source of truth: SponsorDrivers.total_points.
+
+
+@router.get("/sponsor/drivers/{driver_id}/points")
+async def get_driver_points(
+    driver_id: int,
+    current_user: dict = Depends(verify_sponsor)
+):
+    """Get current point balance for a driver"""
+    
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute("""
+            SELECT
+                sd.driver_user_id AS driver_id,
+                p.first_name,
+                p.last_name,
+                sd.total_points,
+                sd.sponsor_user_id
+            FROM SponsorDrivers sd
+            LEFT JOIN Profiles p ON sd.driver_user_id = p.user_id
+            WHERE sd.driver_user_id = %s
+        """, (driver_id,))
+
+        driver = cursor.fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+
+        user_id = current_user['user_id']
+        if driver['sponsor_user_id'] != user_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        return driver
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+@router.get("/sponsor/drivers/{driver_id}/point-history", response_model=PointHistoryResponse)
+async def get_driver_point_history_for_sponsor(
+    driver_id: int,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Sponsor retrieves point history for a specific driver (#14012, #14014).
+    Supports start_date/end_date filters (YYYY-MM-DD format).
+    Defaults to last 90 days if no dates provided.
+    """
+    user_id = current_user['user_id']
+    role = current_user.get('role')
+
+    # Admins can access any driver; sponsors only their own
+    if role not in ('sponsor', 'admin'):
+        raise HTTPException(status_code=403, detail="Only sponsors or admins can access this endpoint")
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Verify driver belongs to this sponsor (skip for admin)
+        if role == 'sponsor':
+            cursor.execute(
+                """
+                SELECT sponsor_user_id, total_points
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s AND sponsor_user_id = %s
+                LIMIT 1
+                """,
+                (driver_id, user_id),
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Driver not found")
+            current_points = row['total_points']
+
+        # Parse and validate date filters (#14014)
+        if start_date:
+            try:
+                parsed_start = datetime.strptime(start_date, '%Y-%m-%d')
+            except ValueError:
+                raise HTTPException(status_code=400, detail="start_date must be YYYY-MM-DD format")
+        else:
+            parsed_start = datetime.now() - timedelta(days=90)
+
+        if end_date:
+            try:
+                parsed_end = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="end_date must be YYYY-MM-DD format")
+        else:
+            parsed_end = datetime.now()
+
+        if parsed_start > parsed_end:
+            raise HTTPException(status_code=400, detail="start_date must be before end_date")
+
+        # Cap limit to prevent abuse
+        limit = min(limit, 500)
+
+        # Get current point total
+        if role == 'admin':
+            cursor.execute(
+                """
+                SELECT total_points
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s
+                ORDER BY sponsor_driver_id DESC
+                LIMIT 1
+                """,
+                (driver_id,),
+            )
+            current = cursor.fetchone()
+            current_points = current['total_points'] if current else 0
+
+        # Get total count for the filtered range
+        cursor.execute("""
+            SELECT COUNT(*) as cnt
+            FROM audit_log
+            WHERE category = 'point_change'
+            AND driver_id = %s
+            AND date BETWEEN %s AND %s
+        """, (driver_id, parsed_start, parsed_end))
+        total_count = cursor.fetchone()['cnt']
+
+        # Get paginated point history with expires_at
+        cursor.execute("""
+            SELECT
+                date,
+                points_changed,
+                reason,
+                changed_by_user_id,
+                expires_at
+            FROM audit_log
+            WHERE category = 'point_change'
+            AND driver_id = %s
+            AND date BETWEEN %s AND %s
+            ORDER BY date DESC
+            LIMIT %s OFFSET %s
+        """, (driver_id, parsed_start, parsed_end, limit, offset))
+
+        history = cursor.fetchall()
+
+        return {
+            "driver_id": driver_id,
+            "current_points": current_points,
+            "history": history,
+            "total_count": total_count,
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# GET current accrual status
+@router.get("/driver/{driver_id}/accrual-status")
+async def get_accrual_status(driver_id: int, current_user: dict = Depends(verify_sponsor)):
+    """
+    Get the point accrual status for a driver.
+    """
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT driver_user_id, sponsor_user_id, total_points, points_paused
+            FROM SponsorDrivers
+            WHERE driver_user_id = %s
+        """, (driver_id,))
+
+        driver = cursor.fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+
+        if driver['sponsor_user_id'] != user_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        return {
+            "driver_id": driver['driver_user_id'],
+            "total_points": driver['total_points'],
+            "accrual_paused": driver['points_paused']
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# POST to update accrual status (pause/resume)
+@router.put("/driver/{driver_id}/accrual-status")
+async def update_accrual_status(
+    driver_id: int, 
+    status: AccrualStatusUpdate, 
+    current_user: dict = Depends(verify_sponsor)
+):
+    """
+    Pause or resume point accrual for a driver: if a sponsor...
+    """
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Check driver exists and belongs to sponsor
+        cursor.execute("SELECT sponsor_user_id FROM SponsorDrivers WHERE driver_user_id = %s", (driver_id,))
+        driver = cursor.fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+        if driver['sponsor_user_id'] != user_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+
+        # Update accrual status
+        cursor.execute("""
+            UPDATE SponsorDrivers
+            SET points_paused = %s
+            WHERE driver_user_id = %s
+        """, (status.paused, driver_id))
+        conn.commit()
+        
+        return {
+            "success": True, 
+            "driver_id": driver_id, 
+            "accrual_paused": status.paused
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+# ============= DRIVER ENDPOINTS =============
+
+@router.get("/driver/points/history")
+async def get_driver_point_history(
+    current_user: dict = Depends(get_current_user), 
+    sponsor_user_id: Optional[int] = None
+):
+    """Get driver's complete point history"""
+    
+    if current_user.get('role') != 'driver':
+        raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
+    driver_id = current_user['user_id']
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        if sponsor_user_id:
+            cursor.execute("""
+                SELECT total_points FROM SponsorDrivers 
+                WHERE driver_user_id = %s AND sponsor_user_id = %s
+            """, (driver_id, sponsor_user_id))
+        else:
+            cursor.execute("""
+                SELECT SUM(total_points) AS total_points FROM SponsorDrivers 
+                WHERE driver_user_id = %s
+            """, (driver_id,))
+        current = cursor.fetchone()
+
+        if sponsor_user_id:
+            cursor.execute("""
+                SELECT date, points_changed, reason, changed_by_user_id, expires_at
+                FROM audit_log
+                WHERE category = 'point_change'
+                AND driver_id = %s AND sponsor_id = %s
+                ORDER BY date DESC
+            """, (driver_id, sponsor_user_id))
+        else:
+            cursor.execute("""
+                SELECT date, points_changed, reason, changed_by_user_id, expires_at
+                FROM audit_log
+                WHERE category = 'point_change'
+                AND driver_id = %s
+                ORDER BY date DESC
+            """, (driver_id,))
+        
+        history = cursor.fetchall()
+        
+        return {
+            "current_points": current['total_points'] if current else 0,
+            "history": history
+        }
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/driver/points/history-monthly")
+async def get_driver_point_history_monthly(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get driver's point history grouped by month"""
+    
+    if current_user.get('role') != 'driver':
+        raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
+    driver_id = current_user['user_id']
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT
+                DATE_FORMAT(date, '%Y-%m') as month,
+                DATE_FORMAT(date, '%M %Y') as month_name,
+                SUM(CASE WHEN points_changed > 0 THEN points_changed ELSE 0 END) as points_earned,
+                SUM(CASE WHEN points_changed < 0 THEN ABS(points_changed) ELSE 0 END) as points_deducted,
+                SUM(points_changed) as net_change,
+                COUNT(*) as transaction_count
+            FROM audit_log
+            WHERE category = 'point_change' 
+            AND driver_id = %s
+            GROUP BY DATE_FORMAT(date, '%Y-%m')
+            ORDER BY month DESC
+        """, (driver_id,))
+        
+        monthly_history = cursor.fetchall()
+        
+        return {"monthly_history": monthly_history}
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/driver/points/month/{year_month}")
+async def get_driver_point_month_details(
+    year_month: str,  # Format: YYYY-MM
+    current_user: dict = Depends(get_current_user)
+):
+    """Get detailed transactions for a specific month"""
+    
+    if current_user.get('role') != 'driver':
+        raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
+    driver_id = current_user['user_id']
+    
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute("""
+            SELECT
+                date,
+                points_changed,
+                reason,
+                expires_at
+            FROM audit_log
+            WHERE category = 'point_change'
+            AND driver_id = %s
+            AND DATE_FORMAT(date, '%%Y-%%m') = %s
+            ORDER BY date DESC
+        """, (driver_id, year_month))
+        
+        transactions = cursor.fetchall()
+        
+        return {"transactions": transactions}
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+# ============= ADMIN ENDPOINTS =============
+
+@router.post("/admin/point-expiration/settings")
+async def set_point_expiration_policy(
+    request: ExpirationPolicyRequest,
+    current_user: dict = Depends(verify_admin)
+):
+    """Admin sets automatic point expiration policy for a sponsor"""
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO point_expiration_settings 
+            (sponsor_id, expiration_months, auto_expire_enabled, updated_by, updated_at)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            expiration_months = %s,
+            auto_expire_enabled = %s,
+            updated_by = %s,
+            updated_at = %s
+        """, (
+            request.sponsor_id, request.expiration_months, request.auto_expire, 
+            current_user['user_id'], datetime.now(),
+            request.expiration_months, request.auto_expire, 
+            current_user['user_id'], datetime.now()
+        ))
+        
+        conn.commit()
+        return {
+            "success": True, 
+            "message": "Point expiration policy updated",
+            "policy": {
+                "sponsor_id": request.sponsor_id,
+                "expiration_months": request.expiration_months,
+                "auto_expire_enabled": request.auto_expire
+            }
+        }
+        
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/admin/point-expiration/settings")
+async def get_all_expiration_policies(
+    current_user: dict = Depends(verify_admin)
+):
+    """Get all point expiration policies"""
+    
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute("""
+            SELECT 
+                pes.*,
+                sp.company_name
+            FROM point_expiration_settings pes
+            JOIN SponsorProfiles sp ON pes.sponsor_id = sp.user_id
+            ORDER BY sp.company_name
+        """)
+        
+        policies = cursor.fetchall()
+        return {"policies": policies}
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/admin/point-expiration/run")
+async def run_point_expiration(
+    current_user: dict = Depends(verify_admin)
+):
+    """Manually trigger point expiration process"""
+    
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Get all active expiration policies
+        cursor.execute("""
+            SELECT sponsor_id, expiration_months 
+            FROM point_expiration_settings 
+            WHERE auto_expire_enabled = TRUE
+        """)
+        policies = cursor.fetchall()
+        
+        expired_records = []
+        
+        for policy in policies:
+            expiration_date = datetime.now() - timedelta(days=30 * policy['expiration_months'])
+            
+            # Find drivers with points to expire
+            cursor.execute("""
+                SELECT 
+                    al.driver_id,
+                    dp.first_name,
+                    dp.last_name,
+                    sd.total_points,
+                    SUM(al.points_changed) as expired_points
+                FROM audit_log al
+                JOIN SponsorDrivers sd ON al.driver_id = sd.driver_user_id
+                LEFT JOIN Profiles dp ON sd.driver_user_id = dp.user_id
+                WHERE al.category = 'point_change'
+                AND al.sponsor_id = %s
+                AND al.date < %s
+                AND al.points_changed > 0
+                AND sd.total_points > 0
+                GROUP BY al.driver_id, dp.first_name, dp.last_name, sd.total_points
+                HAVING expired_points > 0
+            """, (policy['sponsor_id'], expiration_date))
+            
+            drivers_to_expire = cursor.fetchall()
+            
+            for driver in drivers_to_expire:
+                points_to_deduct = min(driver['expired_points'], driver['total_points'])
+                
+                if points_to_deduct > 0:
+                    # Deduct expired points
+                    cursor.execute("""
+                        UPDATE SponsorDrivers
+                        SET total_points = GREATEST(0, total_points - %s)
+                        WHERE driver_user_id = %s
+                    """, (points_to_deduct, driver['driver_id']))
+                    
+                    # Log the expiration
+                    cursor.execute("""
+                        INSERT INTO audit_log 
+                        (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                        VALUES ('point_change', %s, %s, %s, %s, %s, %s)
+                    """, (
+                        datetime.now(), 
+                        policy['sponsor_id'], 
+                        driver['driver_id'],
+                        -points_to_deduct,
+                        f"Automatic expiration - points older than {policy['expiration_months']} months",
+                        current_user['user_id']
+                    ))
+                    
+                    expired_records.append({
+                        "driver_id": driver['driver_id'],
+                        "driver_name": f"{driver['first_name']} {driver['last_name']}",
+                        "points_expired": points_to_deduct
+                    })
+        
+        conn.commit()
+        return {
+            "success": True, 
+            "expired_count": len(expired_records),
+            "details": expired_records
+        }
+        
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ------------------- TIP ENDPOINTS -------------------
+
+
+# Create a new tip
+@router.post("/tips", response_model=Tip)
+async def create_tip(tip_data: TipCreate, current_user: dict = Depends(verify_sponsor)):
+    """
+    Sponsor creates a new tip.
+    
+    tip_data: TipCreate schema containing tip_text, category, active
+    current_user: fetched from token, must be a sponsor
+    """
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Insert tip into DB with sponsor_id
+        cursor.execute("""
+            INSERT INTO DriverTips (tip_text, category, active, sponsor_id)
+            VALUES (%s, %s, %s, %s)
+        """, (tip_data.tip_text, tip_data.category, tip_data.active, user_id))
+
+        tip_id = cursor.lastrowid
+        conn.commit()
+
+        cursor.execute("""
+            SELECT tip_id, sponsor_id AS sponsor_user_id, tip_text, category, active, created_at, updated_at
+            FROM DriverTips
+            WHERE tip_id = %s
+        """, (tip_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=500, detail="Tip created but could not be loaded")
+        return row
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create tip: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/sponsor/tips", response_model=list[Tip])
+async def get_sponsor_tips(current_user: dict = Depends(verify_sponsor)):
+    """Return all tips created by the current sponsor for dashboard management."""
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT tip_id, sponsor_id AS sponsor_user_id, tip_text, category, active, created_at, updated_at
+            FROM DriverTips
+            WHERE sponsor_id = %s
+            ORDER BY created_at DESC
+        """, (user_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/sponsor/tips/{tip_id}/disable", response_model=Tip)
+async def disable_sponsor_tip(tip_id: int, current_user: dict = Depends(verify_sponsor)):
+    """Disable a sponsor-created tip without deleting it."""
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            "UPDATE DriverTips SET active = FALSE, updated_at = NOW() WHERE tip_id = %s AND sponsor_id = %s",
+            (tip_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        conn.commit()
+
+        cursor.execute("""
+            SELECT tip_id, sponsor_id AS sponsor_user_id, tip_text, category, active, created_at, updated_at
+            FROM DriverTips
+            WHERE tip_id = %s AND sponsor_id = %s
+        """, (tip_id, user_id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/sponsor/tips/{tip_id}/enable", response_model=Tip)
+async def enable_sponsor_tip(tip_id: int, current_user: dict = Depends(verify_sponsor)):
+    """Re-enable a sponsor-created tip."""
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            "UPDATE DriverTips SET active = TRUE, updated_at = NOW() WHERE tip_id = %s AND sponsor_id = %s",
+            (tip_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        conn.commit()
+
+        cursor.execute("""
+            SELECT tip_id, sponsor_id AS sponsor_user_id, tip_text, category, active, created_at, updated_at
+            FROM DriverTips
+            WHERE tip_id = %s AND sponsor_id = %s
+        """, (tip_id, user_id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.delete("/sponsor/tips/{tip_id}")
+async def delete_sponsor_tip(tip_id: int, current_user: dict = Depends(verify_sponsor)):
+    """Delete a sponsor-created tip."""
+    user_id = current_user['user_id']
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("DELETE FROM DriverTipViews WHERE tip_id = %s", (tip_id,))
+        cursor.execute("DELETE FROM DriverTips WHERE tip_id = %s AND sponsor_id = %s", (tip_id, user_id))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Tip not found")
+        conn.commit()
+        return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+# Get all active, unviewed tips (with dynamic min points threshold)
+@router.get("/tips", response_model=list[Tip])
+async def get_all_tips(current_user: dict = Depends(get_current_user), session_index: int = Cookie(default=0)):
+    """
+    Return active tips for the driver based on current points and accrual status.
+    Supports cycling tips per session using session_index.
+    Only returns tips created by the driver's sponsor.
+    """
+    if current_user.get('role') != 'driver':
+        raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
+    driver_id = current_user['user_id']
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Get driver's sponsor and points/accrual status
+        cursor.execute(
+            "SELECT sponsor_user_id, total_points, points_paused FROM SponsorDrivers WHERE driver_user_id = %s",
+            (driver_id,)
+        )
+        driver = cursor.fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+
+        sponsor_id = driver['sponsor_user_id']
+
+        cursor.execute(
+            "SELECT driver_profile_id FROM DriverProfiles WHERE user_id = %s",
+            (driver_id,)
+        )
+        profile_row = cursor.fetchone()
+        if not profile_row:
+            raise HTTPException(status_code=404, detail="Driver profile not found")
+        driver_profile_id = profile_row['driver_profile_id']
+
+        # Get dynamic min points threshold from sponsor settings
+        cursor.execute(
+            "SELECT min_points_for_tips FROM SponsorProfiles WHERE user_id = %s",
+            (sponsor_id,)
+        )
+        sponsor_setting = cursor.fetchone()
+        min_points_threshold = sponsor_setting['min_points_for_tips'] if sponsor_setting else 50
+
+        # If points are paused or driver has enough points, no tips
+        if driver['points_paused'] or driver['total_points'] >= min_points_threshold:
+            return []
+
+        # Fetch active tips for this sponsor that this driver has not viewed yet
+        cursor.execute(
+            """
+            SELECT t.tip_id, t.sponsor_id AS sponsor_user_id, t.tip_text, t.category, t.active, t.created_at, t.updated_at
+            FROM DriverTips t
+            LEFT JOIN DriverTipViews v
+              ON v.tip_id = t.tip_id
+             AND v.driver_id = %s
+            WHERE t.active = TRUE
+              AND t.sponsor_id = %s
+              AND v.tip_id IS NULL
+            ORDER BY t.created_at DESC
+            """,
+            (driver_profile_id, sponsor_id)
+        )
+        tips = cursor.fetchall()
+        if not tips:
+            return []
+
+        # Cycle tips based on session_index
+        tip_to_show = tips[session_index % len(tips)]
+        return [tip_to_show]
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# Record tip view
+@router.post("/tips/view")
+async def record_tip_view(view_data: TipViewCreate, current_user: dict = Depends(get_current_user)):
+    """
+    Record that a driver has viewed a tip.
+    
+    view_data: TipViewCreate schema containing tip_id
+    """
+    driver_id = current_user['user_id']
+    tip_id = view_data.tip_id
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            "SELECT driver_profile_id FROM DriverProfiles WHERE user_id = %s",
+            (driver_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Driver profile not found")
+        driver_profile_id = row[0]
+
+        # Insert or update the tip view for this driver
+        cursor.execute("""
+            INSERT INTO DriverTipViews (driver_id, tip_id, last_viewed)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE last_viewed = VALUES(last_viewed)
+        """, (driver_profile_id, tip_id, datetime.now()))
+
+        conn.commit()
+
+        return {"success": True}
+
+    finally:
+        cursor.close()
+        conn.close()

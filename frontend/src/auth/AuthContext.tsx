@@ -1,0 +1,233 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import type { ReactNode } from 'react';
+import type { AuthUser, LoginRequest, UserRole } from '../types';
+import { authService } from '../services/authService';
+import { api, setToken, setUnauthorizedHandler } from '../services/apiClient';
+
+export interface SponsorOption {
+  sponsor_user_id: number;
+  sponsor_name: string;
+  total_points: number;
+}
+
+interface AuthState {
+  user: AuthUser | null;
+  loading: boolean;
+  login: (data: LoginRequest) => Promise<UserRole>;
+  impersonateUser: (userId: number) => Promise<UserRole>;
+  stopImpersonation: () => Promise<UserRole>;
+  logout: () => Promise<void>;
+  activeSponsorId: number | null;
+  setActiveSponsorId: (id: number) => void;
+  sponsors: SponsorOption[];
+}
+
+const AuthContext = createContext<AuthState | undefined>(undefined);
+
+const TOKEN_KEY = 'gdip_auth';
+
+/** Save auth to the chosen storage and remove from the other. */
+function saveAuth(token: string, user: AuthUser, remember: boolean) {
+  const payload = JSON.stringify({ user, token });
+  if (remember) {
+    localStorage.setItem(TOKEN_KEY, payload);
+    sessionStorage.removeItem(TOKEN_KEY);
+  } else {
+    sessionStorage.setItem(TOKEN_KEY, payload);
+    localStorage.removeItem(TOKEN_KEY);
+  }
+}
+
+/** Load auth preferring sessionStorage first, then localStorage. */
+function loadAuth(): { user: AuthUser; token: string } | null {
+  for (const storage of [sessionStorage, localStorage]) {
+    try {
+      const raw = storage.getItem(TOKEN_KEY);
+      if (raw) {
+        return JSON.parse(raw) as { user: AuthUser; token: string };
+      }
+    } catch {
+      storage.removeItem(TOKEN_KEY);
+    }
+  }
+  return null;
+}
+
+/** Clear auth from both storages. */
+function clearAuth() {
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeSponsorId, setActiveSponsorIdState] = useState<number | null>(() => {
+    const stored = localStorage.getItem('activeSponsorId');
+    return stored ? parseInt(stored) : null;
+  });
+  const [sponsors, setSponsors] = useState<SponsorOption[]>([]);
+
+  const setActiveSponsorId = useCallback((id: number) => {
+    setActiveSponsorIdState(id);
+    localStorage.setItem('activeSponsorId', String(id));
+  }, []);
+
+  // Load sponsors when driver logs in
+  useEffect(() => {
+    if (user?.role === 'driver') {
+      api.get<{ sponsors: SponsorOption[] }>('/api/driver/sponsors')
+        .then((data: { sponsors: SponsorOption[] }) => {
+          setSponsors(data.sponsors);
+          if (data.sponsors.length > 0) {
+            const stored = localStorage.getItem('activeSponsorId');
+            const storedId = stored ? parseInt(stored) : null;
+            const validId = storedId && data.sponsors.some(s => s.sponsor_user_id === storedId)
+              ? storedId
+              : data.sponsors[0].sponsor_user_id;
+            setActiveSponsorId(validId);
+          }
+        })
+        .catch(() => {});
+    } else {
+      setSponsors([]);
+      setActiveSponsorIdState(null);
+    }
+  }, [user]);
+
+  const applySession = useCallback((session: {
+    user_id: number;
+    username: string;
+    role: UserRole;
+    email: string;
+    access_token: string;
+    is_impersonating?: boolean;
+    impersonated_by_user_id?: number | null;
+    original_role?: UserRole | null;
+  }, remember: boolean) => {
+    const authUser: AuthUser = {
+      user_id: session.user_id,
+      username: session.username,
+      role: session.role,
+      email: session.email,
+      is_impersonating: !!session.is_impersonating,
+      impersonated_by_user_id: session.impersonated_by_user_id ?? null,
+      original_role: session.original_role ?? null,
+    };
+    setToken(session.access_token);
+    setUser(authUser);
+    saveAuth(session.access_token, authUser, remember);
+  }, []);
+
+  // Restore session on mount
+  useEffect(() => {
+    const stored = loadAuth();
+    if (stored) {
+      setToken(stored.token);
+      setUser(stored.user);
+    }
+    setLoading(false);
+  }, []);
+
+  const login = useCallback(async (data: LoginRequest): Promise<UserRole> => {
+    const res = await authService.login(data);
+    applySession(res, !!data.remember_device);
+    return res.role;
+  }, [applySession]);
+
+  const impersonateUser = useCallback(async (userId: number): Promise<UserRole> => {
+    const remember = !!localStorage.getItem(TOKEN_KEY);
+    const res = await api.post<{
+      user_id: number;
+      username: string;
+      role: UserRole;
+      email: string;
+      access_token: string;
+      is_impersonating?: boolean;
+      impersonated_by_user_id?: number | null;
+      original_role?: UserRole | null;
+    }>(`/admin/impersonate/${userId}`);
+    applySession(res, remember);
+    return res.role;
+  }, [applySession]);
+
+  const stopImpersonation = useCallback(async (): Promise<UserRole> => {
+    const remember = !!localStorage.getItem(TOKEN_KEY);
+    const res = await api.post<{
+      user_id: number;
+      username: string;
+      role: UserRole;
+      email: string;
+      access_token: string;
+      is_impersonating?: boolean;
+      impersonated_by_user_id?: number | null;
+      original_role?: UserRole | null;
+    }>('/admin/stop-impersonation');
+    applySession(res, remember);
+    return res.role;
+  }, [applySession]);
+
+  const logout = useCallback(async () => {
+    try {
+      await authService.logout();
+    } catch {
+      // If the server rejects (e.g. expired token), still clear local state
+    }
+    setToken(null);
+    setUser(null);
+    setSponsors([]);
+    setActiveSponsorIdState(null);
+    localStorage.removeItem('activeSponsorId');
+    clearAuth();
+  }, []);
+
+  // When a request returns 401 (expired/invalid token), clear auth and redirect to login.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setToken(null);
+      setUser(null);
+      clearAuth();
+      window.location.replace('/login');
+    });
+  }, []);
+
+  const value = useMemo(
+  () => ({
+    user,
+    loading,
+    login,
+    impersonateUser,
+    stopImpersonation,
+    logout,
+    activeSponsorId,
+    setActiveSponsorId,
+    sponsors,
+  }),
+  [
+    user,
+    loading,
+    login,
+    impersonateUser,
+    stopImpersonation,
+    logout,
+    activeSponsorId,
+    setActiveSponsorId,
+    sponsors,
+  ],
+);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthState {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
+}

@@ -1,0 +1,125 @@
+import { api } from './apiClient';
+import type {
+  DriverPointHistory,
+  SponsorPointHistoryResponse,
+  SponsorRewardDefaults,
+  PointValueHistoryResponse,
+} from '../types';
+
+export interface PointTransaction {
+  date: string;
+  points_changed: number;
+  reason: string;
+  changed_by_user_id: number;
+}
+
+export interface PointsData {
+  current_balance: number;
+  transactions: PointTransaction[];
+}
+
+export interface PointChangeRequest {
+  driver_id: number;
+  points: number;
+  reason: string;
+}
+
+export interface PointChangeResponse {
+  success: boolean;
+  message: string;
+  new_total: number;
+}
+
+export interface BulkPointChangeRequest {
+  driver_ids: number[];
+  points: number;
+  reason: string;
+}
+
+export interface BulkPointChangeResponse {
+  success: boolean;
+  updated_drivers: Array<{
+    driver_id: number;
+    new_total: number;
+  }>;
+}
+
+export const pointsService = {
+  /**
+   * Get current points balance and transaction history for the authenticated driver
+   * Calls GET /driver/points/history
+   */
+  async getPoints(sponsorId?: number): Promise<PointsData> {
+    const url = sponsorId
+      ? `/api/driver/points/history?sponsor_user_id=${sponsorId}`
+      : '/api/driver/points/history';
+    const data = await api.get<{ current_points: number; history: PointTransaction[] }>(url);
+    return {
+      current_balance: data.current_points,
+      transactions: data.history,
+    };
+  },
+
+  /**
+   * get driver's complete point history including expires_at 
+   */
+  getDriverPointHistory(sponsorId?: number): Promise<DriverPointHistory> {
+    const url = sponsorId
+      ? `/api/driver/points/history?sponsor_user_id=${sponsorId}`
+      : '/api/driver/points/history';
+    return api.get<DriverPointHistory>(url);
+  },
+
+  /**
+   * sponsor fetches a specific driver's point history
+   */
+  getSponsorDriverPointHistory(
+    driverId: number,
+    params?: { start_date?: string; end_date?: string; limit?: number; offset?: number },
+  ): Promise<SponsorPointHistoryResponse> {
+    const query = new URLSearchParams();
+    if (params?.start_date) query.set('start_date', params.start_date);
+    if (params?.end_date) query.set('end_date', params.end_date);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+
+    const qs = query.toString();
+    return api.get<SponsorPointHistoryResponse>(
+      `/api/sponsor/drivers/${driverId}/point-history${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  /**
+   * get sponsor reward defaults
+   */
+  getSponsorRewardDefaults(): Promise<SponsorRewardDefaults> {
+    return api.get<SponsorRewardDefaults>('/api/sponsor/reward-defaults');
+  },
+
+  /**
+   * update sponsor reward defaults
+   */
+  updateSponsorRewardDefaults(defaults: SponsorRewardDefaults): Promise<{ success: boolean }> {
+    return api.put<{ success: boolean }>('/api/sponsor/reward-defaults', defaults);
+  },
+
+  /** Get history of dollar_per_point changes for the current sponsor */
+  getPointValueHistory(): Promise<PointValueHistoryResponse> {
+    return api.get<PointValueHistoryResponse>('/api/sponsor/reward-defaults/history');
+  },
+  
+  /** Sponsor adds points to a driver */
+  addPoints(data: PointChangeRequest): Promise<PointChangeResponse> {
+    return api.post<PointChangeResponse>('/api/sponsor/points/add', data);
+  },
+
+  /** Sponsor deducts points from a driver */
+  deductPoints(data: PointChangeRequest): Promise<PointChangeResponse> {
+    return api.post<PointChangeResponse>('/api/sponsor/points/deduct', data);
+  },
+
+  /** Sponsor updates points for multiple drivers */
+  bulkUpdatePoints(data: BulkPointChangeRequest): Promise<BulkPointChangeResponse> {
+    return api.post<BulkPointChangeResponse>('/api/sponsor/points/bulk-update', data);
+  },
+};

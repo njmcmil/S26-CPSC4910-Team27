@@ -1,0 +1,222 @@
+import { useCallback, useEffect, useState } from 'react';
+import { pointsService } from '../services/pointsService';
+import { Spinner } from '../components/Spinner';
+import { Alert } from '../components/Alert';
+import { Button } from '../components/Button';
+import type { ApiError, PointTransaction as PointTx } from '../types';
+import { useAuth } from '../auth/AuthContext';
+
+interface PointTransaction {
+  date: string;
+  points_changed: number;
+  reason: string;
+  changed_by_user_id: number;
+}
+
+interface PointsData {
+  current_balance: number;
+  transactions: PointTransaction[];
+}
+
+interface GroupedTransactions {
+  [monthYear: string]: PointTransaction[];
+}
+
+export function PointsPage() {
+  const { activeSponsorId } = useAuth();
+  const [data, setData] = useState<PointsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [upcomingExpirations, setUpcomingExpirations] = useState<PointTx[]>([]);
+
+  const fetchPoints = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const pointsData = await pointsService.getPoints(activeSponsorId ?? undefined);
+      setData(pointsData);
+
+      // Fetch full history with expires_at data 
+      try {
+        const historyData = await pointsService.getDriverPointHistory(activeSponsorId ?? undefined);
+        const now = new Date();
+        const expiring = historyData.history
+          .filter(
+            (h) =>
+              h.expires_at &&
+              h.points_changed > 0 &&
+              new Date(h.expires_at) > now,
+          )
+          .sort(
+            (a, b) =>
+              new Date(a.expires_at!).getTime() - new Date(b.expires_at!).getTime(),
+          )
+          .slice(0, 3);
+        setUpcomingExpirations(expiring);
+      } catch {
+        // Non-critical — silently ignore if history endpoint unavailable
+      }
+    } catch (err) {
+      const apiErr = err as ApiError;
+      setError(apiErr.message || 'Failed to load points information.');
+    } finally {
+      setLoading(false);
+    }
+  }, [activeSponsorId]);
+
+  useEffect(() => {
+    fetchPoints();
+  }, [fetchPoints]);
+
+  // Group transactions by month
+  const groupByMonth = (transactions: PointTransaction[]): GroupedTransactions => {
+    const grouped: GroupedTransactions = {};
+    
+    transactions.forEach((transaction) => {
+      const date = new Date(transaction.date);
+      const monthYear = date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long' 
+      });
+      
+      if (!grouped[monthYear]) {
+        grouped[monthYear] = [];
+      }
+      grouped[monthYear].push(transaction);
+    });
+    
+    return grouped;
+  };
+
+  if (loading) {
+    return <Spinner label="Loading points..." />;
+  }
+
+  if (error) {
+    return (
+      <section className="card" aria-labelledby="points-heading">
+        <h2 id="points-heading">My Points</h2>
+        <Alert variant="error">{error}</Alert>
+        <div className="mt-2">
+          <Button onClick={fetchPoints}>Retry</Button>
+        </div>
+      </section>
+    );
+  }
+
+  if (!data) return null;
+
+  const groupedTransactions = groupByMonth(data.transactions);
+  const monthYears = Object.keys(groupedTransactions).sort((a, b) => {
+    const dateA = new Date(a);
+    const dateB = new Date(b);
+    return dateB.getTime() - dateA.getTime(); // Most recent first
+  });
+
+  return (
+    <section aria-labelledby="points-heading">
+      <h2 id="points-heading">My Points</h2>
+
+      {/* Points Balance Card */}
+      <div className="card points-balance-card mt-1">
+        <div className="points-balance">
+          <span className="points-label">Current Balance</span>
+          <span className="points-amount">{data.current_balance.toLocaleString()}</span>
+          <span className="points-unit">points</span>
+        </div>
+      </div>
+      
+      {/* Upcoming Expirations */}
+      {upcomingExpirations.length > 0 && (
+        <div className="card mt-2" style={{ borderLeft: '4px solid #e67e22' }}>
+          <h3>Upcoming Point Expirations</h3>
+          <div className="mt-1">
+            {upcomingExpirations.map((entry, idx) => {
+              const expDate = new Date(entry.expires_at!);
+              const daysLeft = Math.ceil(
+                (expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+              );
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    padding: '0.5rem 0',
+                    borderBottom: '1px solid var(--border-color, #eee)',
+                  }}
+                >
+                  <span>
+                    <strong>+{entry.points_changed.toLocaleString()}</strong> pts
+                    {entry.reason ? ` — ${entry.reason}` : ''}
+                  </span>
+                  <span style={{ color: daysLeft <= 7 ? '#e74c3c' : '#e67e22' }}>
+                    Expires{' '}
+                    {expDate.toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}{' '}
+                    ({daysLeft} day{daysLeft !== 1 ? 's' : ''})
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Points History */}
+      <div className="card mt-2">
+        <h3>Points History</h3>
+
+        {data.transactions.length === 0 ? (
+          <p className="mt-1 text-muted">
+            No points transactions yet. Start driving safely to earn points!
+          </p>
+        ) : (
+          <div className="points-history mt-1">
+            {monthYears.map((monthYear) => (
+              <div key={monthYear} className="month-group">
+                <h4 className="month-header">{monthYear}</h4>
+                <div className="transactions-list">
+                  {groupedTransactions[monthYear].map((transaction) => {
+                    const date = new Date(transaction.date);
+                    const isPositive = transaction.points_changed > 0;
+                    
+                    return (
+                      <div 
+                        key={transaction.date}
+                        className={`transaction-item ${isPositive ? 'earned' : 'spent'}`}
+                      >
+                        <div className="transaction-date">
+                          {date.toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                          <span className="transaction-time">
+                            {date.toLocaleTimeString('en-US', {
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        <div className="transaction-details">
+                          <div className="transaction-reason">{transaction.reason}</div>
+                        </div>
+                        <div className={`transaction-points ${isPositive ? 'positive' : 'negative'}`}>
+                          {isPositive ? '+' : ''}{transaction.points_changed.toLocaleString()}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

@@ -1,0 +1,256 @@
+import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
+import { authService } from '../services/authService';
+import { FormField } from '../components/FormField';
+import { Button } from '../components/Button';
+import { Alert } from '../components/Alert';
+import type { ApiError, UserRole } from '../types';
+import { aboutService } from '../services/aboutService';
+import type { PublicAboutInfo } from '../services/aboutService';
+
+const ROLE_HOME: Record<UserRole, string> = {
+  driver: '/driver/dashboard',
+  sponsor: '/sponsor/dashboard',
+  admin: '/admin/dashboard',
+};
+
+export function LoginPage() {
+  const { user, login } = useAuth();
+  const navigate = useNavigate();
+
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [aboutInfo, setAboutInfo] = useState<PublicAboutInfo | null>(null);
+  const [showAbout, setShowAbout] = useState(false);
+
+  // Forgot password state
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotUsername, setForgotUsername] = useState('');
+  const [forgotSubmitting, setForgotSubmitting] = useState(false);
+  const [forgotMsg, setForgotMsg] = useState('');
+  const [forgotError, setForgotError] = useState('');
+
+  // ✅ If already logged in, redirect (but do it in an effect)
+  useEffect(() => {
+    if (user) {
+      navigate(ROLE_HOME[user.role], { replace: true });
+    }
+  }, [user, navigate]);
+
+  useEffect(() => {
+  aboutService.getPublicAbout()
+    .then(setAboutInfo)
+    .catch(() => {});
+  }, []);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!username.trim() || !password) {
+      setError('Please enter both username and password.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const role = await login({
+        username: username.trim(),
+        password,
+        remember_device: rememberDevice,
+      });
+      navigate(ROLE_HOME[role] ?? '/', { replace: true });
+    } catch (err) {
+      const apiErr = err as ApiError;
+      setError(apiErr.message || 'Login failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleForgotSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotMsg('');
+
+    if (!forgotUsername.trim()) {
+      setForgotError('Please enter your username.');
+      return;
+    }
+
+    setForgotSubmitting(true);
+    try {
+      const res = await authService.forgotPassword(forgotUsername.trim());
+      setForgotMsg(res.message);
+    } catch (err) {
+      const apiErr = err as ApiError;
+      setForgotError(apiErr.message || 'Something went wrong. Please try again.');
+    } finally {
+      setForgotSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="card login-card" aria-labelledby="login-heading">
+      <h2 id="login-heading">Sign In</h2>
+
+      <div aria-live="assertive" aria-atomic="true">
+        {error && <Alert variant="error">{error}</Alert>}
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate>
+        <FormField
+          label="Username"
+          id="login-username"
+          type="text"
+          autoComplete="username"
+          autoFocus
+          required
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
+
+        <FormField
+          label="Password"
+          id="login-password"
+          type={showPassword ? 'text' : 'password'}
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        
+        <div className="checkbox-group">
+          <input
+            type="checkbox"
+            id="show-password"
+            checked={showPassword}
+            onChange={() => setShowPassword(!showPassword)}
+          />
+          <label htmlFor="show-password">Show password</label>
+        </div>
+        <div className="checkbox-group">
+          <input
+            type="checkbox"
+            id="login-remember"
+            checked={rememberDevice}
+            onChange={(e) => setRememberDevice(e.target.checked)}
+          />
+          <div>
+            <label htmlFor="login-remember">Remember this device</label>
+            <p className="helper-text" id="login-remember-help">
+              If checked, we'll remember this device so you don't have to
+              re-enter credentials next time.
+            </p>
+          </div>
+        </div>
+
+        <Button type="submit" loading={submitting}>
+          {submitting ? 'Signing in...' : 'Sign In'}
+        </Button>
+      </form>
+
+      <p className="mt-2 text-center">
+        <button
+          type="button"
+          className="link-btn"
+          onClick={() => setShowForgot(!showForgot)}
+          aria-expanded={showForgot}
+        >
+          Forgot your password?
+        </button>
+      </p>
+
+      {showForgot && (
+        <div className="forgot-section mt-1" aria-labelledby="forgot-heading">
+          <h3 id="forgot-heading">Reset Password</h3>
+          <p className="helper-text mb-1">
+            Enter your username and we'll send a password reset link to your
+            email address on file.
+          </p>
+
+          <div aria-live="polite" aria-atomic="true">
+            {forgotMsg && <Alert variant="success">{forgotMsg}</Alert>}
+            {forgotError && <Alert variant="error">{forgotError}</Alert>}
+          </div>
+
+          <form onSubmit={handleForgotSubmit} noValidate>
+            <FormField
+              label="Username"
+              id="forgot-username"
+              type="text"
+              autoComplete="username"
+              required
+              value={forgotUsername}
+              onChange={(e) => setForgotUsername(e.target.value)}
+            />
+            <Button type="submit" loading={forgotSubmitting}>
+              {forgotSubmitting ? 'Sending...' : 'Send Reset Link'}
+            </Button>
+          </form>
+        </div>
+      )}
+
+      <p className="mt-2 text-center">
+        New here? <Link to="/register">Create an account</Link>
+      </p>
+
+      <p className="mt-2 text-center" style={{ fontSize: '0.875rem' }}>
+        <Link to="/">Back to Home</Link>
+      </p>
+      {aboutInfo && (
+  <div className="mt-3">
+    <hr />
+    <button
+      type="button"
+      className="link-btn"
+      onClick={() => setShowAbout(!showAbout)}
+      aria-expanded={showAbout}
+      style={{ fontWeight: 600, fontSize: '0.95rem' }}
+    >
+      {showAbout ? '▲ Hide About' : '▼ About This Program'}
+    </button>
+
+    {showAbout && (
+      <div className="about-preview mt-1" aria-label="About this program">
+        <h3 style={{ marginBottom: '0.5rem' }}>{aboutInfo.product_name}</h3>
+        <p className="helper-text">{aboutInfo.product_description}</p>
+        <p className="helper-text" style={{ marginTop: '0.5rem' }}>
+          Sprint {aboutInfo.sprint_number} &nbsp;·&nbsp; v{aboutInfo.version_number} &nbsp;·&nbsp; Released {new Date(aboutInfo.release_date).toLocaleDateString()}
+        </p>
+        {aboutInfo.sponsors.length > 0 && (
+          <div className="mt-1">
+            <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>Our Sponsors</p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              {aboutInfo.sponsors.map((s) => (
+                <li
+                  key={s.name}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    padding: '0.25rem 0',
+                    borderBottom: '1px solid var(--border, #eee)',
+                  }}
+                >
+                  <span>{s.name}</span>
+                  <span className="helper-text">
+                    {s.driver_count} driver{s.driver_count !== 1 ? 's' : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+)}
+    </section>
+  );
+}
