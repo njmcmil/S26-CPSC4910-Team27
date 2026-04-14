@@ -502,6 +502,7 @@ export function Layout() {
   const [keyboardMode, setKeyboardMode] = useState(false);
   const [stoppingImpersonation, setStoppingImpersonation] = useState(false);
   const breadcrumbs = useBreadcrumbs();
+  const isBlockedPage = location.pathname === '/account-blocked';
 
   useEffect(() => {
     const applyKeyboardMode = () => {
@@ -593,6 +594,7 @@ export function Layout() {
 
         {user && (
           <div className="header-actions">
+            {user.role === 'driver' && !isBlockedPage && <SponsorSwitcher />}
             <span
               className={`role-badge role-${user.role}`}
               aria-label={`Role: ${ROLE_LABELS[user.role]}`}
@@ -600,8 +602,7 @@ export function Layout() {
               {ROLE_LABELS[user.role]}
             </span>
             <span className="header-username">{user.username}</span>
-            {user.role === 'driver' && <SponsorSwitcher />}
-            {user.role === 'driver' && <NotificationBell />}
+            {user.role === 'driver' && !isBlockedPage && <NotificationBell />}
             <Button variant="secondary" onClick={handleLogout} type="button">
               Log out
             </Button>
@@ -610,13 +611,33 @@ export function Layout() {
       </header>
 
       <div className="app-shell">
-        {user && (
+        {user && !isBlockedPage && (
           <nav className="app-sidebar" aria-label="Main navigation">
             <GroupedSidebar nav={ROLE_NAV[user.role]} />
           </nav>
         )}
 
         <main id="main-content" className="app-content" ref={mainRef} tabIndex={-1}>
+          {user?.is_impersonating && user.original_role === 'admin' && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="impersonation-banner"
+            >
+              <span>
+                Viewing as <strong>{user.role}</strong>. You can return to your admin session at any time.
+              </span>
+              <button
+                type="button"
+                onClick={handleStopImpersonation}
+                disabled={stoppingImpersonation}
+                className="btn btn-primary btn-sm impersonation-banner-btn"
+              >
+                {stoppingImpersonation ? 'Returning...' : 'Return As Admin'}
+              </button>
+            </div>
+          )}
+          {!isBlockedPage && breadcrumbs.length > 0 && <Breadcrumbs items={breadcrumbs} />}
           <Outlet />
         </main>
       </div>

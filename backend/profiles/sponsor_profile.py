@@ -16,7 +16,12 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from datetime import datetime
 from auth.auth import get_current_user, hash_password, require_role
 from shared.db import get_connection
-from users.email_service import send_driver_application_rejection_email, send_driver_application_approval_email
+from users.email_service import (
+    send_driver_account_banned_email,
+    send_driver_account_deactivated_email,
+    send_driver_application_rejection_email,
+    send_driver_application_approval_email,
+)
 from typing import List
 import secrets
 import string
@@ -797,6 +802,24 @@ def update_driver_status_for_sponsor(
             (sponsor_id, driver_user_id, audit_reason, sponsor_id),
         )
         conn.commit()
+
+        cursor.execute("SELECT email, username FROM Users WHERE user_id = %s", (driver_user_id,))
+        driver_user = cursor.fetchone()
+        if driver_user:
+            if new_status == "inactive":
+                send_driver_account_deactivated_email(
+                    driver_user["email"],
+                    driver_user["username"],
+                    reason or None,
+                    "your sponsor",
+                )
+            elif new_status == "banned":
+                send_driver_account_banned_email(
+                    driver_user["email"],
+                    driver_user["username"],
+                    reason or None,
+                    "your sponsor",
+                )
         return {"message": f"Driver status updated to '{new_status}'", "new_status": new_status}
     except HTTPException:
         conn.rollback()

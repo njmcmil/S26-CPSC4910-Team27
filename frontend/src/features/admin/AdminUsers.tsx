@@ -9,9 +9,35 @@ interface UserRow {
   username: string;
   role: string;
   email: string;
+  account_status: string;
 }
 
 type RoleFilter = 'all' | 'driver' | 'sponsor' | 'admin';
+
+const STATUS_COLORS: Record<string, React.CSSProperties> = {
+  active: { background: '#dcfce7', color: '#166534' },
+  inactive: { background: '#fef9c3', color: '#854d0e' },
+  banned: { background: '#fee2e2', color: '#991b1b' },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const colors = STATUS_COLORS[status] ?? { background: '#f3f4f6', color: '#374151' };
+  return (
+    <span
+      style={{
+        ...colors,
+        display: 'inline-block',
+        padding: '0.15rem 0.55rem',
+        borderRadius: '999px',
+        fontSize: '0.78rem',
+        fontWeight: 600,
+        textTransform: 'capitalize',
+      }}
+    >
+      {status}
+    </span>
+  );
+}
 
 export function AdminUsersPage() {
   const { impersonateUser } = useAuth();
@@ -54,6 +80,11 @@ export function AdminUsersPage() {
       u.email.toLowerCase().includes(q) ||
       String(u.user_id).includes(q);
     return matchesRole && matchesSearch;
+  }).sort((a, b) => {
+    const statusRank: Record<string, number> = { banned: 0, inactive: 1, active: 2 };
+    const rankDiff = (statusRank[a.account_status] ?? 9) - (statusRank[b.account_status] ?? 9);
+    if (rankDiff !== 0) return rankDiff;
+    return a.username.localeCompare(b.username);
   });
 
   return (
@@ -104,13 +135,14 @@ export function AdminUsersPage() {
                 <th style={{ padding: '0.5rem 0.75rem' }}>Username</th>
                 <th style={{ padding: '0.5rem 0.75rem' }}>Role</th>
                 <th style={{ padding: '0.5rem 0.75rem' }}>Email</th>
+                <th style={{ padding: '0.5rem 0.75rem' }}>Status</th>
                 <th style={{ padding: '0.5rem 0.75rem' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: '0.75rem', color: '#888' }}>
+                  <td colSpan={6} style={{ padding: '0.75rem', color: '#888' }}>
                     No users match the current filter.
                   </td>
                 </tr>
@@ -142,6 +174,9 @@ export function AdminUsersPage() {
                       </span>
                     </td>
                     <td style={{ padding: '0.5rem 0.75rem', color: '#555' }}>{u.email}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>
+                      <StatusBadge status={u.account_status || 'active'} />
+                    </td>
                     <td style={{ padding: '0.5rem 0.75rem' }}>
                       {(u.role === 'driver' || u.role === 'sponsor') ? (
                         <button

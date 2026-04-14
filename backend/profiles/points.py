@@ -104,7 +104,7 @@ async def get_sponsor_settings(
     
     user_id = current_user['user_id']
     conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(dictionary=True, buffered=True)
 
     try:
         cursor.execute("""
@@ -341,7 +341,8 @@ async def add_driver_points(
     """Sponsor adds points to a driver (reason required)"""
 
     conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
+    # Buffered cursor prevents unread-result errors across the chained lookups below.
+    cursor = conn.cursor(dictionary=True, buffered=True)
 
     try:
         # Verify driver belongs to this sponsor

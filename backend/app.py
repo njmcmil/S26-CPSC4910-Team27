@@ -143,6 +143,76 @@ def ensure_account_appeals_table(cursor) -> None:
     )
 
 
+def ensure_account_status_schema() -> None:
+    """
+    Bring sponsor/driver account_status columns in line with the current app logic.
+    This keeps older databases from rejecting the newer 'banned' state.
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True, buffered=True)
+    try:
+        cursor.execute(
+            """
+            SELECT COLUMN_TYPE
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'SponsorProfiles'
+              AND COLUMN_NAME = 'account_status'
+            """
+        )
+        sponsor_row = cursor.fetchone()
+        sponsor_column_type = (sponsor_row or {}).get("COLUMN_TYPE", "")
+        if not sponsor_row:
+            cursor.execute(
+                """
+                ALTER TABLE SponsorProfiles
+                ADD COLUMN account_status ENUM('active', 'inactive', 'banned')
+                NOT NULL DEFAULT 'active'
+                """
+            )
+        elif "banned" not in sponsor_column_type:
+            cursor.execute(
+                """
+                ALTER TABLE SponsorProfiles
+                MODIFY COLUMN account_status ENUM('active', 'inactive', 'banned')
+                NOT NULL DEFAULT 'active'
+                """
+            )
+
+        cursor.execute(
+            """
+            SELECT COLUMN_TYPE
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'DriverProfiles'
+              AND COLUMN_NAME = 'account_status'
+            """
+        )
+        driver_row = cursor.fetchone()
+        driver_column_type = (driver_row or {}).get("COLUMN_TYPE", "")
+        if not driver_row:
+            cursor.execute(
+                """
+                ALTER TABLE DriverProfiles
+                ADD COLUMN account_status ENUM('active', 'inactive', 'banned')
+                NOT NULL DEFAULT 'active'
+                """
+            )
+        elif "banned" not in driver_column_type:
+            cursor.execute(
+                """
+                ALTER TABLE DriverProfiles
+                MODIFY COLUMN account_status ENUM('active', 'inactive', 'banned')
+                NOT NULL DEFAULT 'active'
+                """
+            )
+
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_last_admin_status_actor(cursor, user_id: int, role: str) -> int | None:
     """
     Find the most recent admin that changed this account's status.
@@ -331,6 +401,7 @@ async def audit_user_actions(request: Request, call_next):
 # Run scheduler on startup
 @app.on_event("startup")
 def start_scheduler():
+    ensure_account_status_schema()
     if not getattr(scheduler, "running", False):
         scheduler.start()
 

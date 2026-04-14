@@ -340,6 +340,52 @@ def send_sponsor_account_banned_email(
     return _send(to_email, subject, html, plain)
 
 
+def send_driver_account_deactivated_email(
+    to_email: str,
+    username: str,
+    reason: str | None = None,
+    changed_by_label: str = "an administrator",
+) -> bool:
+    subject = "Account Deactivated - Good Driver Incentive Program"
+    reason_text = f"\n\nReason: {reason}" if reason else ""
+    plain = (
+        f"Hello {username},\n\n"
+        f"Your driver account has been deactivated by {changed_by_label}.{reason_text}\n\n"
+        "If you believe this is an error, please contact support or request a review."
+    )
+    html = f"""
+        <h2>Account Deactivated</h2>
+        <p>Hello {username},</p>
+        <p>Your driver account has been <strong>deactivated</strong> by {changed_by_label}.</p>
+        {"<p><strong>Reason:</strong> " + reason + "</p>" if reason else ""}
+        <p>If you believe this is an error, please contact support or request a review.</p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_driver_account_banned_email(
+    to_email: str,
+    username: str,
+    reason: str | None = None,
+    changed_by_label: str = "an administrator",
+) -> bool:
+    subject = "Account Banned - Good Driver Incentive Program"
+    reason_text = f"\n\nReason: {reason}" if reason else ""
+    plain = (
+        f"Hello {username},\n\n"
+        f"Your driver account has been banned by {changed_by_label}.{reason_text}\n\n"
+        "If you believe this is an error, please contact support or request a review."
+    )
+    html = f"""
+        <h2>Account Banned</h2>
+        <p>Hello {username},</p>
+        <p>Your driver account has been <strong>banned</strong> by {changed_by_label}.</p>
+        {"<p><strong>Reason:</strong> " + reason + "</p>" if reason else ""}
+        <p>If you believe this is an error, please contact support or request a review.</p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
 def send_order_success_email(
     to_email: str,
     username: str,

@@ -71,7 +71,12 @@ function actionButtons(sponsor: SponsorRow, onAction: (s: SponsorRow, a: StatusA
       {btn('banned', 'Ban', '#fee2e2', '#991b1b')}
     </>
   );
-  if (st === 'inactive') return btn('active', 'Reactivate', '#dcfce7', '#166534');
+  if (st === 'inactive') return (
+    <>
+      {btn('active', 'Reactivate', '#dcfce7', '#166534')}
+      {btn('banned', 'Ban', '#fee2e2', '#991b1b')}
+    </>
+  );
   if (st === 'banned')   return btn('active', 'Unban', '#dcfce7', '#166534');
   return null;
 }
@@ -128,7 +133,15 @@ export function AdminSponsorsPage() {
         new_status: confirm.action,
         reason: confirmReason.trim() || null,
       });
-      showToast(`${confirm.label}d ${confirm.sponsor.username} successfully.`, true);
+      const actionMessage =
+        confirm.action === 'banned'
+          ? 'banned'
+          : confirm.label === 'Unban'
+            ? 'unbanned'
+            : confirm.label === 'Reactivate'
+              ? 'reactivated'
+              : 'deactivated';
+      showToast(`${confirm.sponsor.username} ${actionMessage} successfully.`, true);
       setConfirm(null);
       load();
     } catch (err: unknown) {
@@ -176,6 +189,8 @@ export function AdminSponsorsPage() {
     }
   }
 
+  const statusRank: Record<string, number> = { banned: 0, inactive: 1, active: 2 };
+
   const filtered = sponsors.filter((s) => {
     const q = search.toLowerCase();
     const matchesSearch =
@@ -185,6 +200,10 @@ export function AdminSponsorsPage() {
       (s.company_name ?? '').toLowerCase().includes(q);
     const matchesStatus = statusFilter === 'all' || s.account_status === statusFilter;
     return matchesSearch && matchesStatus;
+  }).sort((a, b) => {
+    const rankDiff = (statusRank[a.account_status] ?? 9) - (statusRank[b.account_status] ?? 9);
+    if (rankDiff !== 0) return rankDiff;
+    return a.username.localeCompare(b.username);
   });
 
   const needsConfirm = confirm?.action === 'inactive' || confirm?.action === 'banned';
