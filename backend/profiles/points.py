@@ -361,13 +361,18 @@ async def add_driver_points(
 
         # Look up sponsor's expiration_days to compute expires_at (#13990)
         # Use user_id since SponsorProfiles is keyed by user_id (not sponsor_id)
-        cursor.execute(
-            "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
-            (current_user['user_id'],)
-        )
-        sp_row = cursor.fetchone()
-        expiration_days = sp_row['expiration_days'] if sp_row and sp_row.get('expiration_days') else None
-        expires_at = (datetime.now() + timedelta(days=expiration_days)) if expiration_days else None
+        try:
+            cursor.execute(
+                "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
+                (current_user['user_id'],)
+            )
+            sp_row = cursor.fetchone()
+            expiration_days = sp_row['expiration_days'] if sp_row and sp_row.get('expiration_days') else None
+        except Exception:
+            # If expiration_days column doesn't exist or query fails, default to None
+            expiration_days = None
+        
+        expires_at = (datetime.now() + timedelta(days=int(expiration_days))) if expiration_days else None
 
         # Update driver points
         cursor.execute(
@@ -375,12 +380,23 @@ async def add_driver_points(
             (request.points, request.driver_id, user_id)
         )
 
-        # Log the point change automatically (with expires_at, #13990)
-        cursor.execute("""
-            INSERT INTO audit_log
-            (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
-            VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
-        """, (datetime.now(), user_id, request.driver_id, request.points, request.reason, current_user['user_id'], expires_at))
+        # Log the point change - try with expires_at first, fall back without it if column doesn't exist
+        try:
+            cursor.execute("""
+                INSERT INTO audit_log
+                (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
+                VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
+            """, (datetime.now(), user_id, request.driver_id, request.points, request.reason, current_user['user_id'], expires_at))
+        except Exception as e:
+            # If expires_at column doesn't exist, insert without it
+            if 'expires_at' in str(e).lower() or 'unknown column' in str(e).lower():
+                cursor.execute("""
+                    INSERT INTO audit_log
+                    (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                    VALUES ('point_change', %s, %s, %s, %s, %s, %s)
+                """, (datetime.now(), user_id, request.driver_id, request.points, request.reason, current_user['user_id']))
+            else:
+                raise
         
         conn.commit()
         
@@ -505,12 +521,16 @@ async def upload_driver_points(
     cursor = conn.cursor(dictionary=True)
 
     try:
-        cursor.execute(
-            "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
-            (user_id,)
-        )
-        sponsor_profile = cursor.fetchone()
-        expiration_days = sponsor_profile["expiration_days"] if sponsor_profile and sponsor_profile.get("expiration_days") else None
+        try:
+            cursor.execute(
+                "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
+                (user_id,)
+            )
+            sponsor_profile = cursor.fetchone()
+            expiration_days = sponsor_profile["expiration_days"] if sponsor_profile and sponsor_profile.get("expiration_days") else None
+        except Exception:
+            # If expiration_days column doesn't exist, default to None
+            expiration_days = None
 
         updated_driver_ids = []
         total_points_added = 0
@@ -538,7 +558,7 @@ async def upload_driver_points(
                 continue
 
             new_total = driver["total_points"] + record["points"]
-            expires_at = (datetime.now() + timedelta(days=expiration_days)) if expiration_days else None
+            expires_at = (datetime.now() + timedelta(days=int(expiration_days))) if expiration_days else None
 
             cursor.execute(
                 """
@@ -548,22 +568,43 @@ async def upload_driver_points(
                 """,
                 (record["points"], driver["user_id"], user_id)
             )
-            cursor.execute(
-                """
-                INSERT INTO audit_log
-                (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
-                VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    datetime.now(),
-                    user_id,
-                    driver["user_id"],
-                    record["points"],
-                    record["reason"],
-                    user_id,
-                    expires_at,
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log
+                    (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
+                    VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        datetime.now(),
+                        user_id,
+                        driver["user_id"],
+                        record["points"],
+                        record["reason"],
+                        user_id,
+                        expires_at,
+                    )
                 )
-            )
+            except Exception as e:
+                # If expires_at column doesn't exist, insert without it
+                if 'expires_at' in str(e).lower() or 'unknown column' in str(e).lower():
+                    cursor.execute(
+                        """
+                        INSERT INTO audit_log
+                        (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                        VALUES ('point_change', %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            datetime.now(),
+                            user_id,
+                            driver["user_id"],
+                            record["points"],
+                            record["reason"],
+                            user_id,
+                        )
+                    )
+                else:
+                    raise
 
             cursor.execute(
                 "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",

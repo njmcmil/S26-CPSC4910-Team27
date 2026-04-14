@@ -5,6 +5,8 @@ from shared.db import get_connection
 from shared.utils import validate_password
 
 
+from typing import Optional, Dict
+
 # -----------------------------
 # User business logic
 # -----------------------------
@@ -58,9 +60,10 @@ def create_user(username: str, password: str, role: str, email: str) -> dict:
         cursor.close()
         conn.close()
 
+
 # Credential Verifier
 # Used specfically when a user submits the login form
-def validate_login(username: str, password: str) -> dict | None:
+def validate_login(username: str, password: str) -> Optional[Dict]:
     """Validate user login credentials."""
     # lookup user by name
     user = get_user_by_username(username)
