@@ -379,12 +379,23 @@ async def add_driver_points(
             (request.points, request.driver_id)
         )
 
-        # Log the point change automatically (with expires_at, #13990)
-        cursor.execute("""
-            INSERT INTO audit_log
-            (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
-            VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
-        """, (datetime.now(), user_id, request.driver_id, request.points, request.reason, current_user['user_id'], expires_at))
+        # Log the point change - try with expires_at first, fall back without it if column doesn't exist
+        try:
+            cursor.execute("""
+                INSERT INTO audit_log
+                (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
+                VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
+            """, (datetime.now(), user_id, request.driver_id, request.points, request.reason, current_user['user_id'], expires_at))
+        except Exception as e:
+            # If expires_at column doesn't exist, insert without it
+            if 'expires_at' in str(e).lower() or 'unknown column' in str(e).lower():
+                cursor.execute("""
+                    INSERT INTO audit_log
+                    (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                    VALUES ('point_change', %s, %s, %s, %s, %s, %s)
+                """, (datetime.now(), user_id, request.driver_id, request.points, request.reason, current_user['user_id']))
+            else:
+                raise
         
         conn.commit()
         
@@ -553,22 +564,43 @@ async def upload_driver_points(
                 """,
                 (record["points"], driver["user_id"], user_id)
             )
-            cursor.execute(
-                """
-                INSERT INTO audit_log
-                (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
-                VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    datetime.now(),
-                    user_id,
-                    driver["user_id"],
-                    record["points"],
-                    record["reason"],
-                    user_id,
-                    expires_at,
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log
+                    (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id, expires_at)
+                    VALUES ('point_change', %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        datetime.now(),
+                        user_id,
+                        driver["user_id"],
+                        record["points"],
+                        record["reason"],
+                        user_id,
+                        expires_at,
+                    )
                 )
-            )
+            except Exception as e:
+                # If expires_at column doesn't exist, insert without it
+                if 'expires_at' in str(e).lower() or 'unknown column' in str(e).lower():
+                    cursor.execute(
+                        """
+                        INSERT INTO audit_log
+                        (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                        VALUES ('point_change', %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            datetime.now(),
+                            user_id,
+                            driver["user_id"],
+                            record["points"],
+                            record["reason"],
+                            user_id,
+                        )
+                    )
+                else:
+                    raise
 
             cursor.execute(
                 "SELECT points_email_enabled FROM NotificationPreferences WHERE user_id = %s",
