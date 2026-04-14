@@ -6,8 +6,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
-from auth.auth import require_role
+from auth.auth import create_access_token, get_current_user, require_role
 from schemas.admin import (
+    AccountAppealListResponse,
+    AccountAppealResolveRequest,
     AccountStatusChangeRequest,
     AuditLogResponse,
     CommunicationLogResponse,
@@ -23,8 +25,50 @@ from users.email_service import (
     send_sponsor_account_deactivated_email,
     send_sponsor_account_banned_email,
 )
+from shared.services import get_user_by_id
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+def build_auth_payload(user: dict, token: str, impersonation: dict | None = None) -> dict:
+    payload = {
+        "user_id": user["user_id"],
+        "username": user["username"],
+        "role": user["role"],
+        "email": user.get("email"),
+        "access_token": token,
+    }
+    if impersonation:
+        payload["is_impersonating"] = True
+        payload["impersonated_by_user_id"] = (
+            impersonation.get("admin_user_id")
+            or impersonation.get("sponsor_user_id")
+            or impersonation.get("original_user_id")
+        )
+        payload["original_role"] = impersonation.get("original_role")
+    return payload
+
+
+def ensure_account_appeals_table(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS AccountAppeals (
+            appeal_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            user_role VARCHAR(32) NOT NULL,
+            account_status VARCHAR(32) NOT NULL,
+            target_admin_user_id INT NULL,
+            message TEXT NOT NULL,
+            appeal_status VARCHAR(32) NOT NULL DEFAULT 'open',
+            admin_response TEXT NULL,
+            reviewed_by_user_id INT NULL,
+            reviewed_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_appeal_user_id (user_id),
+            INDEX idx_appeal_status (appeal_status)
+        )
+        """
+    )
 
 @router.get("/metrics", response_model=SystemMetricsResponse)
 def get_system_metrics(current_user: dict = Depends(require_role("admin"))):
@@ -127,23 +171,97 @@ def get_user(username: str, current_user: dict = Depends(require_role("admin")))
         cursor.close()
         conn.close()
 
+
+@router.post("/impersonate/{target_user_id}")
+def admin_impersonate_user(
+    target_user_id: int,
+    current_user: dict = Depends(require_role("admin")),
+):
+    """
+    Allow an admin to assume a sponsor or driver session.
+    """
+    target = get_user_by_id(target_user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("role") not in ("sponsor", "driver"):
+        raise HTTPException(status_code=400, detail="Admins can only impersonate sponsors or drivers")
+
+    impersonation = {
+        "admin_user_id": current_user["user_id"],
+        "original_user_id": current_user["user_id"],
+        "original_role": current_user["role"],
+        "target_user_id": target["user_id"],
+        "target_role": target["role"],
+    }
+    token = create_access_token(
+        {
+            "user_id": target["user_id"],
+            "role": target["role"],
+            "impersonation": impersonation,
+        }
+    )
+    return build_auth_payload(target, token, impersonation=impersonation)
+
+
+@router.post("/stop-impersonation")
+def admin_stop_impersonation(current_user: dict = Depends(get_current_user)):
+    """
+    Return an impersonating session back to the original admin.
+    """
+    impersonation = current_user.get("impersonation") or {}
+    admin_user_id = impersonation.get("admin_user_id") or impersonation.get("original_user_id")
+    if not admin_user_id:
+        raise HTTPException(status_code=400, detail="No admin impersonation session to stop")
+
+    admin_user = get_user_by_id(int(admin_user_id))
+    if not admin_user or admin_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Original admin account not found")
+
+    token = create_access_token(
+        {
+            "user_id": admin_user["user_id"],
+            "role": admin_user["role"],
+        }
+    )
+    return build_auth_payload(admin_user, token)
+
 def get_sponsors_for_driver(driver_id: int, cursor):
     """Return all sponsors linked to a given driver via SponsorDrivers."""
-    cursor.execute(
-        """
-        SELECT 
-            u.user_id AS id, 
-            COALESCE(sp.company_name, u.username) AS name,
-            sd.status,
-            sd.total_points
-        FROM SponsorDrivers sd
-        JOIN Users u ON sd.sponsor_user_id = u.user_id
-        LEFT JOIN SponsorProfiles sp ON u.user_id = sp.user_id
-        WHERE sd.driver_user_id = %s
-        ORDER BY name
-        """,
-        (driver_id,),
-    )
+    try:
+        cursor.execute(
+            """
+            SELECT 
+                u.user_id AS id, 
+                COALESCE(sp.company_name, u.username) AS name,
+                sd.status,
+                sd.total_points
+            FROM SponsorDrivers sd
+            JOIN Users u ON sd.sponsor_user_id = u.user_id
+            LEFT JOIN SponsorProfiles sp ON u.user_id = sp.user_id
+            WHERE sd.driver_user_id = %s
+            ORDER BY name
+            """,
+            (driver_id,),
+        )
+    except Exception as exc:
+        # Some environments do not have SponsorDrivers.status yet.
+        if "Unknown column 'sd.status'" not in str(exc):
+            raise
+        cursor.execute(
+            """
+            SELECT 
+                u.user_id AS id, 
+                COALESCE(sp.company_name, u.username) AS name,
+                NULL AS status,
+                sd.total_points
+            FROM SponsorDrivers sd
+            JOIN Users u ON sd.sponsor_user_id = u.user_id
+            LEFT JOIN SponsorProfiles sp ON u.user_id = sp.user_id
+            WHERE sd.driver_user_id = %s
+            ORDER BY name
+            """,
+            (driver_id,),
+        )
     return cursor.fetchall()
 
 
@@ -387,6 +505,49 @@ def get_audit_logs(
                 row["points_changed"] = int(row["points_changed"])
 
         return {"audit_logs": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/login-audit", response_model=LoginAuditResponse)
+def get_login_audit(
+    role: str | None = None,
+    limit: int = 200,
+    current_user: dict = Depends(require_role("admin")),
+):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        capped_limit = min(max(limit, 1), 1000)
+        params: list[object] = []
+        query = """
+            SELECT
+                la.user_id,
+                la.username,
+                u.role,
+                la.success,
+                la.ip_address,
+                la.user_agent,
+                la.login_time
+            FROM LoginAudit la
+            LEFT JOIN Users u ON u.user_id = la.user_id
+        """
+
+        if role in {"driver", "sponsor", "admin"}:
+            query += " WHERE u.role = %s"
+            params.append(role)
+
+        query += " ORDER BY la.login_time DESC LIMIT %s"
+        params.append(capped_limit)
+
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        for row in rows:
+            row["success"] = bool(row.get("success"))
+            if row.get("login_time"):
+                row["login_time"] = row["login_time"].isoformat()
+        return {"login_audit": rows}
     finally:
         cursor.close()
         conn.close()
@@ -826,6 +987,146 @@ def get_communication_logs(
         cursor.close()
         conn.close()
 
+
+@router.get("/account-appeals", response_model=AccountAppealListResponse)
+def list_account_appeals(
+    status: str | None = None,
+    limit: int = 200,
+    current_user: dict = Depends(require_role("admin")),
+):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        ensure_account_appeals_table(cursor)
+        capped_limit = min(max(limit, 1), 1000)
+        params: list[object] = []
+        query = """
+            SELECT
+                aa.appeal_id,
+                aa.created_at,
+                aa.user_id,
+                u.username,
+                aa.user_role,
+                aa.account_status,
+                aa.target_admin_user_id,
+                ta.username AS target_admin_username,
+                aa.message,
+                aa.appeal_status,
+                aa.admin_response,
+                aa.reviewed_by_user_id,
+                ru.username AS reviewed_by_username,
+                aa.reviewed_at
+            FROM AccountAppeals aa
+            LEFT JOIN Users u ON u.user_id = aa.user_id
+            LEFT JOIN Users ta ON ta.user_id = aa.target_admin_user_id
+            LEFT JOIN Users ru ON ru.user_id = aa.reviewed_by_user_id
+            WHERE 1=1
+        """
+        if status:
+            query += " AND aa.appeal_status = %s"
+            params.append(status)
+
+        query += " ORDER BY aa.created_at DESC LIMIT %s"
+        params.append(capped_limit)
+
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        for row in rows:
+            if row.get("created_at"):
+                row["created_at"] = row["created_at"].isoformat()
+            if row.get("reviewed_at"):
+                row["reviewed_at"] = row["reviewed_at"].isoformat()
+        return {"appeals": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/account-appeals/{appeal_id}/resolve")
+def resolve_account_appeal(
+    appeal_id: int,
+    body: AccountAppealResolveRequest,
+    current_user: dict = Depends(require_role("admin")),
+):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        ensure_account_appeals_table(cursor)
+        status_value = (body.status or "resolved").strip().lower()
+        if status_value not in {"resolved", "dismissed"}:
+            raise HTTPException(status_code=422, detail="status must be 'resolved' or 'dismissed'")
+
+        cursor.execute(
+            """
+            SELECT appeal_id, user_id, user_role, account_status, appeal_status
+            FROM AccountAppeals
+            WHERE appeal_id = %s
+            """,
+            (appeal_id,),
+        )
+        appeal = cursor.fetchone()
+        if not appeal:
+            raise HTTPException(status_code=404, detail="Appeal not found")
+
+        user_id = int(appeal["user_id"])
+        user_role = (appeal.get("user_role") or "").lower()
+
+        # Resolving an appeal should restore access for the specific appealed account.
+        if status_value == "resolved":
+            if user_role == "sponsor":
+                cursor.execute(
+                    """
+                    INSERT INTO SponsorProfiles (user_id, account_status)
+                    VALUES (%s, 'active')
+                    ON DUPLICATE KEY UPDATE account_status = 'active'
+                    """,
+                    (user_id,),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                    VALUES (NOW(), 'account_status_change', %s, NULL, NULL, %s, %s)
+                    """,
+                    (user_id, "Resolved account appeal by admin", current_user["user_id"]),
+                )
+            elif user_role == "driver":
+                cursor.execute(
+                    """
+                    INSERT INTO DriverProfiles (user_id, account_status)
+                    VALUES (%s, 'active')
+                    ON DUPLICATE KEY UPDATE account_status = 'active'
+                    """,
+                    (user_id,),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                    VALUES (NOW(), 'account_status_change', NULL, %s, NULL, %s, %s)
+                    """,
+                    (user_id, "Resolved account appeal by admin", current_user["user_id"]),
+                )
+            else:
+                raise HTTPException(status_code=422, detail="Appeal role must be sponsor or driver")
+
+        cursor.execute(
+            """
+            UPDATE AccountAppeals
+            SET appeal_status = %s,
+                admin_response = %s,
+                reviewed_by_user_id = %s,
+                reviewed_at = NOW()
+            WHERE appeal_id = %s
+            """,
+            (status_value, body.admin_response, current_user["user_id"], appeal_id),
+        )
+        conn.commit()
+        if status_value == "resolved":
+            return {"message": f"Appeal {appeal_id} resolved and {user_role} account reactivated"}
+        return {"message": f"Appeal {appeal_id} marked as {status_value}"}
+    finally:
+        cursor.close()
+        conn.close()
+
 @router.get("/driver-logs")
 def get_driver_logs(
     driver_id: int | None = None,
@@ -972,8 +1273,9 @@ def update_sponsor_status(
 # ── Driver account-status management ────────────────────────────────────────
 
 VALID_DRIVER_TRANSITIONS: dict[str, set[str]] = {
-    "active":   {"inactive"},
-    "inactive": {"active"},
+    "active":   {"inactive", "banned"},
+    "inactive": {"active", "banned"},
+    "banned":   {"active"},
 }
 
 @router.get("/drivers", response_model=list[DriverAdminRow])
@@ -1048,6 +1350,17 @@ def update_driver_status(
         conn.commit()
 
         return {"message": f"Driver status updated to '{new_status}'", "new_status": new_status}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as exc:
+        conn.rollback()
+        if "account_status" in str(exc) and ("incorrect" in str(exc).lower() or "truncated" in str(exc).lower()):
+            raise HTTPException(
+                status_code=500,
+                detail="Driver account status schema does not support this value yet. Run the latest migrations.",
+            )
+        raise
     finally:
         cursor.close()
         conn.close()

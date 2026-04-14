@@ -8,6 +8,7 @@ import { HomePage } from '../pages/Home';
 import { LoginPage } from '../pages/Login';
 import { RegisterPage } from '../pages/Register';
 import { AboutPage } from '../pages/About';
+import { AccountBlockedPage } from '../pages/AccountBlocked';
 import { SettingsPage } from '../pages/Settings';
 import { NotFoundPage } from '../pages/NotFound';
 
@@ -64,6 +65,7 @@ export const router = createBrowserRouter([
       /* ---------------- PUBLIC ---------------- */
       { path: '/', element: <HomePage /> },
       { path: '/about', element: <AboutPage /> },
+      { path: '/account-blocked', element: <AccountBlockedPage /> },
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
 

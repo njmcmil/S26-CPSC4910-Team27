@@ -92,6 +92,7 @@ class SponsorDriver(BaseModel):
     username: str
     email: str
     points_balance: int
+    account_status: str = "active"
     first_name: str | None = None
     last_name: str | None = None
     phone_number: str | None = None

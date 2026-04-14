@@ -41,6 +41,27 @@ interface User {
   email: string;
 }
 
+interface SystemMetrics {
+  total_users: number;
+  total_drivers: number;
+  total_sponsors: number;
+  total_admins: number;
+  total_orders: number;
+  pending_orders: number;
+  shipped_orders: number;
+  cancelled_orders: number;
+  total_points_awarded: number;
+  total_points_redeemed: number;
+  logins_last_24h: number;
+  failed_logins_last_24h: number;
+}
+
+interface RedemptionReportRow {
+  sponsor_name: string;
+  item_title: string;
+  total_redemptions: number;
+}
+
 interface OrderIssue {
   issue_id: number;
   order_id: number;
@@ -93,11 +114,33 @@ export function AdminDashboardPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [orderIssues, setOrderIssues] = useState<OrderIssue[]>([]);
+  const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
+  const [topRedemptions, setTopRedemptions] = useState<RedemptionReportRow[]>([]);
 
   // Filters
   const [loginFilter, setLoginFilter] = useState('');
   const [auditCategory, setAuditCategory] = useState('');
   const [driverFilter, setDriverFilter] = useState('');
+
+  const loadOverview = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [metricsRes, redemptionsRes] = await Promise.all([
+        api.get<SystemMetrics>('/admin/metrics'),
+        api.get<{ report_rows: RedemptionReportRow[] }>('/admin/reports/redemptions'),
+      ]);
+      setMetrics(metricsRes);
+      const top = [...(redemptionsRes.report_rows || [])]
+        .sort((a, b) => (b.total_redemptions || 0) - (a.total_redemptions || 0))
+        .slice(0, 5);
+      setTopRedemptions(top);
+    } catch {
+      setError('Failed to load overview metrics.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const loadTab = useCallback(async (tab: Tab) => {
     setLoading(true);
@@ -130,10 +173,12 @@ export function AdminDashboardPage() {
   }, [auditCategory]);
 
   useEffect(() => {
-    if (activeTab !== 'overview') {
-      loadTab(activeTab);
+    if (activeTab === 'overview') {
+      loadOverview();
+      return;
     }
-  }, [activeTab, loadTab]);
+    loadTab(activeTab);
+  }, [activeTab, loadOverview, loadTab]);
 
   const tableStyle: React.CSSProperties = {
     width: '100%',
@@ -178,40 +223,93 @@ export function AdminDashboardPage() {
 
       {/* Overview */}
       {activeTab === 'overview' && (
-        <div className="placeholder-grid mt-2">
-          <button
-            type="button"
-            className="card dashboard-overview-button"
-            onClick={() => setActiveTab('users')}
-          >
-            <h3>Users</h3>
-            <p className="helper-text">View all users</p>
-          </button>
-          <button
-            type="button"
-            className="card dashboard-overview-button"
-            onClick={() => setActiveTab('login-attempts')}
-          >
-            <h3>Login Attempts</h3>
-            <p className="helper-text">Monitor suspicious activity</p>
-          </button>
-          <button
-            type="button"
-            className="card dashboard-overview-button"
-            onClick={() => setActiveTab('audit-logs')}
-          >
-            <h3>Audit Logs</h3>
-            <p className="helper-text">Every system change</p>
-          </button>
-          <button
-            type="button"
-            className="card dashboard-overview-button"
-            onClick={() => setActiveTab('driver-logs')}
-          >
-            <h3>Driver Logs</h3>
-            <p className="helper-text">All driver point history</p>
-          </button>
-        </div>
+        <>
+          {loading && <p>Loading overview...</p>}
+          {!loading && metrics && (
+            <>
+              <div className="metrics-grid mt-2">
+                <article className="metric-card">
+                  <h3>Total Users</h3>
+                  <p className="metric-value">{metrics.total_users.toLocaleString()}</p>
+                </article>
+                <article className="metric-card">
+                  <h3>Orders (All Time)</h3>
+                  <p className="metric-value">{metrics.total_orders.toLocaleString()}</p>
+                </article>
+                <article className="metric-card">
+                  <h3>Points Awarded</h3>
+                  <p className="metric-value">{metrics.total_points_awarded.toLocaleString()}</p>
+                </article>
+                <article className="metric-card">
+                  <h3>Failed Logins (24h)</h3>
+                  <p className="metric-value">{metrics.failed_logins_last_24h.toLocaleString()}</p>
+                </article>
+              </div>
+
+              <div className="dashboard-overview-grid mt-2">
+                <div className="card">
+                  <h3>User Role Distribution</h3>
+                  {[
+                    { label: 'Drivers', value: metrics.total_drivers, max: metrics.total_users || 1, color: '#1d4ed8' },
+                    { label: 'Sponsors', value: metrics.total_sponsors, max: metrics.total_users || 1, color: '#0f766e' },
+                    { label: 'Admins', value: metrics.total_admins, max: metrics.total_users || 1, color: '#7c3aed' },
+                  ].map((row) => (
+                    <div key={row.label} className="admin-chart-row">
+                      <div className="admin-chart-label">{row.label}</div>
+                      <div className="admin-chart-track">
+                        <div
+                          className="admin-chart-fill"
+                          style={{ width: `${Math.max(6, (row.value / row.max) * 100)}%`, background: row.color }}
+                        />
+                      </div>
+                      <div className="admin-chart-value">{row.value.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="card">
+                  <h3>Order Status Mix</h3>
+                  {[
+                    { label: 'Pending', value: metrics.pending_orders, max: metrics.total_orders || 1, color: '#b45309' },
+                    { label: 'Shipped', value: metrics.shipped_orders, max: metrics.total_orders || 1, color: '#166534' },
+                    { label: 'Cancelled', value: metrics.cancelled_orders, max: metrics.total_orders || 1, color: '#b91c1c' },
+                  ].map((row) => (
+                    <div key={row.label} className="admin-chart-row">
+                      <div className="admin-chart-label">{row.label}</div>
+                      <div className="admin-chart-track">
+                        <div
+                          className="admin-chart-fill"
+                          style={{ width: `${Math.max(6, (row.value / row.max) * 100)}%`, background: row.color }}
+                        />
+                      </div>
+                      <div className="admin-chart-value">{row.value.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card mt-2">
+                <h3>Top Redeemed Catalog Items</h3>
+                {topRedemptions.length === 0 ? (
+                  <p className="helper-text">No redemption activity yet.</p>
+                ) : (
+                  <div className="dashboard-list">
+                    {topRedemptions.map((item, idx) => (
+                      <div key={`${item.sponsor_name}-${item.item_title}-${idx}`} className="dashboard-list-row">
+                        <div>
+                          <div className="dashboard-list-title">{item.item_title}</div>
+                          <div className="dashboard-list-sub">{item.sponsor_name}</div>
+                        </div>
+                        <strong>{item.total_redemptions.toLocaleString()} redeemed</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+        </>
       )}
 
       {/* Login Attempts */}
