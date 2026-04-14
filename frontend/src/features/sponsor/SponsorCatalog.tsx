@@ -9,6 +9,7 @@ interface SponsorCatalogItemRow {
   title: string;
   price_value: string | null;
   price_currency: string | null;
+  points_cost?: number;
   image_url: string | null;
   stock_quantity?: number;
   is_active?: boolean;
@@ -27,8 +28,6 @@ export function SponsorCatalog() {
   const [driverView, setDriverView] = useState<boolean>(false);
   const [drivers, setDrivers] = useState<SponsorDriver[]>([]);
   const [selectedDriverId, setSelectedDriverId] = useState<string>('');
-  const [purchasingItemId, setPurchasingItemId] = useState<string | null>(null);
-  const [purchaseToast, setPurchaseToast] = useState<string | null>(null);
 
   const [ratings, setRatings] = useState<Record<string, 'G' | 'PG'>>({});
   const [pointsCosts, setPointsCosts] = useState<Record<string, number>>({});
@@ -78,6 +77,7 @@ export function SponsorCatalog() {
             }
           : undefined,
         is_active: item.is_active,
+        points_cost: item.points_cost ?? 0,
         stock_quantity: item.stock_quantity ?? 0,
       }));
 
@@ -192,28 +192,6 @@ export function SponsorCatalog() {
   }
 };
 
-  const handleSponsorPurchase = async (itemId: string, title: string) => {
-  if (!selectedDriverId) {
-    alert('Select a driver first.');
-    return;
-  }
-    try {
-      setPurchasingItemId(itemId);
-      const res = await sponsorService.purchaseForDriver(itemId, Number(selectedDriverId)) as {
-        message: string;
-        driver_new_points_balance: number;
-      };
-    setPurchaseToast(`${res.message}. New driver balance: ${res.driver_new_points_balance} pts.`);
-    await loadSponsorCatalog();
-    await loadDrivers();
-  } catch (err: any) {
-    const detail = err?.detail ?? err?.message ?? `Failed to purchase '${title}' for driver.`;
-    alert(detail);
-  } finally {
-    setPurchasingItemId(null);
-  }
-};
-
   /* ===================================================== */
   /* ================= PUBLISH =========================== */
   /* ===================================================== */
@@ -227,12 +205,6 @@ export function SponsorCatalog() {
       alert('Failed to publish catalog.');
     }
   };
-
-  useEffect(() => {
-    if (!purchaseToast) return;
-    const t = setTimeout(() => setPurchaseToast(null), 3000);
-    return () => clearTimeout(t);
-  }, [purchaseToast]);
 
   /* ===================================================== */
   /* ================= UI ================================ */
@@ -387,106 +359,103 @@ export function SponsorCatalog() {
                   </p>
                 )}
 
-                {/* ========================================= */}
-                {/* Sponsor Controls (Visible In Both Modes) */}
-                {/* ========================================= */}
+                {!driverView && (
+                  <div className="sponsor-actions">
 
-                <div className="sponsor-actions">
-
-                  <select
-                    value={ratings[product.itemId] || 'G'}
-                    onChange={(e) =>
-                      setRatings({
-                        ...ratings,
-                        [product.itemId]:
-                          e.target.value as 'G' | 'PG',
-                      })
-                    }
-                    className="catalog-select"
-                  >
-                    <option value="G">G</option>
-                    <option value="PG">PG</option>
-                  </select>
-
-                  <label
-                    className="catalog-field"
-                  >
-                    Point Cost
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={pointsCosts[product.itemId] ?? 0}
+                    <select
+                      value={ratings[product.itemId] || 'G'}
                       onChange={(e) =>
-                        setPointsCosts((prev) => ({
-                          ...prev,
-                          [product.itemId]: Math.max(
-                            0,
-                            parseInt(e.target.value, 10) || 0
-                          ),
-                        }))
+                        setRatings({
+                          ...ratings,
+                          [product.itemId]:
+                            e.target.value as 'G' | 'PG',
+                        })
                       }
-                      className="catalog-cost-input"
-                    />
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={() => handleAddToCatalog(product)}
-                    className="catalog-primary-button"
-                  >
-                    Add to Catalog
-                  </button>
-
-                  {product.is_active !== undefined && (
-                    <button
-                      type="button"
-                      className={product.is_active ? 'catalog-danger-button' : 'catalog-success-button'}
-                      onClick={() =>
-                        product.is_active
-                          ? handleRemoveFromCatalog(product.itemId)
-                          : handleEnableProduct(product.itemId)
-                      }
+                      className="catalog-select"
                     >
-                      {product.is_active ? 'Disable' : 'Enable'}
-                    </button>
-                  )}
+                      <option value="G">G</option>
+                      <option value="PG">PG</option>
+                    </select>
 
-                  {product.is_active !== undefined && (
-                    <button
-                      type="button"
-                      className="catalog-danger-button"
-                      onClick={() => handleDeleteFromCatalog(product.itemId)}
+                    <label
+                      className="catalog-field"
                     >
-                      Remove
-                    </button>
-                  )}
+                      Point Cost
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={pointsCosts[product.itemId] ?? 0}
+                        onChange={(e) =>
+                          setPointsCosts((prev) => ({
+                            ...prev,
+                            [product.itemId]: Math.max(
+                              0,
+                              parseInt(e.target.value, 10) || 0
+                            ),
+                          }))
+                        }
+                        className="catalog-cost-input"
+                      />
+                    </label>
 
-                  {driverView && product.is_active !== undefined && (
                     <button
                       type="button"
+                      onClick={() => handleAddToCatalog(product)}
                       className="catalog-primary-button"
-                      disabled={!selectedDriverId || purchasingItemId === product.itemId || (product.stock_quantity ?? 0) <= 0}
-                      onClick={() => handleSponsorPurchase(product.itemId, product.title)}
                     >
-                      {purchasingItemId === product.itemId ? 'Purchasing...' : 'Purchase for Driver'}
+                      Add to Catalog
                     </button>
-                  )}
-                </div>
 
+                    {product.is_active !== undefined && (
+                      <button
+                        type="button"
+                        className={product.is_active ? 'catalog-danger-button' : 'catalog-success-button'}
+                        onClick={() =>
+                          product.is_active
+                            ? handleRemoveFromCatalog(product.itemId)
+                            : handleEnableProduct(product.itemId)
+                        }
+                      >
+                        {product.is_active ? 'Disable' : 'Enable'}
+                      </button>
+                    )}
+
+                    {product.is_active !== undefined && (
+                      <button
+                        type="button"
+                        className="catalog-danger-button"
+                        onClick={() => handleDeleteFromCatalog(product.itemId)}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {driverView && (
+                  <div className="sponsor-actions" aria-label="Driver preview purchase status">
+                    <p className="catalog-muted-note" style={{ marginBottom: 0 }}>
+                      Points Cost: {(product.points_cost ?? 0).toLocaleString()}
+                    </p>
+                    {product.is_active === false ? (
+                      <p className="catalog-status inactive" style={{ marginBottom: 0 }}>Unavailable (disabled in sponsor catalog)</p>
+                    ) : (product.stock_quantity ?? 0) <= 0 ? (
+                      <p className="catalog-status inactive" style={{ marginBottom: 0 }}>Unavailable (out of stock)</p>
+                    ) : !selectedDriver ? (
+                      <p className="catalog-muted-note" style={{ marginBottom: 0 }}>Select a driver to check eligibility</p>
+                    ) : selectedDriver.points_balance >= (product.points_cost ?? 0) ? (
+                      <p className="catalog-status active" style={{ marginBottom: 0 }}>Can redeem</p>
+                    ) : (
+                      <p className="catalog-status inactive" style={{ marginBottom: 0 }}>
+                        Needs {Math.max(0, (product.points_cost ?? 0) - selectedDriver.points_balance).toLocaleString()} more points
+                      </p>
+                    )}
+                  </div>
+                )}
                 </div>
               ))
             )}
-          </div>
-        )}
-
-        {purchaseToast && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="catalog-feedback success"
-          >
-            {purchaseToast}
           </div>
         )}
       </div>

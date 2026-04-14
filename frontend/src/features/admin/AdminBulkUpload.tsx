@@ -73,7 +73,7 @@ export function AdminBulkUploadPage() {
     <section className="card" aria-labelledby="bulk-upload-heading">
       <h2 id="bulk-upload-heading">Bulk Upload</h2>
       <p className="mt-1" style={{ color: 'var(--color-text-muted)' }}>
-        Upload a pipe-delimited <code>.txt</code> file to create sponsor and driver accounts in bulk.
+        Upload a CSV or pipe-delimited text file to create sponsor and driver accounts in bulk.
         Each new user receives a unique temporary password shown once after upload.
       </p>
 
@@ -81,7 +81,12 @@ export function AdminBulkUploadPage() {
         <p style={{ fontWeight: 600, marginBottom: '0.35rem' }}>File format</p>
         <pre style={{ margin: 0, lineHeight: 1.6 }}>
 {`S|username|email
-D|username|email|sponsor_username`}
+D|username|email|sponsor_username
+
+or
+
+S,username,email
+D,username,email,sponsor_username`}
         </pre>
         <ul style={{ marginTop: '0.75rem', paddingLeft: '1.25rem', lineHeight: 1.8, color: 'var(--color-text-muted)' }}>
           <li><strong>S</strong> — create a sponsor account</li>
@@ -101,7 +106,7 @@ D|username|email|sponsor_username`}
             id="bulk-file"
             ref={fileRef}
             type="file"
-            accept=".txt,text/plain"
+            accept=".txt,.csv,text/plain,text/csv"
             required
             style={{ display: 'block' }}
           />

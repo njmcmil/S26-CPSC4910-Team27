@@ -356,11 +356,11 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
         label: 'Management',
         defaultOpen: true,
         items: [
-          { to: '/admin/users', label: 'Users' },
-          { to: '/admin/sponsors', label: 'Sponsors' },
-          { to: '/admin/drivers', label: 'Drivers' },
-          { to: '/admin/driver-sponsors', label: 'Driver Sponsors' },
-          { to: '/admin/bulk-upload', label: 'Bulk Upload' },
+          { to: '/admin/users', label: 'User Accounts' },
+          { to: '/admin/sponsors', label: 'Sponsor Accounts' },
+          { to: '/admin/drivers', label: 'Driver Accounts' },
+          { to: '/admin/driver-sponsors', label: 'Driver Sponsors Map' },
+          { to: '/admin/bulk-upload', label: 'Bulk Account Upload' },
         ],
       },
       {
@@ -454,11 +454,12 @@ function GroupedSidebar({ nav }: { nav: GroupedNav }) {
 /* ── Main layout ── */
 
 export function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, stopImpersonation } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const mainRef = useRef<HTMLElement | null>(null);
   const [keyboardMode, setKeyboardMode] = useState(false);
+  const [stoppingImpersonation, setStoppingImpersonation] = useState(false);
 
   useEffect(() => {
     const applyKeyboardMode = () => {
@@ -529,6 +530,16 @@ export function Layout() {
     navigate('/login');
   };
 
+  const handleStopImpersonation = async () => {
+    try {
+      setStoppingImpersonation(true);
+      const role = await stopImpersonation();
+      navigate(`/${role}/dashboard`);
+    } finally {
+      setStoppingImpersonation(false);
+    }
+  };
+
   return (
     <>
       <a href="#main-content" className="skip-link">
@@ -563,6 +574,25 @@ export function Layout() {
         )}
 
         <main id="main-content" className="app-content" ref={mainRef} tabIndex={-1}>
+          {user?.is_impersonating && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="impersonation-banner"
+            >
+              <span>
+                Viewing as <strong>{user.role}</strong>. You can return to your admin session at any time.
+              </span>
+              <button
+                type="button"
+                onClick={handleStopImpersonation}
+                disabled={stoppingImpersonation}
+                className="btn btn-primary btn-sm impersonation-banner-btn"
+              >
+                {stoppingImpersonation ? 'Returning…' : 'Return To Admin'}
+              </button>
+            </div>
+          )}
           <Outlet />
         </main>
       </div>

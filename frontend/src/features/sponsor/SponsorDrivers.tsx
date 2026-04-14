@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { api } from '../../services/apiClient';
 import { Spinner } from '../../components/Spinner';
 import { Alert } from '../../components/Alert';
@@ -12,8 +12,34 @@ interface SponsorDriver {
   username: string;
   email: string;
   points_balance: number;
+  account_status: string;
   first_name: string | null;
   last_name: string | null;
+}
+
+const STATUS_COLORS: Record<string, CSSProperties> = {
+  active: { background: '#dcfce7', color: '#166534' },
+  inactive: { background: '#fef9c3', color: '#854d0e' },
+  banned: { background: '#fee2e2', color: '#991b1b' },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const colors = STATUS_COLORS[status] ?? { background: '#f3f4f6', color: '#374151' };
+  return (
+    <span
+      style={{
+        ...colors,
+        display: 'inline-block',
+        padding: '0.15rem 0.55rem',
+        borderRadius: '9999px',
+        fontSize: '0.8rem',
+        fontWeight: 600,
+        textTransform: 'capitalize',
+      }}
+    >
+      {status}
+    </span>
+  );
 }
 
 export function SponsorDriversPage() {
@@ -21,6 +47,7 @@ export function SponsorDriversPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedDriver, setSelectedDriver] = useState<SponsorDriver | null>(null);
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   const fetchDrivers = useCallback(async () => {
     setLoading(true);
@@ -61,6 +88,20 @@ export function SponsorDriversPage() {
       ? `${d.first_name ?? ''} ${d.last_name ?? ''}`.trim()
       : d.username;
 
+  async function changeDriverStatus(driver: SponsorDriver, newStatus: 'active' | 'inactive' | 'banned') {
+    setActionLoading(driver.driver_user_id);
+    setError('');
+    try {
+      await api.post(`/sponsor/drivers/${driver.driver_user_id}/status`, { new_status: newStatus });
+      await fetchDrivers();
+    } catch (err) {
+      const apiErr = err as ApiError;
+      setError(apiErr.message || 'Failed to update driver status.');
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   return (
     <section aria-labelledby="drivers-heading">
       <h2 id="drivers-heading">Drivers</h2>
@@ -78,6 +119,7 @@ export function SponsorDriversPage() {
                 <th style={{ padding: '0.5rem' }}>Name</th>
                 <th style={{ padding: '0.5rem' }}>Username</th>
                 <th style={{ padding: '0.5rem' }}>Points</th>
+                <th style={{ padding: '0.5rem' }}>Status</th>
                 <th style={{ padding: '0.5rem' }}>Actions</th>
               </tr>
             </thead>
@@ -91,19 +133,67 @@ export function SponsorDriversPage() {
                   <td style={{ padding: '0.5rem' }}>{driver.username}</td>
                   <td style={{ padding: '0.5rem' }}>{driver.points_balance.toLocaleString()}</td>
                   <td style={{ padding: '0.5rem' }}>
-                    <Button
-                      onClick={() =>
-                        setSelectedDriver(
-                          selectedDriver?.driver_user_id === driver.driver_user_id
-                            ? null
-                            : driver,
-                        )
-                      }
-                    >
-                      {selectedDriver?.driver_user_id === driver.driver_user_id
-                        ? 'Hide History'
-                        : 'Point History'}
-                    </Button>
+                    <StatusBadge status={driver.account_status} />
+                  </td>
+                  <td style={{ padding: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <Button
+                        onClick={() =>
+                          setSelectedDriver(
+                            selectedDriver?.driver_user_id === driver.driver_user_id
+                              ? null
+                              : driver,
+                          )
+                        }
+                      >
+                        {selectedDriver?.driver_user_id === driver.driver_user_id
+                          ? 'Hide History'
+                          : 'Point History'}
+                      </Button>
+                      {driver.account_status === 'active' && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            loading={actionLoading === driver.driver_user_id}
+                            onClick={() => changeDriverStatus(driver, 'inactive')}
+                          >
+                            Deactivate
+                          </Button>
+                          <Button
+                            variant="danger"
+                            loading={actionLoading === driver.driver_user_id}
+                            onClick={() => changeDriverStatus(driver, 'banned')}
+                          >
+                            Ban
+                          </Button>
+                        </>
+                      )}
+                      {driver.account_status === 'inactive' && (
+                        <>
+                          <Button
+                            loading={actionLoading === driver.driver_user_id}
+                            onClick={() => changeDriverStatus(driver, 'active')}
+                          >
+                            Reactivate
+                          </Button>
+                          <Button
+                            variant="danger"
+                            loading={actionLoading === driver.driver_user_id}
+                            onClick={() => changeDriverStatus(driver, 'banned')}
+                          >
+                            Ban
+                          </Button>
+                        </>
+                      )}
+                      {driver.account_status === 'banned' && (
+                        <Button
+                          loading={actionLoading === driver.driver_user_id}
+                          onClick={() => changeDriverStatus(driver, 'active')}
+                        >
+                          Unban
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

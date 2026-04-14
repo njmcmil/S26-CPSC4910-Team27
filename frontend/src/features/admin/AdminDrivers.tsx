@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/apiClient';
+import { useAuth } from '../../auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface DriverRow {
   user_id: number;
@@ -13,6 +15,7 @@ interface DriverRow {
 const STATUS_COLORS: Record<string, React.CSSProperties> = {
   active:   { background: '#dcfce7', color: '#166534' },
   inactive: { background: '#fef9c3', color: '#854d0e' },
+  banned:   { background: '#fee2e2', color: '#991b1b' },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -33,13 +36,16 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function AdminDriversPage() {
+  const { impersonateUser } = useAuth();
+  const navigate = useNavigate();
   const [drivers, setDrivers] = useState<DriverRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'banned'>('all');
 
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [viewAsLoading, setViewAsLoading] = useState<number | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   function load() {
@@ -58,12 +64,20 @@ export function AdminDriversPage() {
     setTimeout(() => setToast(null), 4000);
   }
 
-  async function changeStatus(driver: DriverRow, newStatus: 'active' | 'inactive') {
+  async function changeStatus(driver: DriverRow, newStatus: 'active' | 'inactive' | 'banned') {
     setActionLoading(driver.user_id);
     try {
       await api.post(`/admin/drivers/${driver.user_id}/status`, { new_status: newStatus });
+      const actionLabel =
+        newStatus === 'inactive'
+          ? 'deactivated'
+          : newStatus === 'banned'
+            ? 'banned'
+            : driver.account_status === 'banned'
+              ? 'unbanned'
+              : 'reactivated';
       showToast(
-        `${driver.username} ${newStatus === 'inactive' ? 'deactivated' : 'reactivated'} successfully.`,
+        `${driver.username} ${actionLabel} successfully.`,
         true,
       );
       load();
@@ -71,6 +85,18 @@ export function AdminDriversPage() {
       showToast((err as { message?: string })?.message ?? 'Action failed.', false);
     } finally {
       setActionLoading(null);
+    }
+  }
+
+  async function viewAsDriver(driver: DriverRow) {
+    setViewAsLoading(driver.user_id);
+    try {
+      const role = await impersonateUser(driver.user_id);
+      navigate(`/${role}/dashboard`);
+    } catch (err: unknown) {
+      showToast((err as { message?: string })?.message ?? 'Unable to view as driver.', false);
+    } finally {
+      setViewAsLoading(null);
     }
   }
 
@@ -102,7 +128,7 @@ export function AdminDriversPage() {
           aria-label="Search drivers"
         />
         <div style={{ display: 'flex', gap: '0.4rem' }}>
-          {(['all', 'active', 'inactive'] as const).map((f) => (
+          {(['all', 'active', 'inactive', 'banned'] as const).map((f) => (
             <button
               key={f}
               onClick={() => setStatusFilter(f)}
@@ -172,21 +198,57 @@ export function AdminDriversPage() {
                       <td style={{ ...tdStyle, color: '#555' }}>{d.email}</td>
                       <td style={tdStyle}><StatusBadge status={d.account_status} /></td>
                       <td style={tdStyle}>
-                        {d.account_status === 'active' ? (
-                          <button
-                            onClick={() => changeStatus(d, 'inactive')}
-                            disabled={busy}
-                            style={actionBtnStyle('#fef9c3', '#854d0e', busy)}
-                          >
-                            {busy ? '…' : 'Deactivate'}
-                          </button>
-                        ) : (
+                        <button
+                          type="button"
+                          onClick={() => viewAsDriver(d)}
+                          disabled={busy || viewAsLoading === d.user_id}
+                          className="btn btn-secondary btn-sm admin-view-as-btn"
+                        >
+                          {viewAsLoading === d.user_id ? 'Opening…' : 'View As Driver'}
+                        </button>
+                        {d.account_status === 'active' && (
+                          <>
+                            <button
+                              onClick={() => changeStatus(d, 'inactive')}
+                              disabled={busy}
+                              style={actionBtnStyle('#fef9c3', '#854d0e', busy)}
+                            >
+                              {busy ? '…' : 'Deactivate'}
+                            </button>
+                            <button
+                              onClick={() => changeStatus(d, 'banned')}
+                              disabled={busy}
+                              style={actionBtnStyle('#fee2e2', '#991b1b', busy)}
+                            >
+                              {busy ? '…' : 'Ban'}
+                            </button>
+                          </>
+                        )}
+                        {d.account_status === 'inactive' && (
+                          <>
+                            <button
+                              onClick={() => changeStatus(d, 'active')}
+                              disabled={busy}
+                              style={actionBtnStyle('#dcfce7', '#166534', busy)}
+                            >
+                              {busy ? '…' : 'Reactivate'}
+                            </button>
+                            <button
+                              onClick={() => changeStatus(d, 'banned')}
+                              disabled={busy}
+                              style={actionBtnStyle('#fee2e2', '#991b1b', busy)}
+                            >
+                              {busy ? '…' : 'Ban'}
+                            </button>
+                          </>
+                        )}
+                        {d.account_status === 'banned' && (
                           <button
                             onClick={() => changeStatus(d, 'active')}
                             disabled={busy}
                             style={actionBtnStyle('#dcfce7', '#166534', busy)}
                           >
-                            {busy ? '…' : 'Reactivate'}
+                            {busy ? '…' : 'Unban'}
                           </button>
                         )}
                       </td>

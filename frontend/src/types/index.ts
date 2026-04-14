@@ -21,6 +21,9 @@ export interface LoginResponse {
   role: UserRole;
   email: string;
   access_token: string;
+  is_impersonating?: boolean;
+  impersonated_by_user_id?: number | null;
+  original_role?: UserRole | null;
 }
 
 export interface AuthUser {
@@ -28,6 +31,9 @@ export interface AuthUser {
   username: string;
   role: UserRole;
   email: string;
+  is_impersonating?: boolean;
+  impersonated_by_user_id?: number | null;
+  original_role?: UserRole | null;
 }
 
 export interface ChangePasswordRequest {
