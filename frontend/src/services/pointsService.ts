@@ -49,10 +49,11 @@ export const pointsService = {
    * Get current points balance and transaction history for the authenticated driver
    * Calls GET /driver/points/history
    */
-  async getPoints(): Promise<PointsData> {
-    const data = await api.get<{ current_points: number; history: PointTransaction[] }>(
-      '/api/driver/points/history'
-    );
+  async getPoints(sponsorId?: number): Promise<PointsData> {
+    const url = sponsorId
+      ? `/api/driver/points/history?sponsor_user_id=${sponsorId}`
+      : '/api/driver/points/history';
+    const data = await api.get<{ current_points: number; history: PointTransaction[] }>(url);
     return {
       current_balance: data.current_points,
       transactions: data.history,
@@ -63,7 +64,10 @@ export const pointsService = {
    * get driver's complete point history including expires_at 
    */
   getDriverPointHistory(): Promise<DriverPointHistory> {
-    return api.get<DriverPointHistory>('/api/driver/points/history');
+    const url = sponsorId
+      ? `/api/driver/points/history?sponsor_user_id=${sponsorId}`
+      : '/api/driver/points/history';
+    return api.get<DriverPointHistory>(url);
   },
 
   /**
