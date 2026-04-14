@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/apiClient';
-import { Alert } from '../../components/Alert';
+import { useAuth } from '../../auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface SponsorRow {
   user_id: number;
@@ -75,6 +76,8 @@ function actionButtons(sponsor: SponsorRow, onAction: (s: SponsorRow, a: StatusA
 }
 
 export function AdminSponsorsPage() {
+  const { impersonateUser } = useAuth();
+  const navigate = useNavigate();
   const [sponsors, setSponsors] = useState<SponsorRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +87,16 @@ export function AdminSponsorsPage() {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [viewAsLoading, setViewAsLoading] = useState<number | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    username: '',
+    email: '',
+    company_name: '',
+    first_name: '',
+    last_name: '',
+  });
 
   function load() {
     setLoading(true);
@@ -125,6 +137,44 @@ export function AdminSponsorsPage() {
     }
   }
 
+  async function createSponsor(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!createForm.username.trim() || !createForm.email.trim()) {
+      showToast('Username and email are required.', false);
+      return;
+    }
+
+    setCreateLoading(true);
+    try {
+      await api.post('/sponsor/admin/create', {
+        username: createForm.username.trim(),
+        email: createForm.email.trim(),
+        company_name: createForm.company_name.trim() || null,
+        first_name: createForm.first_name.trim() || null,
+        last_name: createForm.last_name.trim() || null,
+      });
+      showToast(`Sponsor ${createForm.username.trim()} created successfully.`, true);
+      setCreateForm({ username: '', email: '', company_name: '', first_name: '', last_name: '' });
+      load();
+    } catch (err: unknown) {
+      showToast((err as { message?: string })?.message ?? 'Failed to create sponsor.', false);
+    } finally {
+      setCreateLoading(false);
+    }
+  }
+
+  async function viewAsSponsor(sponsor: SponsorRow) {
+    setViewAsLoading(sponsor.user_id);
+    try {
+      const role = await impersonateUser(sponsor.user_id);
+      navigate(`/${role}/dashboard`);
+    } catch (err: unknown) {
+      showToast((err as { message?: string })?.message ?? 'Unable to view as sponsor.', false);
+    } finally {
+      setViewAsLoading(null);
+    }
+  }
+
   const filtered = sponsors.filter((s) => {
     const q = search.toLowerCase();
     const matchesSearch =
@@ -142,6 +192,61 @@ export function AdminSponsorsPage() {
     <section className="card" aria-labelledby="sponsors-heading">
       <h2 id="sponsors-heading">Sponsor Management</h2>
       <p className="mt-1">View and manage sponsor account statuses.</p>
+
+      <form
+        onSubmit={createSponsor}
+        className="mt-2 admin-create-sponsor-form"
+      >
+        <label style={fieldStyle}>
+          Username
+          <input
+            type="text"
+            value={createForm.username}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, username: e.target.value }))}
+            required
+          />
+        </label>
+        <label style={fieldStyle}>
+          Email
+          <input
+            type="email"
+            value={createForm.email}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
+            required
+          />
+        </label>
+        <label style={fieldStyle}>
+          Company
+          <input
+            type="text"
+            value={createForm.company_name}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, company_name: e.target.value }))}
+          />
+        </label>
+        <label style={fieldStyle}>
+          First Name
+          <input
+            type="text"
+            value={createForm.first_name}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, first_name: e.target.value }))}
+          />
+        </label>
+        <label style={fieldStyle}>
+          Last Name
+          <input
+            type="text"
+            value={createForm.last_name}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, last_name: e.target.value }))}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={createLoading}
+          className="btn btn-primary"
+        >
+          {createLoading ? 'Creating…' : 'Add Sponsor'}
+        </button>
+      </form>
 
       {/* Filters */}
       <div className="mt-2" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -217,7 +322,17 @@ export function AdminSponsorsPage() {
                     <td style={tdStyle}>{s.company_name ?? '—'}</td>
                     <td style={{ ...tdStyle, color: '#555' }}>{s.email}</td>
                     <td style={tdStyle}><StatusBadge status={s.account_status} /></td>
-                    <td style={tdStyle}>{actionButtons(s, openConfirm)}</td>
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        onClick={() => viewAsSponsor(s)}
+                        disabled={viewAsLoading === s.user_id}
+                        className="btn btn-secondary btn-sm admin-view-as-btn"
+                      >
+                        {viewAsLoading === s.user_id ? 'Opening…' : 'View As Sponsor'}
+                      </button>
+                      {actionButtons(s, openConfirm)}
+                    </td>
                   </tr>
                 ))
               )}
@@ -300,6 +415,7 @@ export function AdminSponsorsPage() {
 
 const thStyle: React.CSSProperties = { padding: '0.5rem 0.75rem', textAlign: 'left', fontWeight: 600 };
 const tdStyle: React.CSSProperties = { padding: '0.5rem 0.75rem' };
+const fieldStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.3rem', fontWeight: 600, fontSize: '0.85rem' };
 
 const modalOverlayStyle: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',

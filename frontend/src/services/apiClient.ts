@@ -2,6 +2,7 @@ import type { ApiError } from '../types';
 
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const BLOCKED_STATE_KEY = 'gdip_blocked_state';
 
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
@@ -56,6 +57,20 @@ async function request<T>(
       fieldErrors = body.field_errors;
     } catch {
       // body wasn't JSON — keep default message
+    }
+
+    const detailText = typeof detail === 'string' ? detail : message;
+    if (res.status === 403 && detailText.startsWith('ACCOUNT_BLOCKED:')) {
+      const [, status = 'inactive', role = 'user'] = detailText.split(':');
+      const friendlyMessage =
+        status === 'banned'
+          ? 'Your account has been banned. Please contact an administrator for review.'
+          : 'Your account is currently inactive. Please contact an administrator for reactivation.';
+      sessionStorage.setItem(
+        BLOCKED_STATE_KEY,
+        JSON.stringify({ status, role, message: friendlyMessage }),
+      );
+      window.location.replace('/account-blocked');
     }
 
     const error: ApiError = { status: res.status, message, detail, fieldErrors };

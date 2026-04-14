@@ -51,11 +51,14 @@ from users.users import (
 )
 from auth.auth import (
     get_current_user,
+    get_current_user_allow_blocked,
     create_access_token,
+    get_account_status_for_user,
     hash_password,
     verify_password,
     verify_token,
 )
+from schemas.admin import AccountAppealCreateRequest
 from auth.token_blacklist import blacklist_token
 from audit.login_audit import log_login_attempt, get_last_login
 from users.password_reset import (
@@ -116,6 +119,62 @@ def get_request_ip(http_request: Request) -> str:
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
     return http_request.client.host if http_request.client else "Unknown"
+
+
+def ensure_account_appeals_table(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS AccountAppeals (
+            appeal_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            user_role VARCHAR(32) NOT NULL,
+            account_status VARCHAR(32) NOT NULL,
+            target_admin_user_id INT NULL,
+            message TEXT NOT NULL,
+            appeal_status VARCHAR(32) NOT NULL DEFAULT 'open',
+            admin_response TEXT NULL,
+            reviewed_by_user_id INT NULL,
+            reviewed_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_appeal_user_id (user_id),
+            INDEX idx_appeal_status (appeal_status)
+        )
+        """
+    )
+
+
+def get_last_admin_status_actor(cursor, user_id: int, role: str) -> int | None:
+    """
+    Find the most recent admin that changed this account's status.
+    """
+    if role == "sponsor":
+        cursor.execute(
+            """
+            SELECT changed_by_user_id
+            FROM audit_log
+            WHERE category = 'account_status_change'
+              AND sponsor_id = %s
+              AND changed_by_user_id IS NOT NULL
+            ORDER BY date DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT changed_by_user_id
+            FROM audit_log
+            WHERE category = 'account_status_change'
+              AND driver_id = %s
+              AND changed_by_user_id IS NOT NULL
+            ORDER BY date DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+    row = cursor.fetchone()
+    return (row or {}).get("changed_by_user_id")
 
 
 def parse_login_device_details(user_agent: str | None) -> tuple[str, str, str]:
@@ -580,6 +639,13 @@ def login_endpoint(request: LoginRequest, http_request: Request):
         user_agent=agent
     )
 
+    account_status = get_account_status_for_user(user["user_id"], user.get("role", ""))
+    if user.get("role") in ("driver", "sponsor") and account_status != "active":
+        raise HTTPException(
+            status_code=403,
+            detail=f"ACCOUNT_BLOCKED:{account_status}:{user.get('role')}",
+        )
+
     token = create_access_token({"user_id": user["user_id"]})
 
     # Notification failures should not block a successful login.
@@ -601,6 +667,54 @@ def login_endpoint(request: LoginRequest, http_request: Request):
         "email": user["email"],
         "access_token": token
     }
+
+
+@app.post("/account-appeals")
+def submit_account_appeal(
+    body: AccountAppealCreateRequest,
+    current_user: dict = Depends(get_current_user_allow_blocked),
+):
+    """
+    Allow blocked sponsor/driver users to submit a review request to admins.
+    """
+    role = current_user.get("role")
+    account_status = (current_user.get("account_status") or "active").lower()
+
+    if role not in ("driver", "sponsor"):
+        raise HTTPException(status_code=403, detail="Only driver/sponsor users can submit appeals")
+    if account_status == "active":
+        raise HTTPException(status_code=409, detail="Your account is already active")
+
+    message = (body.message or "").strip()
+    if len(message) < 10:
+        raise HTTPException(status_code=422, detail="Please provide at least 10 characters")
+    if len(message) > 2000:
+        raise HTTPException(status_code=422, detail="Message too long (max 2000 characters)")
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        ensure_account_appeals_table(cursor)
+        target_admin_user_id = get_last_admin_status_actor(cursor, current_user["user_id"], role)
+        cursor.execute(
+            """
+            INSERT INTO AccountAppeals
+                (user_id, user_role, account_status, target_admin_user_id, message, appeal_status)
+            VALUES (%s, %s, %s, %s, %s, 'open')
+            """,
+            (
+                current_user["user_id"],
+                role,
+                account_status,
+                target_admin_user_id,
+                message,
+            ),
+        )
+        conn.commit()
+        return {"message": "Appeal submitted. An admin will review your request."}
+    finally:
+        cursor.close()
+        conn.close()
 
 
 

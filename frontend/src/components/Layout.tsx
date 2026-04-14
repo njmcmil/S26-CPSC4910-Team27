@@ -358,11 +358,11 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
         label: 'Management',
         defaultOpen: true,
         items: [
-          { to: '/admin/users', label: 'Users' },
-          { to: '/admin/sponsors', label: 'Sponsors' },
-          { to: '/admin/drivers', label: 'Drivers' },
-          { to: '/admin/driver-sponsors', label: 'Driver Sponsors' },
-          { to: '/admin/bulk-upload', label: 'Bulk Upload' },
+          { to: '/admin/users', label: 'User Accounts' },
+          { to: '/admin/sponsors', label: 'Sponsor Accounts' },
+          { to: '/admin/drivers', label: 'Driver Accounts' },
+          { to: '/admin/driver-sponsors', label: 'Driver Sponsors Map' },
+          { to: '/admin/bulk-upload', label: 'Bulk Account Upload' },
         ],
       },
       {
@@ -495,11 +495,12 @@ function SponsorSwitcher() {
 /* ── Main layout ── */
 
 export function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, stopImpersonation } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const mainRef = useRef<HTMLElement | null>(null);
   const [keyboardMode, setKeyboardMode] = useState(false);
+  const [stoppingImpersonation, setStoppingImpersonation] = useState(false);
   const breadcrumbs = useBreadcrumbs();
 
   useEffect(() => {
@@ -571,6 +572,16 @@ export function Layout() {
     navigate('/login');
   };
 
+  const handleStopImpersonation = async () => {
+    try {
+      setStoppingImpersonation(true);
+      const role = await stopImpersonation();
+      navigate(`/${role}/dashboard`);
+    } finally {
+      setStoppingImpersonation(false);
+    }
+  };
+
   return (
     <>
       <a href="#main-content" className="skip-link">
@@ -606,7 +617,6 @@ export function Layout() {
         )}
 
         <main id="main-content" className="app-content" ref={mainRef} tabIndex={-1}>
-          {user && <Breadcrumbs items={breadcrumbs} />}
           <Outlet />
         </main>
       </div>

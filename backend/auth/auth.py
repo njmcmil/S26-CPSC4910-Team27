@@ -88,6 +88,7 @@ from auth.token_blacklist import is_token_blacklisted
 #^Logout system
 
 from shared.services import get_user_by_id
+from shared.db import get_connection
 
 #Config -
 load_dotenv()
@@ -136,6 +137,37 @@ def verify_token(token: str):
     # .Modified token.   then raises->
     except JWTError:
         return None
+
+
+def get_account_status_for_user(user_id: int, role: str) -> str:
+    """
+    Resolve account status for sponsor/driver users.
+    Returns 'active' when no status row exists.
+    """
+    if role not in ("driver", "sponsor"):
+        return "active"
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        if role == "sponsor":
+            cursor.execute(
+                "SELECT account_status FROM SponsorProfiles WHERE user_id = %s LIMIT 1",
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                "SELECT account_status FROM DriverProfiles WHERE user_id = %s LIMIT 1",
+                (user_id,),
+            )
+        row = cursor.fetchone()
+        return (row or {}).get("account_status") or "active"
+    except Exception:
+        # Fallback for environments without account_status columns/migrations.
+        return "active"
+    finally:
+        cursor.close()
+        conn.close()
     
 # FastAPI Dependency to get the currently authenticated user from a Bearer token.
 # 401 error: "your key doesnt work"
@@ -157,13 +189,65 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+
+    account_status = get_account_status_for_user(user["user_id"], user.get("role", ""))
+    if user.get("role") in ("driver", "sponsor") and account_status != "active":
+        raise HTTPException(
+            status_code=403,
+            detail=f"ACCOUNT_BLOCKED:{account_status}:{user.get('role')}",
+        )
+    user["account_status"] = account_status
     # Attach impersonation context if present
     impersonation = payload.get("impersonation")
     if impersonation:
         user["is_impersonating"] = True
-        user["impersonated_by"] = impersonation.get("sponsor_user_id")
+        user["impersonation"] = impersonation
+        user["impersonated_by"] = (
+            impersonation.get("sponsor_user_id")
+            or impersonation.get("admin_user_id")
+            or impersonation.get("original_user_id")
+        )
+        user["original_role"] = impersonation.get("original_role")
     else:
         user["is_impersonating"] = False
+        user["impersonation"] = None
+
+    return user
+
+
+def get_current_user_allow_blocked(token: str = Depends(oauth2_scheme)):
+    """
+    Resolve current user from token without enforcing active account status.
+    Useful for blocked-account support actions (appeals/help flows).
+    """
+    payload = verify_token(token)
+
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user_id = payload.get("user_id")
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    user["account_status"] = get_account_status_for_user(user["user_id"], user.get("role", ""))
+
+    impersonation = payload.get("impersonation")
+    if impersonation:
+        user["is_impersonating"] = True
+        user["impersonation"] = impersonation
+        user["impersonated_by"] = (
+            impersonation.get("sponsor_user_id")
+            or impersonation.get("admin_user_id")
+            or impersonation.get("original_user_id")
+        )
+        user["original_role"] = impersonation.get("original_role")
+    else:
+        user["is_impersonating"] = False
+        user["impersonation"] = None
 
     return user
 

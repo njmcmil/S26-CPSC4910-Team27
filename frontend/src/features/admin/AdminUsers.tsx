@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/apiClient';
 import { Alert } from '../../components/Alert';
+import { useAuth } from '../../auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface UserRow {
   user_id: number;
@@ -12,11 +14,14 @@ interface UserRow {
 type RoleFilter = 'all' | 'driver' | 'sponsor' | 'admin';
 
 export function AdminUsersPage() {
+  const { impersonateUser } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [search, setSearch] = useState('');
+  const [impersonatingUserId, setImpersonatingUserId] = useState<number | null>(null);
 
   useEffect(() => {
     api.get<UserRow[]>('/admin/users')
@@ -26,6 +31,19 @@ export function AdminUsersPage() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const startViewAs = async (user: UserRow) => {
+    if (user.role !== 'driver' && user.role !== 'sponsor') return;
+    try {
+      setImpersonatingUserId(user.user_id);
+      const role = await impersonateUser(user.user_id);
+      navigate(`/${role}/dashboard`);
+    } catch (err: unknown) {
+      setError((err as { message?: string })?.message ?? 'Unable to start view-as session.');
+    } finally {
+      setImpersonatingUserId(null);
+    }
+  };
 
   const filtered = users.filter((u) => {
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
@@ -86,12 +104,13 @@ export function AdminUsersPage() {
                 <th style={{ padding: '0.5rem 0.75rem' }}>Username</th>
                 <th style={{ padding: '0.5rem 0.75rem' }}>Role</th>
                 <th style={{ padding: '0.5rem 0.75rem' }}>Email</th>
+                <th style={{ padding: '0.5rem 0.75rem' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={{ padding: '0.75rem', color: '#888' }}>
+                  <td colSpan={5} style={{ padding: '0.75rem', color: '#888' }}>
                     No users match the current filter.
                   </td>
                 </tr>
@@ -123,6 +142,20 @@ export function AdminUsersPage() {
                       </span>
                     </td>
                     <td style={{ padding: '0.5rem 0.75rem', color: '#555' }}>{u.email}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>
+                      {(u.role === 'driver' || u.role === 'sponsor') ? (
+                        <button
+                          type="button"
+                          onClick={() => startViewAs(u)}
+                          disabled={impersonatingUserId === u.user_id}
+                          className="btn btn-secondary btn-sm admin-view-as-btn"
+                        >
+                          {impersonatingUserId === u.user_id ? 'Opening…' : `View as ${u.role}`}
+                        </button>
+                      ) : (
+                        <span style={{ color: '#888' }}>—</span>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}

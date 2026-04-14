@@ -20,10 +20,35 @@ interface CommunicationLogResponse {
     communication_logs: CommunicationLogRow[];
 }
 
+interface AccountAppealRow {
+  appeal_id: number;
+  created_at: string;
+  user_id: number;
+  username: string | null;
+  user_role: string;
+  account_status: string;
+  target_admin_user_id: number | null;
+  target_admin_username: string | null;
+  message: string;
+  appeal_status: string;
+  admin_response: string | null;
+  reviewed_by_user_id: number | null;
+  reviewed_by_username: string | null;
+  reviewed_at: string | null;
+}
+
+interface AccountAppealResponse {
+  appeals: AccountAppealRow[];
+}
+
 export function AdminCommunicationLogsPage() {
   const [logs, setLogs] = useState<CommunicationLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [appeals, setAppeals] = useState<AccountAppealRow[]>([]);
+  const [appealsLoading, setAppealsLoading] = useState(true);
+  const [appealsError, setAppealsError] = useState('');
+  const [resolveId, setResolveId] = useState<number | null>(null);
 
   const [driverIdInput, setDriverIdInput] = useState('');
   const [sponsorIdInput, setSponsorIdInput] = useState('');
@@ -52,8 +77,23 @@ export function AdminCommunicationLogsPage() {
     }
   }
 
+  const loadAppeals = async () => {
+    setAppealsLoading(true);
+    setAppealsError('');
+    try {
+      const data = await api.get<AccountAppealResponse>('/admin/account-appeals');
+      setAppeals(data.appeals);
+    } catch (err) {
+      const apiErr = err as ApiError;
+      setAppealsError(apiErr.message || 'Failed to load account appeals.');
+    } finally {
+      setAppealsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadLogs();
+    loadAppeals();
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -67,6 +107,21 @@ export function AdminCommunicationLogsPage() {
     setDateFrom('');
     setDateTo('');
     setKeyword('');
+  };
+
+  const resolveAppeal = async (appealId: number, status: 'resolved' | 'dismissed') => {
+    setResolveId(appealId);
+    try {
+      await api.post(`/admin/account-appeals/${appealId}/resolve`, {
+        status,
+      });
+      await loadAppeals();
+    } catch (err) {
+      const apiErr = err as ApiError;
+      setAppealsError(apiErr.message || 'Failed to update appeal.');
+    } finally {
+      setResolveId(null);
+    }
   };
 
   return (
@@ -174,6 +229,73 @@ export function AdminCommunicationLogsPage() {
                     </td>
                     <td style={{ maxWidth: '400px', wordBreak: 'break-word' }}>
                       {log.message}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2">
+        <h3>Blocked Account Appeals</h3>
+        <p className="helper-text mt-1">Messages submitted by blocked driver/sponsor users.</p>
+        {appealsLoading ? (
+          <Spinner label="Loading account appeals..." />
+        ) : appealsError ? (
+          <Alert variant="error">{appealsError}</Alert>
+        ) : appeals.length === 0 ? (
+          <p className="placeholder-msg">No account appeals submitted.</p>
+        ) : (
+          <div className="card" style={{ overflowX: 'auto' }}>
+            <table className="devices-table">
+              <thead>
+                <tr>
+                  <th>Submitted</th>
+                  <th>User</th>
+                  <th>Status</th>
+                  <th>Target Admin</th>
+                  <th>Message</th>
+                  <th>Review</th>
+                </tr>
+              </thead>
+              <tbody>
+                {appeals.map((appeal) => (
+                  <tr key={appeal.appeal_id}>
+                    <td style={{ whiteSpace: 'nowrap' }}>{new Date(appeal.created_at).toLocaleString()}</td>
+                    <td>
+                      {appeal.username || `User #${appeal.user_id}`} ({appeal.user_role})
+                    </td>
+                    <td>
+                      {appeal.account_status} / {appeal.appeal_status}
+                    </td>
+                    <td>{appeal.target_admin_username || (appeal.target_admin_user_id ? `Admin #${appeal.target_admin_user_id}` : '—')}</td>
+                    <td style={{ maxWidth: '420px', whiteSpace: 'pre-wrap' }}>{appeal.message}</td>
+                    <td>
+                      {appeal.appeal_status === 'open' ? (
+                        <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                          <Button
+                            type="button"
+                            onClick={() => resolveAppeal(appeal.appeal_id, 'resolved')}
+                            disabled={resolveId === appeal.appeal_id}
+                          >
+                            Resolve
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={() => resolveAppeal(appeal.appeal_id, 'dismissed')}
+                            disabled={resolveId === appeal.appeal_id}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      ) : (
+                        <span>
+                          {appeal.reviewed_by_username || 'Admin'} at{' '}
+                          {appeal.reviewed_at ? new Date(appeal.reviewed_at).toLocaleString() : '—'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

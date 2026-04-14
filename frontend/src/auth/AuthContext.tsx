@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from 'react';
 import type { AuthUser, LoginRequest, UserRole } from '../types';
 import { authService } from '../services/authService';
-import { setToken, setUnauthorizedHandler, api } from '../services/apiClient';
+import { api, setToken, setUnauthorizedHandler } from '../services/apiClient';
 
 export interface SponsorOption {
   sponsor_user_id: number;
@@ -21,6 +21,8 @@ interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   login: (data: LoginRequest) => Promise<UserRole>;
+  impersonateUser: (userId: number) => Promise<UserRole>;
+  stopImpersonation: () => Promise<UserRole>;
   logout: () => Promise<void>;
   activeSponsorId: number | null;
   setActiveSponsorId: (id: number) => void;
@@ -100,6 +102,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  const applySession = useCallback((session: {
+    user_id: number;
+    username: string;
+    role: UserRole;
+    email: string;
+    access_token: string;
+    is_impersonating?: boolean;
+    impersonated_by_user_id?: number | null;
+    original_role?: UserRole | null;
+  }, remember: boolean) => {
+    const authUser: AuthUser = {
+      user_id: session.user_id,
+      username: session.username,
+      role: session.role,
+      email: session.email,
+      is_impersonating: !!session.is_impersonating,
+      impersonated_by_user_id: session.impersonated_by_user_id ?? null,
+      original_role: session.original_role ?? null,
+    };
+    setToken(session.access_token);
+    setUser(authUser);
+    saveAuth(session.access_token, authUser, remember);
+  }, []);
+
   // Restore session on mount
   useEffect(() => {
     const stored = loadAuth();
@@ -112,17 +138,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (data: LoginRequest): Promise<UserRole> => {
     const res = await authService.login(data);
-    const authUser: AuthUser = {
-      user_id: res.user_id,
-      username: res.username,
-      role: res.role,
-      email: res.email,
-    };
-    setToken(res.access_token);
-    setUser(authUser);
-    saveAuth(res.access_token, authUser, !!data.remember_device);
+    applySession(res, !!data.remember_device);
     return res.role;
-  }, []);
+  }, [applySession]);
+
+  const impersonateUser = useCallback(async (userId: number): Promise<UserRole> => {
+    const remember = !!localStorage.getItem(TOKEN_KEY);
+    const res = await api.post<{
+      user_id: number;
+      username: string;
+      role: UserRole;
+      email: string;
+      access_token: string;
+      is_impersonating?: boolean;
+      impersonated_by_user_id?: number | null;
+      original_role?: UserRole | null;
+    }>(`/admin/impersonate/${userId}`);
+    applySession(res, remember);
+    return res.role;
+  }, [applySession]);
+
+  const stopImpersonation = useCallback(async (): Promise<UserRole> => {
+    const remember = !!localStorage.getItem(TOKEN_KEY);
+    const res = await api.post<{
+      user_id: number;
+      username: string;
+      role: UserRole;
+      email: string;
+      access_token: string;
+      is_impersonating?: boolean;
+      impersonated_by_user_id?: number | null;
+      original_role?: UserRole | null;
+    }>('/admin/stop-impersonation');
+    applySession(res, remember);
+    return res.role;
+  }, [applySession]);
 
   const logout = useCallback(async () => {
     try {
@@ -149,9 +199,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, activeSponsorId, setActiveSponsorId, sponsors }),
-    [user, loading, login, logout, activeSponsorId, setActiveSponsorId, sponsors],
-  );
+  () => ({
+    user,
+    loading,
+    login,
+    impersonateUser,
+    stopImpersonation,
+    logout,
+    activeSponsorId,
+    setActiveSponsorId,
+    sponsors,
+  }),
+  [
+    user,
+    loading,
+    login,
+    impersonateUser,
+    stopImpersonation,
+    logout,
+    activeSponsorId,
+    setActiveSponsorId,
+    sponsors,
+  ],
+);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

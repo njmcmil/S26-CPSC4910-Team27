@@ -557,6 +557,74 @@ a:focus-visible {
   transform: translateY(-1px);
 }
 
+/* Admin + impersonation polish */
+.admin-view-as-btn {
+  margin-right: 0.4rem;
+}
+
+.admin-create-sponsor-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+  align-items: end;
+  padding: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #f9fafb;
+}
+
+.admin-create-sponsor-form label input {
+  width: 100%;
+}
+
+.impersonation-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #312e81;
+}
+
+.impersonation-banner-btn {
+  white-space: nowrap;
+}
+
+.admin-chart-row {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.55rem;
+}
+
+.admin-chart-label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.admin-chart-track {
+  width: 100%;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.admin-chart-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.admin-chart-value {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .dashboard-action-card strong {
   display: block;
   margin-bottom: 0.2rem;

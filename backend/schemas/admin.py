@@ -128,3 +128,33 @@ class OperationsSummaryResponse(BaseModel):
     # Logins
     total_logins: int
     failed_logins: int
+
+
+class AccountAppealCreateRequest(BaseModel):
+    message: str
+
+
+class AccountAppealResolveRequest(BaseModel):
+    admin_response: str | None = None
+    status: str = "resolved"
+
+
+class AccountAppealRow(BaseModel):
+    appeal_id: int
+    created_at: str
+    user_id: int
+    username: str | None
+    user_role: str
+    account_status: str
+    target_admin_user_id: int | None
+    target_admin_username: str | None
+    message: str
+    appeal_status: str
+    admin_response: str | None
+    reviewed_by_user_id: int | None
+    reviewed_by_username: str | None
+    reviewed_at: str | None
+
+
+class AccountAppealListResponse(BaseModel):
+    appeals: list[AccountAppealRow]
