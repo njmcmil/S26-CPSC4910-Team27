@@ -111,7 +111,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
   };
 
   useEffect(() => {
-    if (activeSponsorId && String(activeSponsorId) !== selectedSponsorId) {
+    if (activeSponsorId && String(activeSponsorId) !== selectedSponsorId && selectedSponsorId !== '') {
       setSelectedSponsorId(String(activeSponsorId));
     }
   }, [activeSponsorId]);
@@ -273,9 +273,12 @@ export function DriverCatalog({ previewMode = false }: Props) {
             <select
               value={selectedSponsorId}
               onChange={(e) => {
-                setSelectedSponsorId(e.target.value);
-                setActiveSponsorId(Number(e.target.value)); 
-              }} 
+                const val = e.target.value;
+                setSelectedSponsorId(val);
+                if (Number(val) !== activeSponsorId) {
+                  setActiveSponsorId(Number(val));
+                }
+              }}
               aria-label="Select sponsor catalog"
               className="catalog-select"
             >
