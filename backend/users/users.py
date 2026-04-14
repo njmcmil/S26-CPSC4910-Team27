@@ -60,14 +60,10 @@ def create_user(username: str, password: str, role: str, email: str) -> dict:
         cursor.close()
         conn.close()
 
-<<<<<<< HEAD:users.py
 
-def validate_login(username: str, password: str) -> Optional[Dict]:
-=======
 # Credential Verifier
 # Used specfically when a user submits the login form
-def validate_login(username: str, password: str) -> dict | None:
->>>>>>> dev:backend/users/users.py
+def validate_login(username: str, password: str) -> Optional[Dict]:
     """Validate user login credentials."""
     # lookup user by name
     user = get_user_by_username(username)
