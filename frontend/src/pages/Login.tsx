@@ -100,7 +100,9 @@ export function LoginPage() {
     <section className="card login-card" aria-labelledby="login-heading">
       <h2 id="login-heading">Sign In</h2>
 
-      {error && <Alert variant="error">{error}</Alert>}
+      <div aria-live="assertive" aria-atomic="true">
+        {error && <Alert variant="error">{error}</Alert>}
+      </div>
 
       <form onSubmit={handleSubmit} noValidate>
         <FormField

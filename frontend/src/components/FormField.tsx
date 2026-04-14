@@ -31,6 +31,7 @@ export function FormField({
         id={id}
         aria-invalid={error ? 'true' : undefined}
         aria-describedby={describedBy}
+        aria-required={inputProps.required ? 'true' : undefined}
         {...inputProps}
       />
       {error && (
