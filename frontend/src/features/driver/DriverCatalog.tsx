@@ -29,6 +29,7 @@ const DEBOUNCE_MS = 250;
 const POLL_INTERVAL_MS = 30_000;
 
 export function DriverCatalog({ previewMode = false }: Props) {
+  const { activeSponsorId, setActiveSponsorId, sponsors: authSponsors } = useAuth();
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [points, setPoints] = useState<number>(0);
   const [sponsors, setSponsors] = useState<DriverApplicationSponsor[]>([]);
@@ -41,7 +42,6 @@ export function DriverCatalog({ previewMode = false }: Props) {
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const { addItem, items: cartItems, totalCount } = useCart();
-  const { activeSponsorId, setActiveSponsorId, sponsors: authSponsors } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
