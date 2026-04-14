@@ -4,6 +4,7 @@ import { api } from '../../services/apiClient';
 import { useCart } from '../../auth/CartContext';
 import type { CartItem } from '../../auth/CartContext';
 import { driverService, type DriverApplicationSponsor } from '../../services/driverService';
+import { useAuth } from '../../auth/AuthContext';
 
 interface CatalogItem {
   item_id: string;
@@ -28,10 +29,10 @@ const DEBOUNCE_MS = 250;
 const POLL_INTERVAL_MS = 30_000;
 
 export function DriverCatalog({ previewMode = false }: Props) {
+  const { activeSponsorId, setActiveSponsorId } = useAuth();
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [points, setPoints] = useState<number>(0);
   const [sponsors, setSponsors] = useState<DriverApplicationSponsor[]>([]);
-  const [selectedSponsorId, setSelectedSponsorId] = useState('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -61,13 +62,13 @@ export function DriverCatalog({ previewMode = false }: Props) {
         : items,
     [items, searchQuery]
   );
-  const availableSponsors = sponsors.filter((sponsor) => sponsor.is_current_sponsor);
+  const availableSponsors = sponsors.filter((s) => s.is_current_sponsor);
   const selectedSponsor = availableSponsors.find(
-    (sponsor) => String(sponsor.sponsor_user_id) === selectedSponsorId,
+    (sponsor) => sponsor.sponsor_user_id === activeSponsorId,
   );
 
   const loadCatalog = async (silent = false) => {
-    if (!selectedSponsorId) {
+    if (!activeSponsorId) {
       setItems([]);
       setPoints(0);
       if (!silent) setLoading(false);
@@ -79,7 +80,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
       // US-38: returns current_points for balance check
       // US-39: returns stock_quantity per item
       const res = await api.get<{ current_points: number; items: CatalogItem[] }>(
-        `/api/driver/catalog?sponsor_user_id=${selectedSponsorId}`
+        `/api/driver/catalog?sponsor_user_id=${activeSponsorId}`
       );
       setPoints(res.current_points);
       setItems(res.items);
@@ -92,13 +93,10 @@ export function DriverCatalog({ previewMode = false }: Props) {
   };
 
   const loadSaved = async () => {
-    if (!selectedSponsorId) {
-      setSavedIds(new Set());
-      return;
-    }
+    if (!activeSponsorId) { setSavedIds(new Set()); return; }
     try {
       const res = await api.get<{ saved_item_ids: string[] }>(
-        `/api/driver/saved-products?sponsor_user_id=${selectedSponsorId}`,
+        `/api/driver/saved-products?sponsor_user_id=${activeSponsorId}`,
       );
       setSavedIds(new Set(res.saved_item_ids));
     } catch {
@@ -111,28 +109,22 @@ export function DriverCatalog({ previewMode = false }: Props) {
 
     driverService.getApplicationSponsors()
       .then((res) => {
-        const currentSponsors = res.filter((sponsor) => sponsor.is_current_sponsor);
+        const currentSponsors = res.filter((s) => s.is_current_sponsor);
         setSponsors(currentSponsors);
 
-        const requestedSponsorId = searchParams.get('sponsor_user_id');
-        const initialSponsorId =
-          requestedSponsorId && currentSponsors.some((s) => String(s.sponsor_user_id) === requestedSponsorId)
-            ? requestedSponsorId
-            : currentSponsors[0]
-              ? String(currentSponsors[0].sponsor_user_id)
-              : '';
-
-        setSelectedSponsorId(initialSponsorId);
+        if(!activeSponsorId && currentSponsors.length >0){
+          setActiveSponsorId(currentSponsors[0].sponsor_user_id);
+        }
       })
       .catch(() => {});
-  }, [previewMode, searchParams]);
+  }, [previewMode]);
 
   useEffect(() => {
-    if (previewMode || !selectedSponsorId) return;
+    if (previewMode || !activeSponsorId) return;
 
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      next.set('sponsor_user_id', selectedSponsorId);
+      next.set('sponsor_user_id', String(activeSponsorId));
       return next;
     }, { replace: true });
 
@@ -143,10 +135,10 @@ export function DriverCatalog({ previewMode = false }: Props) {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [previewMode, selectedSponsorId]);
+  }, [previewMode, activeSponsorId]);
 
   const toggleSave = async (item_id: string) => {
-    if (!selectedSponsorId) return;
+    if (!activeSponsorId) return;
     const alreadySaved = savedIds.has(item_id);
     // Optimistic update
     setSavedIds(prev => {
@@ -156,11 +148,11 @@ export function DriverCatalog({ previewMode = false }: Props) {
     });
     try {
       if (alreadySaved) {
-        await api.delete(`/api/driver/saved-products/${item_id}?sponsor_user_id=${selectedSponsorId}`);
+        await api.delete(`/api/driver/saved-products/${item_id}?sponsor_user_id=${activeSponsorId}`);
       } else {
         await api.post('/api/driver/saved-products', {
           item_id,
-          sponsor_user_id: Number(selectedSponsorId),
+          sponsor_user_id: activeSponsorId,
         });
       }
     } catch {
@@ -174,12 +166,11 @@ export function DriverCatalog({ previewMode = false }: Props) {
   };
 
   const handleAddToCart = (item: CatalogItem) => {
-    if (!selectedSponsorId || !selectedSponsor) return;
-    if (previewMode) return;
+    if (!activeSponsorId || !selectedSponsor || previewMode) return;
     setFeedback(null);
 
     const alreadyInCart = cartItems.some(
-      i => i.item_id === item.item_id && i.sponsor_user_id === Number(selectedSponsorId),
+      i => i.item_id === item.item_id && i.sponsor_user_id === activeSponsorId,
     );
     if (alreadyInCart) {
       setFeedback({ type: 'error', msg: `'${item.title}' is already in your cart.` });
@@ -187,7 +178,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
     }
 
     const otherSponsorItems = cartItems.filter(
-      (cartItem) => cartItem.sponsor_user_id !== Number(selectedSponsorId),
+      (cartItem) => cartItem.sponsor_user_id !== activeSponsorId,
     );
     if (otherSponsorItems.length > 0) {
       setFeedback({
@@ -199,7 +190,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
 
     const cartItem: Omit<CartItem, 'quantity'> = {
       item_id: item.item_id,
-      sponsor_user_id: Number(selectedSponsorId),
+      sponsor_user_id: activeSponsorId,
       sponsor_name: selectedSponsor.sponsor_name,
       title: item.title,
       points_cost: item.points_cost,
@@ -222,7 +213,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
 
   const isInCart = (item_id: string) =>
     cartItems.some(
-      i => i.item_id === item_id && i.sponsor_user_id === Number(selectedSponsorId),
+      i => i.item_id === item_id && i.sponsor_user_id === activeSponsorId,
     );
 
   return (
@@ -261,8 +252,8 @@ export function DriverCatalog({ previewMode = false }: Props) {
         {!previewMode && (
           <div className="catalog-toolbar card">
             <select
-              value={selectedSponsorId}
-              onChange={(e) => setSelectedSponsorId(e.target.value)}
+              value={activeSponsorId ?? ''}
+              onChange={(e) => setActiveSponsorId(Number(e.target.value))}
               aria-label="Select sponsor catalog"
               className="catalog-select"
             >
@@ -314,7 +305,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
                 const justAdded = addedIds.has(item.item_id);
                 const isSaved = savedIds.has(item.item_id);
                 const stockClass = !inStock ? 'out' : item.stock_quantity <= 3 ? 'low' : 'ok';
-                const detailPath = `/driver/catalog/${item.item_id}?sponsor_user_id=${selectedSponsorId}`;
+                const detailPath = `/driver/catalog/${item.item_id}?sponsor_user_id=${activeSponsorId}`;
                 const purchaseChecks = [
                   { label: 'Enough points', met: canAfford },
                   { label: 'Item in stock', met: inStock },
@@ -378,12 +369,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
                     )}
 
                     {!previewMode && (
-                      <Link
-                        to={detailPath}
-                        className="catalog-link"
-                      >
-                        View Details
-                      </Link>
+                      <Link to={detailPath} className="catalog-link">View Details</Link>
                     )}
 
                     {!previewMode && (

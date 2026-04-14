@@ -27,7 +27,7 @@ interface DashboardActivity {
 }
 
 export function DriverDashboardPage() {
-  const { user } = useAuth();
+  const { user, activeSponsorId, sponsors: authSponsors } = useAuth();
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [sponsors, setSponsors] = useState<DriverApplicationSponsor[]>([]);
   const [recentActivity, setRecentActivity] = useState<DashboardActivity[]>([]);
@@ -58,7 +58,7 @@ export function DriverDashboardPage() {
       try {
         const [profileRes, pointsRes, ordersRes, sponsorsRes] = await Promise.allSettled([
           driverService.getProfile(),
-          driverService.getPoints(),
+          driverService.getPoints(activeSponsorId ?? undefined),
           api.get<{ orders: DriverOrder[] }>('/api/driver/orders'),
           driverService.getApplicationSponsors(),
         ]);
@@ -98,16 +98,20 @@ export function DriverDashboardPage() {
     };
 
     loadDashboard();
-  }, []);
+  }, [activeSponsorId]);
 
   const pendingOrders = useMemo(
     () => orders.filter((order) => order.status === 'pending').length,
     [orders],
   );
 
+  const activeSponsor = authSponsors.find(s => s.sponsor_user_id === activeSponsorId);
   const currentSponsor = sponsors.find((sponsor) => sponsor.is_current_sponsor) ?? null;
-  const sponsorHeadline = currentSponsor ? currentSponsor.sponsor_name : 'Not assigned';
-  const sponsorLabel = currentSponsor
+  const sponsorHeadline = activeSponsor?.sponsor_name ?? currentSponsor?.sponsor_name ?? 'Not assigned';
+  const sponsorPointsBalance = activeSponsor?.total_points ?? profile?.points_balance ?? 0;
+  const sponsorLabel = activeSponsor
+    ? `${activeSponsor.total_points.toLocaleString() ?? '0'} points available`
+    : currentSponsor
     ? 'You currently have an active sponsor connection.'
     : 'No sponsor is assigned yet. Apply to a sponsor to join a rewards program.';
 
@@ -171,7 +175,7 @@ export function DriverDashboardPage() {
       <div className="metrics-grid mt-2">
         <div className="metric-card">
           <span className="metric-card-label">Points Balance</span>
-          <span className="metric-card-value">{profile?.points_balance?.toLocaleString() ?? '0'}</span>
+          <span className="metric-card-value">{sponsorPointsBalance.toLocaleString()}</span>
           <span className="metric-card-sub">available to redeem</span>
         </div>
         <div className="metric-card">

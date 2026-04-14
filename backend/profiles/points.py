@@ -926,7 +926,8 @@ async def update_accrual_status(
 
 @router.get("/driver/points/history")
 async def get_driver_point_history(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user), 
+    sponsor_user_id: Optional[int] = None
 ):
     """Get driver's complete point history"""
     
@@ -938,25 +939,34 @@ async def get_driver_point_history(
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Get current total
-        cursor.execute("""
-            SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s
-        """, (driver_id,))
+        if sponsor_user_id:
+            cursor.execute("""
+                SELECT total_points FROM SponsorDrivers 
+                WHERE driver_user_id = %s AND sponsor_user_id = %s
+            """, (driver_id, sponsor_user_id))
+        else:
+            cursor.execute("""
+                SELECT SUM(total_points) AS total_points FROM SponsorDrivers 
+                WHERE driver_user_id = %s
+            """, (driver_id,))
         current = cursor.fetchone()
 
-        # Get all point changes (includes expires_at, #13990)
-        cursor.execute("""
-            SELECT
-                date,
-                points_changed,
-                reason,
-                changed_by_user_id,
-                expires_at
-            FROM audit_log
-            WHERE category = 'point_change'
-            AND driver_id = %s
-            ORDER BY date DESC
-        """, (driver_id,))
+        if sponsor_user_id:
+            cursor.execute("""
+                SELECT date, points_changed, reason, changed_by_user_id, expires_at
+                FROM audit_log
+                WHERE category = 'point_change'
+                AND driver_id = %s AND sponsor_id = %s
+                ORDER BY date DESC
+            """, (driver_id, sponsor_user_id))
+        else:
+            cursor.execute("""
+                SELECT date, points_changed, reason, changed_by_user_id, expires_at
+                FROM audit_log
+                WHERE category = 'point_change'
+                AND driver_id = %s
+                ORDER BY date DESC
+            """, (driver_id,))
         
         history = cursor.fetchall()
         
