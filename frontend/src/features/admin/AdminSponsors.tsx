@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../services/apiClient';
 import { useAuth } from '../../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { Alert } from '../../components/Alert';
 
 interface SponsorRow {
   user_id: number;
