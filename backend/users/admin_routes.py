@@ -161,8 +161,8 @@ def list_all_users(current_user: dict = Depends(require_role("admin"))):
                 u.role,
                 u.email,
                 CASE
-                    WHEN u.role = 'sponsor' THEN COALESCE(sp.account_status, 'active')
-                    WHEN u.role = 'driver' THEN COALESCE(dp.account_status, 'active')
+                    WHEN u.role = 'sponsor' THEN COALESCE(NULLIF(sp.account_status, ''), 'active')
+                    WHEN u.role = 'driver' THEN COALESCE(NULLIF(dp.account_status, ''), 'active')
                     ELSE 'active'
                 END AS account_status
             FROM Users u
@@ -1216,7 +1216,7 @@ def list_sponsors_admin(current_user: dict = Depends(require_role("admin"))):
                 u.username,
                 u.email,
                 sp.company_name,
-                COALESCE(sp.account_status, 'active') AS account_status
+                COALESCE(NULLIF(sp.account_status, ''), 'active') AS account_status
             FROM Users u
             LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id
             WHERE u.role = 'sponsor'
@@ -1238,7 +1238,7 @@ def update_sponsor_status(
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT u.user_id, u.username, u.email, COALESCE(sp.account_status, 'active') AS account_status, sp.company_name "
+            "SELECT u.user_id, u.username, u.email, COALESCE(NULLIF(sp.account_status, ''), 'active') AS account_status, sp.company_name "
             "FROM Users u LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id "
             "WHERE u.user_id = %s AND u.role = 'sponsor'",
             (user_id,),
@@ -1309,7 +1309,7 @@ def list_drivers_admin(current_user: dict = Depends(require_role("admin"))):
                 u.email,
                 p.first_name,
                 p.last_name,
-                COALESCE(dp.account_status, 'active') AS account_status
+                COALESCE(NULLIF(dp.account_status, ''), 'active') AS account_status
             FROM Users u
             LEFT JOIN Profiles p ON p.user_id = u.user_id
             LEFT JOIN DriverProfiles dp ON dp.user_id = u.user_id
@@ -1332,7 +1332,7 @@ def update_driver_status(
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT u.user_id, u.username, COALESCE(dp.account_status, 'active') AS account_status "
+            "SELECT u.user_id, u.username, COALESCE(NULLIF(dp.account_status, ''), 'active') AS account_status "
             "FROM Users u LEFT JOIN DriverProfiles dp ON dp.user_id = u.user_id "
             "WHERE u.user_id = %s AND u.role = 'driver'",
             (user_id,),
