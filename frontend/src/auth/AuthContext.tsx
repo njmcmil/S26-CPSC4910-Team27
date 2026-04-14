@@ -9,13 +9,22 @@ import {
 import type { ReactNode } from 'react';
 import type { AuthUser, LoginRequest, UserRole } from '../types';
 import { authService } from '../services/authService';
-import { setToken, setUnauthorizedHandler } from '../services/apiClient';
+import { setToken, setUnauthorizedHandler, api } from '../services/apiClient';
+
+export interface SponsorOption {
+  sponsor_user_id: number;
+  sponsor_name: string;
+  total_points: number;
+}
 
 interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   login: (data: LoginRequest) => Promise<UserRole>;
   logout: () => Promise<void>;
+  activeSponsorId: number | null;
+  setActiveSponsorId: (id: number) => void;
+  sponsors: SponsorOption[];
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -58,6 +67,38 @@ function clearAuth() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeSponsorId, setActiveSponsorIdState] = useState<number | null>(() => {
+    const stored = localStorage.getItem('activeSponsorId');
+    return stored ? parseInt(stored) : null;
+  });
+  const [sponsors, setSponsors] = useState<SponsorOption[]>([]);
+
+  const setActiveSponsorId = useCallback((id: number) => {
+    setActiveSponsorIdState(id);
+    localStorage.setItem('activeSponsorId', String(id));
+  }, []);
+
+  // Load sponsors when driver logs in
+  useEffect(() => {
+    if (user?.role === 'driver') {
+      api.get<{ sponsors: SponsorOption[] }>('/api/driver/sponsors')
+        .then((data: { sponsors: SponsorOption[] }) => {
+          setSponsors(data.sponsors);
+          if (data.sponsors.length > 0) {
+            const stored = localStorage.getItem('activeSponsorId');
+            const storedId = stored ? parseInt(stored) : null;
+            const validId = storedId && data.sponsors.some(s => s.sponsor_user_id === storedId)
+              ? storedId
+              : data.sponsors[0].sponsor_user_id;
+            setActiveSponsorId(validId);
+          }
+        })
+        .catch(() => {});
+    } else {
+      setSponsors([]);
+      setActiveSponsorIdState(null);
+    }
+  }, [user]);
 
   // Restore session on mount
   useEffect(() => {
@@ -91,6 +132,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(null);
     setUser(null);
+    setSponsors([]);
+    setActiveSponsorIdState(null);
+    localStorage.removeItem('activeSponsorId');
     clearAuth();
   }, []);
 
@@ -105,8 +149,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout }),
-    [user, loading, login, logout],
+    () => ({ user, loading, login, logout, activeSponsorId, setActiveSponsorId, sponsors }),
+    [user, loading, login, logout, activeSponsorId, setActiveSponsorId, sponsors],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
