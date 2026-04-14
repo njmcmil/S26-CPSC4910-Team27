@@ -385,7 +385,7 @@ def get_about_public():
         cursor.close()
         conn.close()
 
- @app.get("/api/driver/sponsors")
+@app.get("/api/driver/sponsors")
 def get_driver_sponsors(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "driver":
         raise HTTPException(status_code=403, detail="Driver access required")
