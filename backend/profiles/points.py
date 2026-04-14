@@ -347,8 +347,8 @@ async def add_driver_points(
     try:
         # Verify driver belongs to this sponsor
         cursor.execute(
-            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (request.driver_id,)
+            "SELECT sponsor_user_id, total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (request.driver_id, current_user['user_id'])
         )
         driver = cursor.fetchone()
 
@@ -371,8 +371,8 @@ async def add_driver_points(
 
         # Update driver points
         cursor.execute(
-            "UPDATE SponsorDrivers SET total_points = total_points + %s WHERE driver_user_id = %s",
-            (request.points, request.driver_id)
+            "UPDATE SponsorDrivers SET total_points = total_points + %s WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (request.points, request.driver_id, user_id)
         )
 
         # Log the point change automatically (with expires_at, #13990)
@@ -386,8 +386,8 @@ async def add_driver_points(
         
         # Get updated point total
         cursor.execute(
-            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s",
-            (request.driver_id,)
+            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (request.driver_id, user_id)
         )
         new_total = cursor.fetchone()['total_points']
 
@@ -443,7 +443,10 @@ async def bulk_update_driver_points(request: BulkPointUpdateRequest, current_use
             # Prevent negative points
             new_total = max(0, driver['total_points'] + request.points)
 
-            cursor.execute("UPDATE SponsorDrivers SET total_points = %s WHERE driver_user_id = %s", (new_total, driver_id))
+            cursor.execute(
+                "UPDATE SponsorDrivers SET total_points = %s WHERE driver_user_id = %s AND sponsor_user_id = %s",
+                (new_total, driver_id, user_id),
+            )
             # Log audit
             cursor.execute("""
                 INSERT INTO audit_log (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
@@ -637,8 +640,8 @@ async def deduct_driver_points(
         cursor.execute("""
             UPDATE SponsorDrivers
             SET total_points = total_points - %s
-            WHERE driver_user_id = %s
-        """, (request.points, request.driver_id))
+            WHERE driver_user_id = %s AND sponsor_user_id = %s
+        """, (request.points, request.driver_id, user_id))
 
         # Log the audit trail
         cursor.execute("""
@@ -649,7 +652,10 @@ async def deduct_driver_points(
 
         conn.commit()
 
-        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s", (request.driver_id,))
+        cursor.execute(
+            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (request.driver_id, user_id),
+        )
         new_total = cursor.fetchone()['total_points']
 
         # Send email if driver has notifications enabled
@@ -944,6 +950,8 @@ async def get_driver_point_history(
             cursor.execute("""
                 SELECT total_points FROM SponsorDrivers 
                 WHERE driver_user_id = %s AND sponsor_user_id = %s
+                ORDER BY sponsor_driver_id DESC
+                LIMIT 1
             """, (driver_id, sponsor_user_id))
         else:
             cursor.execute("""

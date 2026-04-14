@@ -32,6 +32,7 @@ export function DriverDashboardPage() {
   const [sponsors, setSponsors] = useState<DriverApplicationSponsor[]>([]);
   const [recentActivity, setRecentActivity] = useState<DashboardActivity[]>([]);
   const [orders, setOrders] = useState<DriverOrder[]>([]);
+  const [currentPoints, setCurrentPoints] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [keyboardMode, setKeyboardMode] = useState(false);
@@ -81,6 +82,7 @@ export function DriverDashboardPage() {
 
         setProfile(profileData);
         setSponsors(sponsorData);
+        setCurrentPoints(pointsData.current_points ?? 0);
         setRecentActivity(
           pointsData.history.slice(0, 5).map((entry) => ({
             date: entry.date,
@@ -108,9 +110,9 @@ export function DriverDashboardPage() {
   const activeSponsor = authSponsors.find(s => s.sponsor_user_id === activeSponsorId);
   const currentSponsor = sponsors.find((sponsor) => sponsor.is_current_sponsor) ?? null;
   const sponsorHeadline = activeSponsor?.sponsor_name ?? currentSponsor?.sponsor_name ?? 'Not assigned';
-  const sponsorPointsBalance = activeSponsor?.total_points ?? profile?.points_balance ?? 0;
-  const sponsorLabel = activeSponsor
-    ? `${activeSponsor.total_points.toLocaleString() ?? '0'} points available`
+  const sponsorPointsBalance = activeSponsorId ? currentPoints : profile?.points_balance ?? 0;
+  const sponsorLabel = activeSponsorId
+    ? `${currentPoints.toLocaleString()} points available for this sponsor`
     : currentSponsor
     ? 'You currently have an active sponsor connection.'
     : 'No sponsor is assigned yet. Apply to a sponsor to join a rewards program.';

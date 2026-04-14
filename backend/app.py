@@ -207,6 +207,57 @@ def ensure_account_status_schema() -> None:
                 """
             )
 
+        # Repair older records created before full status management existed.
+        cursor.execute(
+            """
+            UPDATE SponsorProfiles
+            SET account_status = 'active'
+            WHERE account_status IS NULL OR account_status = ''
+            """
+        )
+        cursor.execute(
+            """
+            UPDATE DriverProfiles
+            SET account_status = 'active'
+            WHERE account_status IS NULL OR account_status = ''
+            """
+        )
+
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def repair_sponsor_driver_point_totals() -> None:
+    """
+    Rebuild SponsorDrivers.total_points from sponsor-scoped audit history.
+    This repairs historical cross-sponsor contamination where one sponsor update
+    incorrectly touched other sponsor rows for the same driver.
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True, buffered=True)
+    try:
+        cursor.execute(
+            """
+            UPDATE SponsorDrivers sd
+            LEFT JOIN (
+                SELECT
+                    sponsor_id AS sponsor_user_id,
+                    driver_id AS driver_user_id,
+                    COALESCE(SUM(points_changed), 0) AS calculated_total
+                FROM audit_log
+                WHERE category = 'point_change'
+                  AND sponsor_id IS NOT NULL
+                  AND driver_id IS NOT NULL
+                GROUP BY sponsor_id, driver_id
+            ) totals
+              ON totals.sponsor_user_id = sd.sponsor_user_id
+             AND totals.driver_user_id = sd.driver_user_id
+            SET sd.total_points = COALESCE(totals.calculated_total, 0)
+            WHERE sd.total_points <> COALESCE(totals.calculated_total, 0)
+            """
+        )
         conn.commit()
     finally:
         cursor.close()
@@ -402,6 +453,7 @@ async def audit_user_actions(request: Request, call_next):
 @app.on_event("startup")
 def start_scheduler():
     ensure_account_status_schema()
+    repair_sponsor_driver_point_totals()
     if not getattr(scheduler, "running", False):
         scheduler.start()
 
@@ -527,12 +579,19 @@ def get_driver_sponsors(current_user: dict = Depends(get_current_user)):
             SELECT sd.sponsor_user_id, sd.total_points,
                    COALESCE(sp.company_name, u.username) AS sponsor_name
             FROM SponsorDrivers sd
+            JOIN (
+                SELECT sponsor_user_id, MAX(sponsor_driver_id) AS latest_sponsor_driver_id
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s
+                GROUP BY sponsor_user_id
+            ) latest
+              ON latest.latest_sponsor_driver_id = sd.sponsor_driver_id
             JOIN Users u ON u.user_id = sd.sponsor_user_id
             LEFT JOIN SponsorProfiles sp ON sp.user_id = sd.sponsor_user_id
             WHERE sd.driver_user_id = %s
             ORDER BY sponsor_name ASC
             """,
-            (current_user["user_id"],)
+            (current_user["user_id"], current_user["user_id"])
         )
         sponsors = cursor.fetchall()
         for s in sponsors:
@@ -1291,9 +1350,10 @@ def get_driver_catalog(sponsor_user_id: int | None = None, current_user: dict = 
         if sponsor_user_id is not None:
             cursor.execute(
                 """
-                SELECT sponsor_user_id, total_points
+                SELECT sponsor_driver_id, sponsor_user_id, total_points
                 FROM SponsorDrivers
                 WHERE driver_user_id = %s AND sponsor_user_id = %s
+                ORDER BY sponsor_driver_id DESC
                 LIMIT 1
                 """,
                 (driver_id, sponsor_user_id)
@@ -1348,6 +1408,7 @@ def get_driver_catalog_item(item_id: str, sponsor_user_id: int | None = None, cu
                 SELECT sponsor_user_id
                 FROM SponsorDrivers
                 WHERE driver_user_id = %s AND sponsor_user_id = %s
+                ORDER BY sponsor_driver_id DESC
                 LIMIT 1
                 """,
                 (driver_id, sponsor_user_id)
@@ -1426,9 +1487,10 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
     try:
         cursor.execute(
             """
-            SELECT sponsor_user_id, total_points
+            SELECT sponsor_driver_id, sponsor_user_id, total_points
             FROM SponsorDrivers
             WHERE driver_user_id = %s AND sponsor_user_id = %s
+            ORDER BY sponsor_driver_id DESC
             LIMIT 1
             """,
             (driver_id, sponsor_user_id)
@@ -1438,6 +1500,7 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
             raise HTTPException(status_code=404, detail="No sponsor relationship found")
         sponsor_id = driver_row["sponsor_user_id"]
         current_points = driver_row["total_points"] or 0
+        sponsor_driver_id = driver_row["sponsor_driver_id"]
         cursor.execute(
             "SELECT item_id, title, points_cost, stock_quantity FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s",
             (item_id, sponsor_id)
@@ -1450,8 +1513,8 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
         if item["stock_quantity"] <= 0:
             raise HTTPException(status_code=400, detail="This item is out of stock.")
         cursor.execute(
-            "UPDATE SponsorDrivers SET total_points = total_points - %s WHERE driver_user_id = %s AND sponsor_user_id = %s",
-            (item["points_cost"], driver_id, sponsor_id)
+            "UPDATE SponsorDrivers SET total_points = total_points - %s WHERE sponsor_driver_id = %s",
+            (item["points_cost"], sponsor_driver_id)
         )
         cursor.execute(
             "UPDATE SponsorCatalog SET stock_quantity = stock_quantity - 1 WHERE item_id = %s AND sponsor_user_id = %s",
@@ -1477,9 +1540,12 @@ def purchase_catalog_item(body: dict, http_request: Request, current_user: dict 
             )
         )
         conn.commit()
-        cursor.execute("SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s", (driver_id, sponsor_id))
-        new_balance_row = cursor.fetchone(); 
-        new_balance = cursor.fetchone()["total_points"] if new_balance_row else 0
+        cursor.execute(
+            "SELECT total_points FROM SponsorDrivers WHERE sponsor_driver_id = %s",
+            (sponsor_driver_id,)
+        )
+        new_balance_row = cursor.fetchone()
+        new_balance = new_balance_row["total_points"] if new_balance_row else 0
         cursor.execute("SELECT stock_quantity FROM SponsorCatalog WHERE item_id = %s AND sponsor_user_id = %s", (item_id, sponsor_id))
         new_stock = cursor.fetchone()["stock_quantity"]
 
@@ -1534,9 +1600,11 @@ def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_cur
     try:
         cursor.execute(
             """
-            SELECT total_points
+            SELECT sponsor_driver_id, total_points
             FROM SponsorDrivers
             WHERE driver_user_id = %s AND sponsor_user_id = %s
+            ORDER BY sponsor_driver_id DESC
+            LIMIT 1
             """,
             (driver_id, sponsor_id)
         )
@@ -1545,6 +1613,7 @@ def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_cur
             raise HTTPException(status_code=404, detail="Driver not found in your organization")
 
         current_points = driver_row["total_points"] or 0
+        sponsor_driver_id = driver_row["sponsor_driver_id"]
 
         cursor.execute(
             """
@@ -1570,8 +1639,8 @@ def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_cur
             raise HTTPException(status_code=400, detail="This item is out of stock.")
 
         cursor.execute(
-            "UPDATE SponsorDrivers SET total_points = total_points - %s WHERE driver_user_id = %s AND sponsor_user_id = %s",
-            (item["points_cost"], driver_id, sponsor_id)
+            "UPDATE SponsorDrivers SET total_points = total_points - %s WHERE sponsor_driver_id = %s",
+            (item["points_cost"], sponsor_driver_id)
         )
         cursor.execute(
             "UPDATE SponsorCatalog SET stock_quantity = stock_quantity - 1 WHERE item_id = %s AND sponsor_user_id = %s",
@@ -1622,8 +1691,8 @@ def sponsor_purchase_for_driver(body: dict, current_user: dict = Depends(get_cur
         conn.commit()
 
         cursor.execute(
-            "SELECT total_points FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
-            (driver_id, sponsor_id)
+            "SELECT total_points FROM SponsorDrivers WHERE sponsor_driver_id = %s",
+            (sponsor_driver_id,)
         )
         new_balance = cursor.fetchone()["total_points"]
         cursor.execute(
