@@ -60,7 +60,7 @@ async function request<T>(
 
     const error: ApiError = { status: res.status, message, detail, fieldErrors };
 
-    if (res.status === 401 && onUnauthorized) {
+    if (res.status === 401 && onUnauthorized && path !== '/login') {
       onUnauthorized();
     }
 
