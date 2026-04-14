@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { api } from '../../services/apiClient'
+import { api } from '../../services/apiClient';
+import { Alert } from '../../components/Alert';
 
 interface DriverSponsorRow {
   id: number;
@@ -37,9 +38,17 @@ export function AdminDriverSponsorsPage() {
   return (
     <section className="card" aria-labelledby="driver-sponsors-heading">
       <h2 id="driver-sponsors-heading">Driver Sponsors Lookup</h2>
-      <p className="mt-1">Enter a driver ID to view all sponsors associated with that driver.</p>
+      <p className="mt-1">Enter a driver ID to view the sponsors linked to that account and their current balances.</p>
 
-      <div className="mt-2" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+      <div
+        className="mt-2"
+        style={{
+          display: 'flex',
+          gap: '0.75rem',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
+      >
         <input
           type="number"
           min={1}
@@ -47,39 +56,44 @@ export function AdminDriverSponsorsPage() {
           value={driverIdInput}
           onChange={(e) => setDriverIdInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && fetchSponsors()}
-          style={{ padding: '0.4rem 0.6rem', width: '140px' }}
+          style={{ padding: '0.4rem 0.6rem', width: '180px' }}
           aria-label="Driver ID"
         />
-        <button onClick={fetchSponsors} disabled={loading}>
+        <button
+          type="button"
+          onClick={fetchSponsors}
+          disabled={loading}
+          className="btn btn-primary"
+        >
           {loading ? 'Loading…' : 'Fetch Sponsors'}
         </button>
       </div>
 
       {error && (
-        <p className="mt-2" style={{ color: 'var(--color-error, red)' }} role="alert">
-          {error}
-        </p>
+        <div className="mt-2">
+          <Alert variant="error">{error}</Alert>
+        </div>
       )}
 
       {sponsors !== null && (
-        <div className="mt-2">
+        <div className="mt-2" style={{ overflowX: 'auto' }}>
           {sponsors.length === 0 ? (
-            <p>No sponsors found for this driver.</p>
+            <p className="placeholder-msg">No sponsors found for this driver.</p>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '0.5rem' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '0.5rem', fontSize: '0.9rem' }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
+                <tr style={{ borderBottom: '2px solid #ddd', textAlign: 'left' }}>
                   <th style={thStyle}>Sponsor Name</th>
                   <th style={thStyle}>Sponsor ID</th>
                   <th style={thStyle}>Status</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Points Balance</th>
                 </tr>
               </thead>
-              <tbody>
-                {sponsors.map((s) => (
-                  <tr key={s.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <tbody>
+                  {sponsors.map((s) => (
+                  <tr key={s.id} style={{ borderBottom: '1px solid #eee' }}>
                     <td style={tdStyle}>{s.name}</td>
-                    <td style={tdStyle}>{s.id}</td>
+                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontWeight: 600 }}>{s.id}</td>
                     <td style={tdStyle}>
                       <span style={statusBadgeStyle(s.status)}>
                         {s.status ?? '—'}
@@ -122,7 +136,7 @@ function statusBadgeStyle(status: string | null): React.CSSProperties {
     textTransform: 'capitalize',
   };
   if (status === 'active') return { ...base, background: '#dcfce7', color: '#166534' };
-  if (status === 'inactive') return { ...base, background: '#fee2e2', color: '#991b1b' };
+  if (status === 'inactive') return { ...base, background: '#fef9c3', color: '#854d0e' };
+  if (status === 'banned') return { ...base, background: '#fee2e2', color: '#991b1b' };
   return { ...base, background: '#f3f4f6', color: '#374151' };
 }
-

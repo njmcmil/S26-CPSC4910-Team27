@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { api } from '../services/apiClient';
+import { Alert } from '../components/Alert';
 
 const BLOCKED_STATE_KEY = 'gdip_blocked_state';
 
@@ -36,6 +37,13 @@ export function AccountBlockedPage() {
       ? 'Your account is currently banned and cannot access normal app features.'
       : 'Your account is currently inactive and normal app features are disabled.');
 
+  const submittedMessage =
+    role === 'driver'
+      ? 'Driver review request sent successfully. An admin will review your account.'
+      : role === 'sponsor'
+        ? 'Sponsor review request sent successfully. An admin will review your account.'
+        : 'Appeal submitted successfully. An admin will review your account.';
+
   const submitAppeal = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitResult(null);
@@ -48,8 +56,8 @@ export function AccountBlockedPage() {
 
     try {
       setSending(true);
-      const res = await api.post<{ message: string }>('/account-appeals', { message });
-      setSubmitResult(res.message || 'Appeal submitted.');
+      await api.post<{ message: string }>('/account-appeals', { message });
+      setSubmitResult(submittedMessage);
       setAppealMessage('');
     } catch (err) {
       const e = err as { message?: string };
@@ -81,13 +89,10 @@ export function AccountBlockedPage() {
           placeholder="Explain why your account should be reviewed..."
           style={{ width: '100%', borderRadius: 8, border: '1px solid var(--color-border)', padding: '0.6rem' }}
           maxLength={2000}
+          disabled={sending}
         />
-        {submitError && (
-          <p role="alert" style={{ color: 'var(--color-danger)', marginTop: '0.5rem' }}>{submitError}</p>
-        )}
-        {submitResult && (
-          <p role="status" style={{ color: 'var(--color-success)', marginTop: '0.5rem' }}>{submitResult}</p>
-        )}
+        {submitError && <div className="mt-2"><Alert variant="error">{submitError}</Alert></div>}
+        {submitResult && <div className="mt-2"><Alert variant="success">{submitResult}</Alert></div>}
         <div className="btn-group">
           <button type="submit" className="btn btn-primary" disabled={sending}>
             {sending ? 'Sending…' : 'Send To Admin'}

@@ -70,7 +70,9 @@ async function request<T>(
         BLOCKED_STATE_KEY,
         JSON.stringify({ status, role, message: friendlyMessage }),
       );
-      window.location.replace('/account-blocked');
+      if (window.location.pathname !== '/account-blocked') {
+        window.location.replace('/account-blocked');
+      }
     }
 
     const error: ApiError = { status: res.status, message, detail, fieldErrors };

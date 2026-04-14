@@ -101,6 +101,8 @@ export function AdminDriversPage() {
     }
   }
 
+  const statusRank: Record<string, number> = { banned: 0, inactive: 1, active: 2 };
+
   const filtered = drivers.filter((d) => {
     const q = search.toLowerCase();
     const fullName = `${d.first_name ?? ''} ${d.last_name ?? ''}`.toLowerCase();
@@ -111,6 +113,10 @@ export function AdminDriversPage() {
       fullName.includes(q);
     const matchesStatus = statusFilter === 'all' || d.account_status === statusFilter;
     return matchesSearch && matchesStatus;
+  }).sort((a, b) => {
+    const rankDiff = (statusRank[a.account_status] ?? 9) - (statusRank[b.account_status] ?? 9);
+    if (rankDiff !== 0) return rankDiff;
+    return a.username.localeCompare(b.username);
   });
 
   return (

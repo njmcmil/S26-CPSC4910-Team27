@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
-from auth.auth import create_access_token, get_current_user, require_role
+from auth.auth import create_access_token, get_current_user, get_current_user_allow_blocked, require_role
 from schemas.admin import (
     AccountAppealListResponse,
     AccountAppealResolveRequest,
@@ -22,6 +22,8 @@ from schemas.admin import (
     SystemMetricsResponse,
 )
 from users.email_service import (
+    send_driver_account_banned_email,
+    send_driver_account_deactivated_email,
     send_sponsor_account_deactivated_email,
     send_sponsor_account_banned_email,
 )
@@ -151,7 +153,24 @@ def list_all_users(current_user: dict = Depends(require_role("admin"))):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT user_id, username, role, email FROM Users")
+        cursor.execute(
+            """
+            SELECT
+                u.user_id,
+                u.username,
+                u.role,
+                u.email,
+                CASE
+                    WHEN u.role = 'sponsor' THEN COALESCE(sp.account_status, 'active')
+                    WHEN u.role = 'driver' THEN COALESCE(dp.account_status, 'active')
+                    ELSE 'active'
+                END AS account_status
+            FROM Users u
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id
+            LEFT JOIN DriverProfiles dp ON dp.user_id = u.user_id
+            ORDER BY u.username
+            """
+        )
         return cursor.fetchall()
     finally:
         cursor.close()
@@ -204,7 +223,7 @@ def admin_impersonate_user(
 
 
 @router.post("/stop-impersonation")
-def admin_stop_impersonation(current_user: dict = Depends(get_current_user)):
+def admin_stop_impersonation(current_user: dict = Depends(get_current_user_allow_blocked)):
     """
     Return an impersonating session back to the original admin.
     """
@@ -1182,7 +1201,7 @@ def get_driver_logs(
 
 VALID_SPONSOR_TRANSITIONS: dict[str, set[str]] = {
     "active":   {"inactive", "banned"},
-    "inactive": {"active"},
+    "inactive": {"active", "banned"},
     "banned":   {"active"},
 }
 
@@ -1348,6 +1367,27 @@ def update_driver_status(
             (user_id, body.reason, current_user["user_id"]),
         )
         conn.commit()
+
+        if new_status == "inactive":
+            cursor.execute("SELECT email, username FROM Users WHERE user_id = %s", (user_id,))
+            driver_user = cursor.fetchone()
+            if driver_user:
+                send_driver_account_deactivated_email(
+                    driver_user["email"],
+                    driver_user["username"],
+                    body.reason,
+                    "an administrator",
+                )
+        elif new_status == "banned":
+            cursor.execute("SELECT email, username FROM Users WHERE user_id = %s", (user_id,))
+            driver_user = cursor.fetchone()
+            if driver_user:
+                send_driver_account_banned_email(
+                    driver_user["email"],
+                    driver_user["username"],
+                    body.reason,
+                    "an administrator",
+                )
 
         return {"message": f"Driver status updated to '{new_status}'", "new_status": new_status}
     except HTTPException:

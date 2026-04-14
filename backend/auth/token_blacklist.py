@@ -27,7 +27,7 @@ def blacklist_token(token: str):
 
 def is_token_blacklisted(token: str) -> bool:
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(buffered=True)
     try:
         cursor.execute(
             "SELECT 1 FROM TokenBlacklist WHERE token = %s",

@@ -148,7 +148,7 @@ def get_account_status_for_user(user_id: int, role: str) -> str:
         return "active"
 
     conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(dictionary=True, buffered=True)
     try:
         if role == "sponsor":
             cursor.execute(
