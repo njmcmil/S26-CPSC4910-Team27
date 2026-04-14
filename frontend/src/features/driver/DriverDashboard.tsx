@@ -109,8 +109,8 @@ export function DriverDashboardPage() {
   const currentSponsor = sponsors.find((sponsor) => sponsor.is_current_sponsor) ?? null;
   const sponsorHeadline = activeSponsor?.sponsor_name ?? currentSponsor?.sponsor_name ?? 'Not assigned';
   const sponsorPointsBalance = activeSponsor?.total_points ?? profile?.points_balance ?? 0;
-  const sponsorLabel = currentSponsor
-    ? `${activeSponsor.total_points.toLocaleString()} points available`
+  const sponsorLabel = activeSponsor
+    ? `${activeSponsor.total_points.toLocaleString() ?? '0'} points available`
     : currentSponsor
     ? 'You currently have an active sponsor connection.'
     : 'No sponsor is assigned yet. Apply to a sponsor to join a rewards program.';
