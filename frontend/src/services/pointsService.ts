@@ -63,7 +63,7 @@ export const pointsService = {
   /**
    * get driver's complete point history including expires_at 
    */
-  getDriverPointHistory(): Promise<DriverPointHistory> {
+  getDriverPointHistory(sponsorId>: number): Promise<DriverPointHistory> {
     const url = sponsorId
       ? `/api/driver/points/history?sponsor_user_id=${sponsorId}`
       : '/api/driver/points/history';
