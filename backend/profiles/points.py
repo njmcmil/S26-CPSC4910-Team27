@@ -360,12 +360,17 @@ async def add_driver_points(
 
         # Look up sponsor's expiration_days to compute expires_at (#13990)
         # Use user_id since SponsorProfiles is keyed by user_id (not sponsor_id)
-        cursor.execute(
-            "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
-            (current_user['user_id'],)
-        )
-        sp_row = cursor.fetchone()
-        expiration_days = sp_row['expiration_days'] if sp_row and sp_row.get('expiration_days') else None
+        try:
+            cursor.execute(
+                "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
+                (current_user['user_id'],)
+            )
+            sp_row = cursor.fetchone()
+            expiration_days = sp_row['expiration_days'] if sp_row and sp_row.get('expiration_days') else None
+        except Exception:
+            # If expiration_days column doesn't exist or query fails, default to None
+            expiration_days = None
+        
         expires_at = (datetime.now() + timedelta(days=expiration_days)) if expiration_days else None
 
         # Update driver points
@@ -501,12 +506,16 @@ async def upload_driver_points(
     cursor = conn.cursor(dictionary=True)
 
     try:
-        cursor.execute(
-            "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
-            (user_id,)
-        )
-        sponsor_profile = cursor.fetchone()
-        expiration_days = sponsor_profile["expiration_days"] if sponsor_profile and sponsor_profile.get("expiration_days") else None
+        try:
+            cursor.execute(
+                "SELECT expiration_days FROM SponsorProfiles WHERE user_id = %s",
+                (user_id,)
+            )
+            sponsor_profile = cursor.fetchone()
+            expiration_days = sponsor_profile["expiration_days"] if sponsor_profile and sponsor_profile.get("expiration_days") else None
+        except Exception:
+            # If expiration_days column doesn't exist, default to None
+            expiration_days = None
 
         updated_driver_ids = []
         total_points_added = 0
