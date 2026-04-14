@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-FROM_EMAIL = os.getenv("EMAIL_FROM", "noreply@gooddriverprogram.com")
+FROM_EMAIL = os.getenv("EMAIL_FROM", "teamtwentyseven3@gmail.com")
 BASE_URL = os.getenv("FRONTEND_URL", "http://52.200.244.222:5173")
 
 
