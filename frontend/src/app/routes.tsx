@@ -11,6 +11,7 @@ import { AboutPage } from '../pages/About';
 import { AccountBlockedPage } from '../pages/AccountBlocked';
 import { SettingsPage } from '../pages/Settings';
 import { NotFoundPage } from '../pages/NotFound';
+import { ResetPasswordPage } from '../pages/ResetPassword';
 
 import { DriverDashboardPage } from '../features/driver/DriverDashboard';
 import { DriverProfilePage } from '../features/driver/DriverProfile';
@@ -47,6 +48,7 @@ import { AdminCommunicationLogsPage } from '../features/admin/AdminCommunication
 import { AdminDriversPage } from '../features/admin/AdminDrivers';
 
 
+
 /**
  * Redirects logged-in users to the dashboard for their role.
  */
@@ -68,6 +70,7 @@ export const router = createBrowserRouter([
       { path: '/account-blocked', element: <AccountBlockedPage /> },
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      { path: '/reset-password', element: <ResetPasswordPage /> },
 
       /* ---------------- PROTECTED ---------------- */
       {
