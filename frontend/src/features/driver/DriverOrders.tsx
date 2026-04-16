@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/apiClient';
+
 
 type OrderStatus = 'pending' | 'shipped' | 'cancelled';
 
@@ -35,6 +37,7 @@ export function DriverOrdersPage() {
   const [issueType, setIssueType] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [submittingIssue, setSubmittingIssue] = useState(false);
+  const navigate = useNavigate();
 
   const loadOrders = () => {
     setLoading(true);
@@ -154,6 +157,18 @@ export function DriverOrdersPage() {
                         }}
                       >
                         {cancelling === order.order_id ? 'Cancelling…' : 'Cancel'}
+                      </button>
+                    )}
+                    {order.status !== 'cancelled' && (
+                      <button
+                        onClick={() => navigate('/driver/order-confirmation')}
+                        style={{
+                          background: 'none', border: '1px solid #2563eb',
+                          color: '#2563eb', borderRadius: 'var(--radius)',
+                          padding: '2px 10px', cursor: 'pointer', fontSize: '0.82rem',
+                        }}
+                      >
+                        Track Package
                       </button>
                     )}
                     {order.status !== 'cancelled' && (
