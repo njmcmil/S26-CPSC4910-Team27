@@ -13,7 +13,7 @@ load_dotenv()
 
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 FROM_EMAIL = os.getenv("EMAIL_FROM", "noreply@gooddriverprogram.com")
-BASE_URL = os.getenv("FRONTEND_URL", "http://52.200.244.222:5173")
+BASE_URL = os.getenv("FRONTEND_URL", "https://good-driver-app-team27-emhfeqdndxgrdybe.eastus-01.azurewebsites.net")
 
 
 def _send(to_email: str, subject: str, html: str, plain: str) -> bool:
