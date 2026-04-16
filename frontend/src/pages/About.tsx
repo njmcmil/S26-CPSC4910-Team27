@@ -1,79 +1,80 @@
-import { useCallback, useEffect, useState } from 'react';
-import { aboutService } from '../services/aboutService';
-import { Spinner } from '../components/Spinner';
-import { Alert } from '../components/Alert';
-import { Button } from '../components/Button';
-import type { AboutInfo, ApiError } from '../types';
+import { useEffect, useState } from 'react';
+import { api } from '../services/apiClient';
+
+interface SponsorInfo {
+  name: string;
+  driver_count: number;
+}
 
 export function AboutPage() {
-  const [info, setInfo] = useState<AboutInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const fetchAbout = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await aboutService.getAbout();
-      setInfo(data);
-    } catch (err) {
-      const apiErr = err as ApiError;
-      setError(apiErr.message || 'Failed to load About information.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [sponsors, setSponsors] = useState<SponsorInfo[]>([]);
 
   useEffect(() => {
-    fetchAbout();
-  }, [fetchAbout]);
-
-  if (loading) return <Spinner label="Loading project information..." />;
-
-  if (error) {
-    return (
-      <section className="card" aria-labelledby="about-heading">
-        <h2 id="about-heading">About</h2>
-        <Alert variant="error">{error}</Alert>
-        <div className="mt-2">
-          <Button onClick={fetchAbout}>Retry</Button>
-        </div>
-      </section>
-    );
-  }
-
-  if (!info) return null;
+    api.get<{ sponsors: SponsorInfo[] }>('/about/public')
+      .then(data => setSponsors(data.sponsors ?? []))
+      .catch(() => {});
+  }, []);
 
   return (
-    <section className="card" aria-labelledby="about-heading">
-      <h2 id="about-heading">About</h2>
+    <section aria-labelledby="about-heading" style={{ maxWidth: 800, margin: '0 auto' }}>
+      <h2 id="about-heading">About the Good Driver Incentive Program</h2>
 
-      <dl className="about-dl mt-1">
-        <div className="about-row">
-          <dt>Product Name</dt>
-          <dd>{info.product_name}</dd>
+      <div className="card mt-2">
+        <h3>What We Do</h3>
+        <p className="mt-1" style={{ lineHeight: 1.7 }}>
+          The Good Driver Incentive Program is a web-based platform built for the trucking industry.
+          Sponsors — companies that work with truck drivers — use our system to reward drivers for
+          safe and positive on-road behaviors. Drivers earn points for good performance and can redeem
+          those points for real products through a sponsor-curated catalog. Think of it like a rewards
+          program, but built specifically to encourage better driving across the industry.
+        </p>
+        <p className="mt-1" style={{ lineHeight: 1.7 }}>
+          Sponsors maintain their own product catalogs, manage driver relationships, and control how
+          points are awarded and redeemed. Drivers can browse their sponsor's catalog, track their
+          point history, and place orders — all in one place. Admins oversee the entire platform to
+          ensure everything runs smoothly.
+        </p>
+      </div>
+
+      <div className="card mt-2">
+        <h3>Our Team</h3>
+        <p className="mt-1" style={{ color: 'var(--color-text-muted)' }}>
+          Built by Team 27 for CPSC 4910 — Spring 2026
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginTop: '1rem' }}>
+          {['Jade Ashley', 'Bella John', 'Bobby Lin', 'Nathan McMillan'].map(name => (
+            <div key={name} style={{
+              background: 'var(--color-bg)', borderRadius: 8, padding: '0.75rem 1.25rem',
+              border: '1px solid var(--color-border)', fontWeight: 600,
+            }}>
+              {name}
+            </div>
+          ))}
         </div>
-        <div className="about-row">
-          <dt>Description</dt>
-          <dd>{info.product_description}</dd>
+      </div>
+
+      {sponsors.length > 0 && (
+        <div className="card mt-2">
+          <h3>Our Sponsors</h3>
+          <p className="mt-1" style={{ color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
+            The following companies are currently using the Good Driver Incentive Program.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {sponsors.map(s => (
+              <div key={s.name} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '0.6rem 1rem', background: 'var(--color-bg)',
+                borderRadius: 8, border: '1px solid var(--color-border)',
+              }}>
+                <span style={{ fontWeight: 600 }}>{s.name}</span>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
+                  {s.driver_count} driver{s.driver_count !== 1 ? 's' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="about-row">
-          <dt>Team</dt>
-          <dd>Team #{info.team_number}</dd>
-        </div>
-        <div className="about-row">
-          <dt>Version</dt>
-          <dd>{info.version_number}</dd>
-        </div>
-        <div className="about-row">
-          <dt>Sprint</dt>
-          <dd>Sprint {info.sprint_number}</dd>
-        </div>
-        <div className="about-row">
-          <dt>Release Date</dt>
-          <dd>{new Date(info.release_date).toLocaleDateString()}</dd>
-        </div>
-      </dl>
+      )}
     </section>
   );
 }
