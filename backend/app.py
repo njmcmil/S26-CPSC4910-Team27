@@ -636,12 +636,15 @@ def drop_driver(driver_id: int, body: dict, current_user: dict = Depends(get_cur
         sponsor_row = cursor.fetchone()
         sponsor_name = sponsor_row["sponsor_name"] if sponsor_row else None
         if row.get("email"):
-            send_dropped_by_sponsor_email(
-                to_email=row["email"],
-                username=row["username"],
-                sponsor_name=sponsor_name,
-                reason=reason,
-            )
+            try:
+                send_dropped_by_sponsor_email(
+                    to_email=row["email"],
+                    username=row["username"],
+                    sponsor_name=sponsor_name,
+                    reason=reason,
+                )
+            except Exception:
+                pass  # Email failure should not block the drop
         return {"success": True, "message": "Driver dropped successfully"}
     except HTTPException:
         conn.rollback()
