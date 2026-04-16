@@ -205,52 +205,19 @@ export function LoginPage() {
         <Link to="/">Back to Home</Link>
       </p>
       {aboutInfo && (
-  <div className="mt-3">
-    <hr />
-    <button
-      type="button"
-      className="link-btn"
-      onClick={() => setShowAbout(!showAbout)}
-      aria-expanded={showAbout}
-      style={{ fontWeight: 600, fontSize: '0.95rem' }}
-    >
-      {showAbout ? '▲ Hide About' : '▼ About This Program'}
-    </button>
-
-    {showAbout && (
-      <div className="about-preview mt-1" aria-label="About this program">
-        <h3 style={{ marginBottom: '0.5rem' }}>{aboutInfo.product_name}</h3>
-        <p className="helper-text">{aboutInfo.product_description}</p>
-        <p className="helper-text" style={{ marginTop: '0.5rem' }}>
-          Sprint {aboutInfo.sprint_number} &nbsp;·&nbsp; v{aboutInfo.version_number} &nbsp;·&nbsp; Released {new Date(aboutInfo.release_date).toLocaleDateString()}
-        </p>
-        {aboutInfo.sponsors.length > 0 && (
-          <div className="mt-1">
-            <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>Our Sponsors</p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {aboutInfo.sponsors.map((s) => (
-                <li
-                  key={s.name}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    padding: '0.25rem 0',
-                    borderBottom: '1px solid var(--border, #eee)',
-                  }}
-                >
-                  <span>{s.name}</span>
-                  <span className="helper-text">
-                    {s.driver_count} driver{s.driver_count !== 1 ? 's' : ''}
-                  </span>
-                </li>
-              ))}
-            </ul>
+        <div className="mt-3">
+          <hr />
+          <div className="about-preview mt-1" style={{ textAlign: 'center' }}>
+            <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{aboutInfo.product_name}</p>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+              A points-based incentive program for the trucking industry.
+            </p>
+            <Link to="/about" style={{ fontSize: '0.875rem', color: 'var(--color-primary)', fontWeight: 600 }}>
+              Learn more →
+            </Link>
           </div>
-        )}
-      </div>
-    )}
-  </div>
-)}
+        </div>
+      )}
     </section>
   );
 }
