@@ -72,6 +72,7 @@ from users.email_service import (
     send_failed_login_alert_email,
     send_order_placed_email,
     send_sponsor_order_placed_email,
+    send_dropped_by_sponsor_email,
 )
 from shared.utils import validate_password
 
