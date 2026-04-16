@@ -159,7 +159,7 @@ export function DriverOrdersPage() {
                         {cancelling === order.order_id ? 'Cancelling…' : 'Cancel'}
                       </button>
                     )}
-                    {order.status !== 'cancelled' && (
+                    {order.status == 'pending' && (
                       <button
                         onClick={() => navigate('/driver/order-confirmation')}
                         style={{
