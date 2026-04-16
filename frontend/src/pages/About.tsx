@@ -23,7 +23,7 @@ export function AboutPage() {
         <h3>What We Do</h3>
         <p className="mt-1" style={{ lineHeight: 1.7 }}>
           The Good Driver Incentive Program is a web-based platform built for the trucking industry.
-          Sponsors — companies that work with truck drivers — use our system to reward drivers for
+          Sponsors (companies that work with truck drivers) use our system to reward drivers for
           safe and positive on-road behaviors. Drivers earn points for good performance and can redeem
           those points for real products through a sponsor-curated catalog. Think of it like a rewards
           program, but built specifically to encourage better driving across the industry.
@@ -31,7 +31,7 @@ export function AboutPage() {
         <p className="mt-1" style={{ lineHeight: 1.7 }}>
           Sponsors maintain their own product catalogs, manage driver relationships, and control how
           points are awarded and redeemed. Drivers can browse their sponsor's catalog, track their
-          point history, and place orders — all in one place. Admins oversee the entire platform to
+          point history, and place orders all in one place. Admins oversee the entire platform to
           ensure everything runs smoothly.
         </p>
       </div>
