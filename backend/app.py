@@ -72,6 +72,7 @@ from users.email_service import (
     send_failed_login_alert_email,
     send_order_placed_email,
     send_sponsor_order_placed_email,
+    send_dropped_by_sponsor_email,
 )
 from shared.utils import validate_password
 
@@ -287,7 +288,7 @@ def get_last_admin_status_actor(cursor, user_id: int, role: str) -> int | None:
             SELECT changed_by_user_id
             FROM audit_log
             WHERE category = 'account_status_change'
-              AND driver_id = %s
+              AND _id = %s
               AND changed_by_user_id IS NOT NULL
             ORDER BY date DESC
             LIMIT 1
@@ -597,6 +598,61 @@ def get_driver_sponsors(current_user: dict = Depends(get_current_user)):
         for s in sponsors:
             s["total_points"] = int(s["total_points"] or 0)
         return {"sponsors": sponsors}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.post("/sponsor/drivers/{driver_id}/drop")
+def drop_driver(driver_id: int, body: dict, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "sponsor":
+        raise HTTPException(status_code=403, detail="Sponsor access required")
+    reason = body.get("reason", "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Reason is required")
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT sd.sponsor_driver_id, u.email, u.username FROM SponsorDrivers sd JOIN Users u ON u.user_id = sd.driver_user_id WHERE sd.driver_user_id = %s AND sd.sponsor_user_id = %s",
+            (driver_id, sponsor_id)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Driver not found in your organization")
+        cursor.execute(
+            "DELETE FROM SponsorDrivers WHERE driver_user_id = %s AND sponsor_user_id = %s",
+            (driver_id, sponsor_id)
+        )
+        cursor.execute(
+            """INSERT INTO audit_log (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+               VALUES ('driver_dropped', %s, %s, %s, 0, %s, %s)""",
+            (datetime.utcnow(), sponsor_id, driver_id, reason, sponsor_id)
+        )
+        conn.commit()
+        cursor.execute(
+            "SELECT COALESCE(sp.company_name, u.username) AS sponsor_name FROM Users u LEFT JOIN SponsorProfiles sp ON sp.user_id = u.user_id WHERE u.user_id = %s",
+            (sponsor_id,)
+        )
+        sponsor_row = cursor.fetchone()
+        sponsor_name = sponsor_row["sponsor_name"] if sponsor_row else None
+        if row.get("email"):
+            try:
+                send_dropped_by_sponsor_email(
+                    to_email=row["email"],
+                    username=row["username"],
+                    sponsor_name=sponsor_name,
+                    reason=reason,
+                )
+            except Exception:
+                pass  # Email failure should not block the drop
+        return {"success": True, "message": "Driver dropped successfully"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Failed to drop driver")
     finally:
         cursor.close()
         conn.close()

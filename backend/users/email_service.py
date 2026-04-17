@@ -206,15 +206,18 @@ def send_points_notification(
 def send_dropped_by_sponsor_email(
     to_email: str,
     username: str,
-    sponsor_name: str | None = None
+    sponsor_name: str | None = None,
+    reason: str | None = None,
 ) -> bool:
     sponsor_text = f" by {sponsor_name}" if sponsor_name else ""
+    reason_text = f"\n\nReason: {reason}" if reason else ""
     subject = "Sponsor Update - Good Driver Incentive Program"
-    plain = f"Hello {username},\n\nYou have been removed from the program{sponsor_text}.\n\nIf you have questions, please contact support."
+    plain = f"Hello {username},\n\nYou have been removed from the program{sponsor_text}.{reason_text}\n\nIf you have questions, please contact support."
     html = f"""
         <h2>Sponsor Relationship Update</h2>
         <p>Hello {username},</p>
         <p>You have been removed from the program{sponsor_text}.</p>
+        {"<p><strong>Reason:</strong> " + reason + "</p>" if reason else ""}
         <p>If you have questions, please contact support.</p>
     """
     return _send(to_email, subject, html, plain)
