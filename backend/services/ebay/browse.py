@@ -57,24 +57,28 @@ def get_ebay_token():
     _token_cache["expires_at"] = time.time() + int(expires_in) - 60  # buffer 1 min
     return access_token
 
-def search_products(query, limit=10, sponsor_id=None):
+def search_products(query, limit=10, offset=0, sponsor_id=None):
     """Search eBay products by keyword. Logs failures to APIErrorLog."""
     encoded_query = quote(query)
-    url = f"{BROWSE_SEARCH_URL}?q={encoded_query}&limit={limit}"
+    url = f"{BROWSE_SEARCH_URL}?q={encoded_query}&limit={limit}&offset={max(0, int(offset))}"
     try:
         token = get_ebay_token()
         response = requests.get(url, headers={"Authorization": f"Bearer {token}"})
         response.raise_for_status()
-        return response.json().get("itemSummaries", [])
+        data = response.json()
+        return {
+            "items": data.get("itemSummaries", []),
+            "total": int(data.get("total", 0) or 0),
+        }
     except requests.HTTPError as e:
         status_code = e.response.status_code if e.response is not None else None
         _log_api_error("ebay_search", url, str(e), status_code=status_code, sponsor_id=sponsor_id)
         print(f"Error searching eBay: {e}")
-        return []
+        return {"items": [], "total": 0}
     except Exception as e:
         _log_api_error("ebay_search", url, str(e), sponsor_id=sponsor_id)
         print(f"Error searching eBay: {e}")
-        return []
+        return {"items": [], "total": 0}
 
 
 def get_product_details(item_id, sponsor_id=None):

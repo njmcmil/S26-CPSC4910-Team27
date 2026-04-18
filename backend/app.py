@@ -1164,7 +1164,7 @@ def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 @app.get("/api/ebay/search")
-def ebay_search(q: str):
+def ebay_search(q: str, page: int = 1, limit: int = 24):
     """
     Search eBay products using Browse API.
 
@@ -1175,8 +1175,16 @@ def ebay_search(q: str):
     - List of product summaries
     """
     try:
-        items = search_products(q)
-        return {"items": items}
+        safe_page = max(1, page)
+        safe_limit = max(1, min(limit, 100))
+        offset = (safe_page - 1) * safe_limit
+        result = search_products(q, limit=safe_limit, offset=offset)
+        return {
+            "items": result.get("items", []),
+            "total": result.get("total", 0),
+            "page": safe_page,
+            "limit": safe_limit,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"eBay search failed: {str(e)}")
     
