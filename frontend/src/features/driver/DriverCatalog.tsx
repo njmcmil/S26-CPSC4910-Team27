@@ -27,6 +27,7 @@ function getCatalogImageAlt(title: string) {
 
 const DEBOUNCE_MS = 250;
 const POLL_INTERVAL_MS = 30_000;
+const DRIVER_CATALOG_PAGE_SIZE = 24;
 
 export function DriverCatalog({ previewMode = false }: Props) {
   const { activeSponsorId, setActiveSponsorId } = useAuth();
@@ -45,6 +46,7 @@ export function DriverCatalog({ previewMode = false }: Props) {
   // client-side search
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null); 
 
@@ -62,6 +64,11 @@ export function DriverCatalog({ previewMode = false }: Props) {
         : items,
     [items, searchQuery]
   );
+  const totalPages = Math.max(1, Math.ceil(visibleItems.length / DRIVER_CATALOG_PAGE_SIZE));
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * DRIVER_CATALOG_PAGE_SIZE;
+    return visibleItems.slice(start, start + DRIVER_CATALOG_PAGE_SIZE);
+  }, [visibleItems, page]);
   const availableSponsors = sponsors.filter((s) => s.is_current_sponsor);
   const selectedSponsor = availableSponsors.find(
     (sponsor) => sponsor.sponsor_user_id === activeSponsorId,
@@ -118,6 +125,16 @@ export function DriverCatalog({ previewMode = false }: Props) {
       })
       .catch(() => {});
   }, [previewMode]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, activeSponsorId, items.length]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   useEffect(() => {
     if (previewMode || !activeSponsorId) return;
@@ -294,11 +311,12 @@ export function DriverCatalog({ previewMode = false }: Props) {
         ) : !previewMode && availableSponsors.length === 0 ? (
           <p>No active sponsor catalogs are available for your account yet.</p>
         ) : (
+          <>
           <div className="catalog-grid">
             {visibleItems.length === 0 ? (
               <p>{searchQuery ? 'No products match your search.' : 'No sponsor products available.'}</p>
             ) : (
-              visibleItems.map(item => {
+              pagedItems.map(item => {
                 const canAfford = points >= item.points_cost;
                 const inStock = item.stock_quantity > 0;
                 const inCart = isInCart(item.item_id);
@@ -399,6 +417,32 @@ export function DriverCatalog({ previewMode = false }: Props) {
               })
             )}
           </div>
+          {visibleItems.length > DRIVER_CATALOG_PAGE_SIZE && (
+            <div className="card mt-2" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <span className="helper-text">
+                Page {page} of {totalPages} ({visibleItems.length.toLocaleString()} items)
+              </span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="catalog-secondary-button"
+                  onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={page <= 1}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="catalog-primary-button"
+                  onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={page >= totalPages}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
     </section>

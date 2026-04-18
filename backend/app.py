@@ -23,6 +23,7 @@ Usage:
 
 # --- Standard Library & Third Party ---
 from datetime import datetime, timedelta
+import hashlib
 from mysql.connector import IntegrityError
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -368,6 +369,114 @@ def parse_login_device_details(user_agent: str | None) -> tuple[str, str, str]:
         os_name = "Unknown OS"
 
     return device_name, browser_name, os_name
+
+
+def create_device_fingerprint(ip_address: str, user_agent: str | None) -> str:
+    combined = f"{ip_address}:{user_agent or ''}"
+    return hashlib.sha256(combined.encode()).hexdigest()
+
+
+def get_active_trusted_device(user_id: int, ip_address: str, user_agent: str | None) -> dict | None:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True, buffered=True)
+    try:
+        device_fingerprint = create_device_fingerprint(ip_address, user_agent)
+        cursor.execute(
+            """
+            SELECT device_id, is_active, expires_at
+            FROM TrustedDevices
+            WHERE user_id = %s
+              AND device_fingerprint = %s
+            ORDER BY device_id DESC
+            LIMIT 1
+            """,
+            (user_id, device_fingerprint),
+        )
+        row = cursor.fetchone()
+        if not row or not row.get("is_active"):
+            return None
+        expires_at = row.get("expires_at")
+        if expires_at and expires_at < datetime.utcnow():
+            return None
+        return row
+    except Exception:
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def upsert_trusted_device(
+    user_id: int,
+    device_name: str,
+    device_type: str,
+    ip_address: str,
+    user_agent: str | None,
+) -> None:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True, buffered=True)
+    try:
+        fingerprint = create_device_fingerprint(ip_address, user_agent)
+        expires_at = datetime.utcnow() + timedelta(days=30)
+        cursor.execute(
+            """
+            SELECT device_id
+            FROM TrustedDevices
+            WHERE user_id = %s
+              AND device_fingerprint = %s
+            ORDER BY device_id DESC
+            LIMIT 1
+            """,
+            (user_id, fingerprint),
+        )
+        row = cursor.fetchone()
+        if row:
+            cursor.execute(
+                """
+                UPDATE TrustedDevices
+                SET device_name = %s,
+                    device_type = %s,
+                    ip_address = %s,
+                    user_agent = %s,
+                    is_active = TRUE,
+                    expires_at = %s,
+                    last_used = %s
+                WHERE device_id = %s
+                """,
+                (device_name, device_type, ip_address, user_agent or "", expires_at, datetime.utcnow(), row["device_id"]),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO TrustedDevices
+                    (user_id, device_name, device_type, device_fingerprint, ip_address, user_agent, is_active, expires_at, last_used)
+                VALUES
+                    (%s, %s, %s, %s, %s, %s, TRUE, %s, %s)
+                """,
+                (user_id, device_name, device_type, fingerprint, ip_address, user_agent or "", expires_at, datetime.utcnow()),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def touch_trusted_device_last_used(device_id: int) -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE TrustedDevices SET last_used = %s WHERE device_id = %s",
+            (datetime.utcnow(), device_id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def get_sponsor_user_for_audit(http_request: Request) -> dict | None:
@@ -807,10 +916,24 @@ def login_endpoint(request: LoginRequest, http_request: Request):
             detail=f"ACCOUNT_BLOCKED:{account_status}:{user.get('role')}",
         )
 
+    trusted_device = get_active_trusted_device(login_actor_user_id, ip, agent)
+    if request.remember_device:
+        upsert_trusted_device(
+            user_id=login_actor_user_id,
+            device_name=device_name,
+            device_type=os_name,
+            ip_address=ip,
+            user_agent=agent,
+        )
+        trusted_device = get_active_trusted_device(login_actor_user_id, ip, agent) or trusted_device
+    if trusted_device and trusted_device.get("device_id"):
+        touch_trusted_device_last_used(int(trusted_device["device_id"]))
+
     token = create_access_token({"user_id": user["user_id"]})
 
     # Notification failures should not block a successful login.
-    if user.get("email"):
+    # Trusted devices suppress login alert emails to reduce noise.
+    if user.get("email") and not trusted_device:
         send_login_notification_email(
             to_email=user["email"],
             username=user["username"],
