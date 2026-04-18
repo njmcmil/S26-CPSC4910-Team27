@@ -21,11 +21,14 @@ function getCatalogImageAlt(title: string) {
 }
 
 export function SponsorCatalog() {
+  const SEARCH_PAGE_SIZE = 24;
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState<string>('laptop');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [searchPage, setSearchPage] = useState<number>(1);
+  const [searchTotal, setSearchTotal] = useState<number>(0);
 
   const [driverView, setDriverView] = useState<boolean>(false);
   const [drivers, setDrivers] = useState<SponsorDriver[]>([]);
@@ -38,16 +41,20 @@ export function SponsorCatalog() {
   /* ================= LOAD EBAY ========================== */
   /* ===================================================== */
 
-  const loadEbayProducts = async (search: string) => {
+  const loadEbayProducts = async (search: string, page: number = 1) => {
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const data = await getCatalog(search);
-      setProducts(data);
+      const data = await getCatalog(search, page, SEARCH_PAGE_SIZE);
+      setProducts(data.items);
+      setSearchPage(data.page);
+      setSearchTotal(data.total);
     } catch {
       setError('Failed to search products.');
+      setProducts([]);
+      setSearchTotal(0);
     } finally {
       setLoading(false);
     }
@@ -86,6 +93,7 @@ export function SponsorCatalog() {
       }));
 
       setProducts(items);
+      setSearchTotal(0);
     } catch {
       setError('Failed to load sponsor catalog.');
     } finally {
@@ -115,7 +123,7 @@ export function SponsorCatalog() {
 
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    loadEbayProducts(query);
+    loadEbayProducts(query, 1);
   };
 
   /* ===================================================== */
@@ -132,7 +140,7 @@ export function SponsorCatalog() {
       await loadDrivers();
     } else {
       // back to sponsor mode
-      await loadEbayProducts(query);
+      await loadEbayProducts(query, 1);
     }
   };
 
@@ -233,6 +241,9 @@ export function SponsorCatalog() {
       ? `${selectedDriver.first_name ?? ''} ${selectedDriver.last_name ?? ''}`.trim()
       : selectedDriver.username)
     : '';
+  const totalPages = Math.max(1, Math.ceil(searchTotal / SEARCH_PAGE_SIZE));
+  const canGoPrev = searchPage > 1;
+  const canGoNext = searchPage < totalPages;
 
   return (
     <section className="catalog-page sponsor-catalog-container" aria-labelledby="sponsor-catalog-heading">
@@ -323,6 +334,7 @@ export function SponsorCatalog() {
         {loading ? (
           <p>Loading...</p>
         ) : (
+          <>
           <div className="catalog-grid">
             {products.length === 0 ? (
               <p>No products found.</p>
@@ -475,6 +487,32 @@ export function SponsorCatalog() {
               ))
             )}
           </div>
+          {!driverView && searchTotal > SEARCH_PAGE_SIZE && (
+            <div className="card mt-2" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <span className="helper-text">
+                Page {searchPage} of {totalPages} ({searchTotal.toLocaleString()} results)
+              </span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="catalog-secondary-button"
+                  onClick={() => loadEbayProducts(query, searchPage - 1)}
+                  disabled={!canGoPrev}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="catalog-primary-button"
+                  onClick={() => loadEbayProducts(query, searchPage + 1)}
+                  disabled={!canGoNext}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
     </section>
