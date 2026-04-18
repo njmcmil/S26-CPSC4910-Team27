@@ -340,6 +340,7 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
         defaultOpen: false,
         items: [
           { to: '/sponsor/profile', label: 'Sponsor Profile' },
+          { to: '/sponsor/users', label: 'Sponsor Users' },
           { to: '/account/settings', label: 'Settings' },
         ],
       },

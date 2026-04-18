@@ -17,11 +17,14 @@ export default function SponsorTips() {
 
   const loadTips = async () => {
     setTipsLoading(true);
+    setError(null);
     try {
       const data = await tipsService.getSponsorTips();
       setTips(data);
     } catch (err) {
       console.error('Failed to load tips', err);
+      const apiErr = err as { message?: string; detail?: string };
+      setError(apiErr?.message || apiErr?.detail || 'Failed to load tips.');
     } finally {
       setTipsLoading(false);
     }

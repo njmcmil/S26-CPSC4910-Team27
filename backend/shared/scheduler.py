@@ -7,39 +7,50 @@ scheduler = BackgroundScheduler()
 
 def award_daily_points():
     """
-    Award daily points to all drivers based on their sponsor's daily points setting.
+    Award recurring daily points to active sponsor-driver relationships.
+
+    The current schema stores sponsor settings by sponsor user ID, so we
+    compute a simple recurring award using a 10-point base scaled by the
+    sponsor's earn_rate.
     """
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # Get all drivers with their sponsor's daily points setting
+        # Get all active sponsor-driver relationships and the sponsor reward defaults.
         cursor.execute("""
-            SELECT sd.driver_id, sd.total_points, sd.sponsor_id, sp.daily_points_awarded
+            SELECT
+                sd.sponsor_driver_id,
+                sd.driver_user_id,
+                sd.sponsor_user_id,
+                COALESCE(sp.earn_rate, 1.0) AS earn_rate
             FROM SponsorDrivers sd
-            JOIN SponsorProfiles sp ON sd.sponsor_id = sp.sponsor_id
+            LEFT JOIN SponsorProfiles sp ON sd.sponsor_user_id = sp.user_id
         """)
         drivers = cursor.fetchall()
 
         for d in drivers:
-            daily_points = d['daily_points_awarded'] or 10  # fallback to 10 if not set
+            earn_rate = float(d.get("earn_rate") or 1.0)
+            daily_points = max(int(round(10 * earn_rate)), 0)
             if daily_points <= 0:
-                continue  # skip if sponsor has 0 daily points
+                continue
 
-            # Update driver points
             cursor.execute(
-                "UPDATE SponsorDrivers SET total_points = total_points + %s WHERE driver_id = %s",
-                (daily_points, d['driver_id'])
+                """
+                UPDATE SponsorDrivers
+                SET total_points = total_points + %s
+                WHERE sponsor_driver_id = %s
+                """,
+                (daily_points, d["sponsor_driver_id"])
             )
 
-            # Log in audit
             cursor.execute("""
                 INSERT INTO audit_log
                 (category, date, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
                 VALUES ('point_change', %s, %s, %s, %s, %s, %s)
             """, (
                 datetime.now(),
-                d['sponsor_id'],
-                d['driver_id'],
+                d["sponsor_user_id"],
+                d["driver_user_id"],
                 daily_points,
                 "Daily recurring points",
                 0  # system user

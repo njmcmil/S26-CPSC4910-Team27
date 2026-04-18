@@ -27,6 +27,7 @@ interface AuthState {
   activeSponsorId: number | null;
   setActiveSponsorId: (id: number) => void;
   sponsors: SponsorOption[];
+  refreshSponsors: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -80,27 +81,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('activeSponsorId', String(id));
   }, []);
 
+  const refreshSponsors = useCallback(async () => {
+    if (user?.role !== 'driver') {
+      setSponsors([]);
+      return;
+    }
+    try {
+      const data = await api.get<{ sponsors: SponsorOption[] }>('/api/driver/sponsors');
+      setSponsors(data.sponsors);
+      if (data.sponsors.length > 0) {
+        const stored = localStorage.getItem('activeSponsorId');
+        const storedId = stored ? parseInt(stored) : null;
+        const validId = storedId && data.sponsors.some((s) => s.sponsor_user_id === storedId)
+          ? storedId
+          : data.sponsors[0].sponsor_user_id;
+        setActiveSponsorId(validId);
+      }
+    } catch {
+      // silently fail so the app remains usable even if the sponsor refresh request fails
+    }
+  }, [user, setActiveSponsorId]);
+
   // Load sponsors when driver logs in
   useEffect(() => {
     if (user?.role === 'driver') {
-      api.get<{ sponsors: SponsorOption[] }>('/api/driver/sponsors')
-        .then((data: { sponsors: SponsorOption[] }) => {
-          setSponsors(data.sponsors);
-          if (data.sponsors.length > 0) {
-            const stored = localStorage.getItem('activeSponsorId');
-            const storedId = stored ? parseInt(stored) : null;
-            const validId = storedId && data.sponsors.some(s => s.sponsor_user_id === storedId)
-              ? storedId
-              : data.sponsors[0].sponsor_user_id;
-            setActiveSponsorId(validId);
-          }
-        })
-        .catch(() => {});
+      refreshSponsors();
     } else {
       setSponsors([]);
       setActiveSponsorIdState(null);
     }
-  }, [user]);
+  }, [user, refreshSponsors]);
 
   const applySession = useCallback((session: {
     user_id: number;
@@ -209,6 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     activeSponsorId,
     setActiveSponsorId,
     sponsors,
+    refreshSponsors,
   }),
   [
     user,
@@ -220,6 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     activeSponsorId,
     setActiveSponsorId,
     sponsors,
+    refreshSponsors,
   ],
 );
 

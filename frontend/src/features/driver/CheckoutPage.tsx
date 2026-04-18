@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/apiClient';
 import { useCart } from '../../auth/CartContext';
+import { useAuth } from '../../auth/AuthContext';
 
 export function CheckoutPage() {
   const { items, totalPoints, clearCart } = useCart();
+  const { refreshSponsors } = useAuth();
   const navigate = useNavigate();
 
   const [currentPoints, setCurrentPoints] = useState<number | null>(null);
@@ -48,6 +50,7 @@ export function CheckoutPage() {
           sponsor_user_id: item.sponsor_user_id,
         });
       }
+      await refreshSponsors();
       clearCart();
       navigate('/driver/order-confirmation', { replace: true });
     } catch (err: any) {

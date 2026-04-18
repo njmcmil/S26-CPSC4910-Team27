@@ -24,4 +24,11 @@ export const authService = {
   forgotPassword(username: string): Promise<{ message: string }> {
     return api.post<{ message: string }>('/forgot-password', { username });
   },
+
+  resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    return api.post<{ message: string }>('/reset-password', {
+      token,
+      new_password: newPassword,
+    });
+  },
 };

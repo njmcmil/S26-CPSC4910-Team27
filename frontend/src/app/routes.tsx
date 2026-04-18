@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 import { HomePage } from '../pages/Home';
 import { LoginPage } from '../pages/Login';
 import { RegisterPage } from '../pages/Register';
+import { ResetPasswordPage } from '../pages/ResetPassword';
 import { AboutPage } from '../pages/About';
 import { AccountBlockedPage } from '../pages/AccountBlocked';
 import { SettingsPage } from '../pages/Settings';
@@ -35,6 +36,7 @@ import { SponsorPurchaseHistory } from '../features/sponsor/SponsorPurchaseHisto
 import { SponsorErrorLogs } from '../features/sponsor/SponsorErrorLogs';
 import { SponsorAuditLogs } from '../features/sponsor/SponsorAuditLogs';
 import { SponsorReportsPage } from '../features/sponsor/SponsorReports';
+import { SponsorUsersPage } from '../features/sponsor/SponsorUsers';
 
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
 import { AdminUsersPage } from '../features/admin/AdminUsers';
@@ -68,6 +70,7 @@ export const router = createBrowserRouter([
       { path: '/account-blocked', element: <AccountBlockedPage /> },
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      { path: '/reset-password', element: <ResetPasswordPage /> },
 
       /* ---------------- PROTECTED ---------------- */
       {
@@ -100,6 +103,7 @@ export const router = createBrowserRouter([
             children: [
               { path: '/sponsor/dashboard', element: <SponsorDashboardPage /> },
               { path: '/sponsor/profile', element: <SponsorProfileFormPage /> },
+              { path: '/sponsor/users', element: <SponsorUsersPage /> },
               { path: '/sponsor/applications', element: <SponsorApplicationsPage /> },
               { path: '/sponsor/drivers', element: <SponsorDriversPage /> },
               { path: '/sponsor/points', element: <SponsorPointsPage /> },

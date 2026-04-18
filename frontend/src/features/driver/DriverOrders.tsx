@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/apiClient';
+import { useAuth } from '../../auth/AuthContext';
 
 type OrderStatus = 'pending' | 'shipped' | 'cancelled';
 
@@ -26,6 +27,7 @@ const STATUS_COLORS: Record<OrderStatus, { color: string; background: string }> 
 };
 
 export function DriverOrdersPage() {
+  const { refreshSponsors } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +60,7 @@ export function DriverOrdersPage() {
       setOrders(prev =>
         prev.map(o => o.order_id === order.order_id ? { ...o, status: 'cancelled' } : o)
       );
+      await refreshSponsors();
       setFeedback({ type: 'success', msg: res.message });
     } catch (err: any) {
       const detail = err?.detail ?? err?.message ?? 'Cancel failed.';
@@ -238,4 +241,3 @@ export function DriverOrdersPage() {
     </section>
   );
 }
-
