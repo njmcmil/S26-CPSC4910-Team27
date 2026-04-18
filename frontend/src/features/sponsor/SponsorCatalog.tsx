@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { sponsorService } from '../../services/sponsorService';
 import { getCatalog } from '../../services/productService';
+import { Alert } from '../../components/Alert';
 import type { Product } from '../../types';
 import type { SponsorDriver } from '../../services/sponsorService';
 
@@ -24,6 +25,7 @@ export function SponsorCatalog() {
   const [query, setQuery] = useState<string>('laptop');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const [driverView, setDriverView] = useState<boolean>(false);
   const [drivers, setDrivers] = useState<SponsorDriver[]>([]);
@@ -39,6 +41,7 @@ export function SponsorCatalog() {
   const loadEbayProducts = async (search: string) => {
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const data = await getCatalog(search);
@@ -57,6 +60,7 @@ export function SponsorCatalog() {
   const loadSponsorCatalog = async () => {
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const res = await sponsorService.getCatalog();
@@ -97,7 +101,7 @@ export function SponsorCatalog() {
         setSelectedDriverId(String(res[0].driver_user_id));
       }
     } catch {
-      console.error('Failed to load sponsor drivers');
+      setError('Failed to load sponsor drivers for preview mode.');
     }
   };
 
@@ -137,10 +141,12 @@ export function SponsorCatalog() {
   /* ===================================================== */
 
   const handleAddToCatalog = async (product: Product) => {
+    setError(null);
+    setSuccess(null);
     const points_cost = pointsCosts[product.itemId] ?? 0;
 
     if (points_cost < 0) {
-      alert('Point cost must be 0 or greater');
+      setError('Point cost must be 0 or greater.');
       return;
     }
 
@@ -151,9 +157,9 @@ export function SponsorCatalog() {
         points_cost,
       });
 
-      alert('Product added to catalog!');
+      setSuccess('Product added to catalog.');
     } catch {
-      alert('Failed to add product.');
+      setError('Failed to add product.');
     }
   };
 
@@ -162,33 +168,42 @@ export function SponsorCatalog() {
   /* ===================================================== */
 
  const handleRemoveFromCatalog = async (itemId: string) => {
+  setError(null);
+  setSuccess(null);
   try {
     await sponsorService.disableProduct(itemId);
 
     // Refresh from database instead of mutating state manually
     await loadSponsorCatalog();
+    setSuccess('Product disabled in sponsor catalog.');
   } catch {
-    alert("Failed to disable product.");
+    setError('Failed to disable product.');
   }
 };
 
  const handleDeleteFromCatalog = async (itemId: string) => {
+  setError(null);
+  setSuccess(null);
   const confirmed = window.confirm('Remove this product from your catalog? This cannot be undone.');
   if (!confirmed) return;
   try {
     await sponsorService.removeFromCatalog(itemId);
     await loadSponsorCatalog();
+    setSuccess('Product removed from catalog.');
   } catch {
-    alert('Failed to remove product.');
+    setError('Failed to remove product.');
   }
 };
 
  const handleEnableProduct = async (itemId: string) => {
+  setError(null);
+  setSuccess(null);
   try {
     await sponsorService.enableProduct(itemId);
     await loadSponsorCatalog();
+    setSuccess('Product enabled in sponsor catalog.');
   } catch {
-    alert('Failed to enable product.');
+    setError('Failed to enable product.');
   }
 };
 
@@ -197,12 +212,14 @@ export function SponsorCatalog() {
   /* ===================================================== */
 
   const handlePublishCatalog = async () => {
+    setError(null);
+    setSuccess(null);
     try {
       await sponsorService.publishCatalog();
-      alert('Catalog Published Successfully!');
+      setSuccess('Catalog published successfully.');
       await loadSponsorCatalog();
     } catch {
-      alert('Failed to publish catalog.');
+      setError('Failed to publish catalog.');
     }
   };
 
@@ -300,7 +317,8 @@ export function SponsorCatalog() {
           </form>
         )}
 
-        {error && <p className="error">{error}</p>}
+        {error && <Alert variant="error">{error}</Alert>}
+        {success && <Alert variant="success">{success}</Alert>}
 
         {loading ? (
           <p>Loading...</p>

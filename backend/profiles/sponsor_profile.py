@@ -16,11 +16,14 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from datetime import datetime
 from auth.auth import get_current_user, hash_password, require_role
 from shared.db import get_connection
+from shared.utils import validate_password
 from users.email_service import (
     send_driver_account_banned_email,
     send_driver_account_deactivated_email,
     send_driver_application_rejection_email,
     send_driver_application_approval_email,
+    send_dropped_by_sponsor_email,
+    send_sponsor_account_created_email,
 )
 from typing import List
 import secrets
@@ -42,6 +45,31 @@ VALID_DRIVER_ACCOUNT_TRANSITIONS: dict[str, set[str]] = {
 class DriverAccountStatusChangeRequest(BaseModel):
     new_status: str
     reason: str | None = None
+
+
+class CreateSponsorUserRequest(BaseModel):
+    username: str
+    email: str
+    first_name: str | None = None
+    last_name: str | None = None
+    password: str
+
+
+def ensure_sponsor_user_links_table(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS SponsorUserLinks (
+            sponsor_user_id INT PRIMARY KEY,
+            sponsor_owner_user_id INT NOT NULL,
+            created_by_user_id INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sponsor_user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY (sponsor_owner_user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by_user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+            INDEX idx_owner_user (sponsor_owner_user_id)
+        )
+        """
+    )
 
 
 #=============
@@ -214,6 +242,12 @@ def create_sponsor_profile(
         )
 
         row = cursor.fetchone()
+        if row and row.get("email"):
+            send_sponsor_account_created_email(
+                row["email"],
+                row["username"],
+                temp_password,
+            )
         return SponsorProfile(
             user_id=row["user_id"],
             username=row["username"],
@@ -831,6 +865,188 @@ def update_driver_status_for_sponsor(
                 status_code=500,
                 detail="Driver account status schema does not support this value yet. Run the latest migrations.",
             )
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/users")
+def list_sponsor_users(current_user: dict = Depends(require_role("sponsor"))):
+    sponsor_owner_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True, buffered=True)
+    try:
+        ensure_sponsor_user_links_table(cursor)
+        cursor.execute(
+            """
+            SELECT
+                u.user_id,
+                u.username,
+                u.email,
+                p.first_name,
+                p.last_name,
+                CASE WHEN u.user_id = %s THEN TRUE ELSE FALSE END AS is_owner
+            FROM Users u
+            LEFT JOIN Profiles p ON p.user_id = u.user_id
+            LEFT JOIN SponsorUserLinks sul ON sul.sponsor_user_id = u.user_id
+            WHERE u.role = 'sponsor'
+              AND (u.user_id = %s OR sul.sponsor_owner_user_id = %s)
+            ORDER BY is_owner DESC, u.username ASC
+            """,
+            (sponsor_owner_id, sponsor_owner_id, sponsor_owner_id),
+        )
+        return {"users": cursor.fetchall()}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/users")
+def create_sponsor_user(
+    body: CreateSponsorUserRequest,
+    current_user: dict = Depends(require_role("sponsor")),
+):
+    sponsor_owner_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True, buffered=True)
+    try:
+        ensure_sponsor_user_links_table(cursor)
+        username = (body.username or "").strip()
+        email = (body.email or "").strip().lower()
+        if not username or not email:
+            raise HTTPException(status_code=422, detail="Username and email are required")
+
+        plain_password = (body.password or "").strip()
+        if not plain_password:
+            raise HTTPException(status_code=422, detail="Password is required")
+        is_valid_password, password_error = validate_password(plain_password)
+        if not is_valid_password:
+            raise HTTPException(status_code=422, detail=password_error)
+
+        cursor.execute(
+            "SELECT user_id FROM Users WHERE username = %s OR email = %s LIMIT 1",
+            (username, email),
+        )
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail="Username or email already exists")
+
+        password_hash = hash_password(plain_password)
+        cursor.execute(
+            """
+            INSERT INTO Users (username, password_hash, role, email)
+            VALUES (%s, %s, 'sponsor', %s)
+            """,
+            (username, password_hash, email),
+        )
+        new_user_id = cursor.lastrowid
+
+        cursor.execute(
+            """
+            INSERT INTO Profiles (user_id, first_name, last_name)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                first_name = VALUES(first_name),
+                last_name = VALUES(last_name)
+            """,
+            (new_user_id, body.first_name, body.last_name),
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO SponsorUserLinks (sponsor_user_id, sponsor_owner_user_id, created_by_user_id)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                sponsor_owner_user_id = VALUES(sponsor_owner_user_id),
+                created_by_user_id = VALUES(created_by_user_id)
+            """,
+            (new_user_id, sponsor_owner_id, sponsor_owner_id),
+        )
+        cursor.execute(
+            """
+            INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES (NOW(), 'sponsor_user_action', %s, NULL, NULL, %s, %s)
+            """,
+            (sponsor_owner_id, f"Created sponsor user '{username}'", sponsor_owner_id),
+        )
+        conn.commit()
+
+        send_sponsor_account_created_email(email, username, plain_password)
+        return {"message": "Sponsor user created", "username": username, "email": email}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.delete("/drivers/{driver_user_id}")
+def remove_driver_from_sponsor(
+    driver_user_id: int,
+    current_user: dict = Depends(require_role("sponsor")),
+):
+    sponsor_id = current_user["user_id"]
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT
+                sd.sponsor_driver_id,
+                u.user_id,
+                u.username,
+                u.email,
+                COALESCE(sp.company_name, p.first_name, u.username) AS sponsor_name
+            FROM SponsorDrivers sd
+            JOIN Users u ON u.user_id = sd.driver_user_id
+            LEFT JOIN SponsorProfiles sp ON sp.user_id = sd.sponsor_user_id
+            LEFT JOIN Profiles p ON p.user_id = sd.sponsor_user_id
+            WHERE sd.sponsor_user_id = %s
+              AND sd.driver_user_id = %s
+              AND u.role = 'driver'
+            LIMIT 1
+            """,
+            (sponsor_id, driver_user_id),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Driver is not associated with your sponsor account")
+
+        cursor.execute(
+            """
+            DELETE FROM SponsorDrivers
+            WHERE sponsor_user_id = %s
+              AND driver_user_id = %s
+            LIMIT 1
+            """,
+            (sponsor_id, driver_user_id),
+        )
+        cursor.execute(
+            """
+            INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES (NOW(), 'sponsor_user_action', %s, %s, NULL, %s, %s)
+            """,
+            (sponsor_id, driver_user_id, "Sponsor removed driver from sponsor program", sponsor_id),
+        )
+        conn.commit()
+
+        if row.get("email"):
+            send_dropped_by_sponsor_email(
+                row["email"],
+                row["username"],
+                row.get("sponsor_name"),
+            )
+
+        return {"message": "Driver removed from sponsor program"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
         raise
     finally:
         cursor.close()

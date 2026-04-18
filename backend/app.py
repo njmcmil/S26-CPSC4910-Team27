@@ -67,6 +67,9 @@ from users.password_reset import (
     mark_token_used,
 )
 from users.email_service import (
+    send_account_appeal_submitted_email,
+    send_admin_account_appeal_notification_email,
+    send_password_change_confirmation,
     send_password_reset_email,
     send_login_notification_email,
     send_failed_login_alert_email,
@@ -141,6 +144,30 @@ def ensure_account_appeals_table(cursor) -> None:
         )
         """
     )
+
+
+def ensure_sponsor_user_links_table() -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS SponsorUserLinks (
+                sponsor_user_id INT PRIMARY KEY,
+                sponsor_owner_user_id INT NOT NULL,
+                created_by_user_id INT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (sponsor_user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+                FOREIGN KEY (sponsor_owner_user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by_user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+                INDEX idx_owner_user (sponsor_owner_user_id)
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def ensure_account_status_schema() -> None:
@@ -453,6 +480,7 @@ async def audit_user_actions(request: Request, call_next):
 @app.on_event("startup")
 def start_scheduler():
     ensure_account_status_schema()
+    ensure_sponsor_user_links_table()
     repair_sponsor_driver_point_totals()
     if not getattr(scheduler, "running", False):
         scheduler.start()
@@ -748,7 +776,7 @@ def login_endpoint(request: LoginRequest, http_request: Request):
             ip_address=ip,
             user_agent=agent
         )
-        if attempted_user and attempted_user.get("role") == "driver" and attempted_user.get("email"):
+        if attempted_user and attempted_user.get("email"):
             send_failed_login_alert_email(
                 to_email=attempted_user["email"],
                 username=attempted_user["username"],
@@ -761,9 +789,12 @@ def login_endpoint(request: LoginRequest, http_request: Request):
             )
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
+    login_actor_user_id = user.get("login_user_id", user["user_id"])
+    login_actor_username = user.get("login_username", user["username"])
+
     log_login_attempt(
-        username=user["username"],
-        user_id=user["user_id"],
+        username=login_actor_username,
+        user_id=login_actor_user_id,
         success=True,
         ip_address=ip,
         user_agent=agent
@@ -779,7 +810,7 @@ def login_endpoint(request: LoginRequest, http_request: Request):
     token = create_access_token({"user_id": user["user_id"]})
 
     # Notification failures should not block a successful login.
-    if user.get("role") == "driver" and user.get("email"):
+    if user.get("email"):
         send_login_notification_email(
             to_email=user["email"],
             username=user["username"],
@@ -840,7 +871,34 @@ def submit_account_appeal(
                 message,
             ),
         )
+        cursor.execute(
+            """
+            SELECT username, email
+            FROM Users
+            WHERE role = 'admin'
+              AND (%s IS NULL OR user_id = %s)
+            ORDER BY user_id
+            """,
+            (target_admin_user_id, target_admin_user_id),
+        )
+        admins_to_notify = cursor.fetchall()
         conn.commit()
+        if current_user.get("email"):
+            send_account_appeal_submitted_email(
+                current_user["email"],
+                current_user.get("username", role),
+                role,
+                account_status,
+            )
+        for admin_row in admins_to_notify:
+            if admin_row.get("email"):
+                send_admin_account_appeal_notification_email(
+                    admin_row["email"],
+                    admin_row["username"],
+                    current_user.get("username", role),
+                    role,
+                    account_status,
+                )
         return {"message": "Appeal submitted. An admin will review your request."}
     finally:
         cursor.close()
@@ -956,6 +1014,8 @@ def reset_password(request: ResetPasswordRequest):
     user = get_user_by_id(user_id)
 
     print(f"\nassword reset completed for user: {user['username']} (ID: {user_id})")
+    if user and user.get("email"):
+        send_password_change_confirmation(user["email"], user["username"])
 
     return {
         "message": "Password has been reset successfully. You can now log in with your new password."
@@ -1031,6 +1091,8 @@ def change_password(
         raise HTTPException(status_code=500, detail="Failed to update password")
 
     print(f"\nPassword changed for user: {user['username']} (ID: {user['user_id']})")
+    if user.get("email"):
+        send_password_change_confirmation(user["email"], user["username"])
 
     return {"message": "Password changed successfully"}
 

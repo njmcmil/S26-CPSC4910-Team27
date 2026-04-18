@@ -10,8 +10,9 @@ export interface Tip {
 }
 
 export const tipsService = {
-  async getTips(): Promise<Tip[]> {
-    return await api.get<Tip[]>('/api/tips');
+  async getTips(sponsorUserId?: number): Promise<Tip[]> {
+    const qs = sponsorUserId ? `?sponsor_user_id=${sponsorUserId}` : '';
+    return await api.get<Tip[]>(`/api/tips${qs}`);
   },
 
   async getSponsorTips(): Promise<Tip[]> {

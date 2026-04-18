@@ -22,8 +22,11 @@ from schemas.admin import (
     SystemMetricsResponse,
 )
 from users.email_service import (
+    send_admin_account_access_email,
+    send_account_appeal_resolved_email,
     send_driver_account_banned_email,
     send_driver_account_deactivated_email,
+    send_removed_by_admin_email,
     send_sponsor_account_deactivated_email,
     send_sponsor_account_banned_email,
 )
@@ -204,6 +207,46 @@ def admin_impersonate_user(
         raise HTTPException(status_code=404, detail="User not found")
     if target.get("role") not in ("sponsor", "driver"):
         raise HTTPException(status_code=400, detail="Admins can only impersonate sponsors or drivers")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        if target.get("role") == "sponsor":
+            cursor.execute(
+                """
+                INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                VALUES (NOW(), 'admin_account_access', %s, NULL, NULL, %s, %s)
+                """,
+                (
+                    target["user_id"],
+                    "Admin accessed sponsor account using view-as",
+                    current_user["user_id"],
+                ),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+                VALUES (NOW(), 'admin_account_access', NULL, %s, NULL, %s, %s)
+                """,
+                (
+                    target["user_id"],
+                    "Admin accessed driver account using view-as",
+                    current_user["user_id"],
+                ),
+            )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    if target.get("email"):
+        send_admin_account_access_email(
+            target["email"],
+            target["username"],
+            current_user["username"],
+            target["role"],
+        )
 
     impersonation = {
         "admin_user_id": current_user["user_id"],
@@ -1089,6 +1132,8 @@ def resolve_account_appeal(
 
         user_id = int(appeal["user_id"])
         user_role = (appeal.get("user_role") or "").lower()
+        cursor.execute("SELECT username, email FROM Users WHERE user_id = %s", (user_id,))
+        appealed_user = cursor.fetchone()
 
         # Resolving an appeal should restore access for the specific appealed account.
         if status_value == "resolved":
@@ -1139,6 +1184,13 @@ def resolve_account_appeal(
             (status_value, body.admin_response, current_user["user_id"], appeal_id),
         )
         conn.commit()
+        if appealed_user and appealed_user.get("email"):
+            send_account_appeal_resolved_email(
+                appealed_user["email"],
+                appealed_user["username"],
+                status_value,
+                body.admin_response,
+            )
         if status_value == "resolved":
             return {"message": f"Appeal {appeal_id} resolved and {user_role} account reactivated"}
         return {"message": f"Appeal {appeal_id} marked as {status_value}"}
@@ -1413,11 +1465,18 @@ def delete_user(username: str, current_user: dict = Depends(require_role("admin"
     cursor = conn.cursor(dictionary=True)
     try:
         # Check if user exists
-        cursor.execute("SELECT user_id FROM Users WHERE username = %s", (username,))
+        cursor.execute("SELECT user_id, role, email, username FROM Users WHERE username = %s", (username,))
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         user_id = user["user_id"]
+
+        if user.get("email"):
+            send_removed_by_admin_email(
+                user["email"],
+                user["username"],
+                user.get("role", "user"),
+            )
 
         # Delete child records first
         cursor.execute("DELETE FROM SponsorDrivers WHERE driver_user_id = %s OR sponsor_user_id = %s", (user_id, user_id))

@@ -168,6 +168,46 @@ def get_account_status_for_user(user_id: int, role: str) -> str:
     finally:
         cursor.close()
         conn.close()
+
+
+def apply_effective_sponsor_context(user: dict) -> dict:
+    """
+    If a sponsor login is linked to an owner sponsor account, resolve user context
+    to the owner account so sponsor-scoped data is consistent across sponsor users.
+    """
+    if user.get("role") != "sponsor":
+        return user
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True, buffered=True)
+    try:
+        cursor.execute(
+            """
+            SELECT sponsor_owner_user_id
+            FROM SponsorUserLinks
+            WHERE sponsor_user_id = %s
+            LIMIT 1
+            """,
+            (user["user_id"],),
+        )
+        row = cursor.fetchone()
+        owner_user_id = (row or {}).get("sponsor_owner_user_id")
+        if not owner_user_id or int(owner_user_id) == int(user["user_id"]):
+            return user
+
+        owner_user = get_user_by_id(int(owner_user_id))
+        if not owner_user or owner_user.get("role") != "sponsor":
+            return user
+
+        owner_user["sponsor_actor_user_id"] = user["user_id"]
+        owner_user["sponsor_actor_username"] = user.get("username")
+        owner_user["sponsor_owner_user_id"] = owner_user["user_id"]
+        return owner_user
+    except Exception:
+        return user
+    finally:
+        cursor.close()
+        conn.close()
     
 # FastAPI Dependency to get the currently authenticated user from a Bearer token.
 # 401 error: "your key doesnt work"
@@ -189,6 +229,8 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+
+    user = apply_effective_sponsor_context(user)
 
     account_status = get_account_status_for_user(user["user_id"], user.get("role", ""))
     if user.get("role") in ("driver", "sponsor") and account_status != "active":
@@ -232,6 +274,8 @@ def get_current_user_allow_blocked(token: str = Depends(oauth2_scheme)):
     user = get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+
+    user = apply_effective_sponsor_context(user)
 
     user["account_status"] = get_account_status_for_user(user["user_id"], user.get("role", ""))
 

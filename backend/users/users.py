@@ -71,6 +71,33 @@ def validate_login(username: str, password: str) -> Optional[Dict]:
         return None
     # if exists take plain password they typed and compare it to hashed in database using verify_password
     if verify_password(password, user['password_hash']):
+        # Support linked sponsor users that share one sponsor organization.
+        # If this user is linked, downstream sponsor queries should resolve
+        # against the sponsor owner account.
+        if user.get("role") == "sponsor":
+            conn = get_connection()
+            cursor = conn.cursor(dictionary=True, buffered=True)
+            try:
+                cursor.execute(
+                    """
+                    SELECT sponsor_owner_user_id
+                    FROM SponsorUserLinks
+                    WHERE sponsor_user_id = %s
+                    LIMIT 1
+                    """,
+                    (user["user_id"],),
+                )
+                row = cursor.fetchone()
+                if row and row.get("sponsor_owner_user_id"):
+                    user["login_user_id"] = user["user_id"]
+                    user["login_username"] = user["username"]
+                    user["user_id"] = int(row["sponsor_owner_user_id"])
+            except Exception:
+                # Table may not exist yet in older environments; fallback to normal login.
+                pass
+            finally:
+                cursor.close()
+                conn.close()
         return user
     return None # password is wrong
 

@@ -160,7 +160,9 @@ async def get_sponsor_reward_defaults(
     # Use user_id to look up SponsorProfiles (keyed by user_id), matching sponsor_profile.py pattern.
     user_id = current_user['user_id']
     conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
+    # Buffered cursor prevents unread-result errors when a query can return
+    # multiple rows but only one row is consumed.
+    cursor = conn.cursor(dictionary=True, buffered=True)
 
     try:
         cursor.execute("""
@@ -1418,7 +1420,11 @@ async def delete_sponsor_tip(tip_id: int, current_user: dict = Depends(verify_sp
 
 # Get all active, unviewed tips (with dynamic min points threshold)
 @router.get("/tips", response_model=list[Tip])
-async def get_all_tips(current_user: dict = Depends(get_current_user), session_index: int = Cookie(default=0)):
+async def get_all_tips(
+    current_user: dict = Depends(get_current_user),
+    session_index: int = Cookie(default=0),
+    sponsor_user_id: int | None = None,
+):
     """
     Return active tips for the driver based on current points and accrual status.
     Supports cycling tips per session using session_index.
@@ -1433,10 +1439,29 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
 
     try:
         # Get driver's sponsor and points/accrual status
-        cursor.execute(
-            "SELECT sponsor_user_id, total_points, points_paused FROM SponsorDrivers WHERE driver_user_id = %s",
-            (driver_id,)
-        )
+        if sponsor_user_id is not None:
+            cursor.execute(
+                """
+                SELECT sponsor_user_id, total_points, points_paused
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s
+                  AND sponsor_user_id = %s
+                ORDER BY sponsor_driver_id DESC
+                LIMIT 1
+                """,
+                (driver_id, sponsor_user_id),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT sponsor_user_id, total_points, points_paused
+                FROM SponsorDrivers
+                WHERE driver_user_id = %s
+                ORDER BY sponsor_driver_id DESC
+                LIMIT 1
+                """,
+                (driver_id,),
+            )
         driver = cursor.fetchone()
         if not driver:
             raise HTTPException(status_code=404, detail="Driver not found")
@@ -1451,18 +1476,6 @@ async def get_all_tips(current_user: dict = Depends(get_current_user), session_i
         if not profile_row:
             raise HTTPException(status_code=404, detail="Driver profile not found")
         driver_profile_id = profile_row['driver_profile_id']
-
-        # Get dynamic min points threshold from sponsor settings
-        cursor.execute(
-            "SELECT min_points_for_tips FROM SponsorProfiles WHERE user_id = %s",
-            (sponsor_id,)
-        )
-        sponsor_setting = cursor.fetchone()
-        min_points_threshold = sponsor_setting['min_points_for_tips'] if sponsor_setting else 50
-
-        # If points are paused or driver has enough points, no tips
-        if driver['points_paused'] or driver['total_points'] >= min_points_threshold:
-            return []
 
         # Fetch active tips for this sponsor that this driver has not viewed yet
         cursor.execute(

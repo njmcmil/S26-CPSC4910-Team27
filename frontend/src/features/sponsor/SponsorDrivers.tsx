@@ -46,6 +46,7 @@ export function SponsorDriversPage() {
   const [drivers, setDrivers] = useState<SponsorDriver[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [selectedDriver, setSelectedDriver] = useState<SponsorDriver | null>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
 
@@ -91,12 +92,38 @@ export function SponsorDriversPage() {
   async function changeDriverStatus(driver: SponsorDriver, newStatus: 'active' | 'inactive' | 'banned') {
     setActionLoading(driver.driver_user_id);
     setError('');
+    setSuccess('');
     try {
       await api.post(`/sponsor/drivers/${driver.driver_user_id}/status`, { new_status: newStatus });
       await fetchDrivers();
+      setSuccess(`${driverDisplayName(driver)} is now ${newStatus}.`);
     } catch (err) {
       const apiErr = err as ApiError;
       setError(apiErr.message || 'Failed to update driver status.');
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function removeDriver(driver: SponsorDriver) {
+    const confirmed = window.confirm(
+      `Remove ${driverDisplayName(driver)} from your sponsor program? They will lose access to your catalog and points.`,
+    );
+    if (!confirmed) return;
+
+    setActionLoading(driver.driver_user_id);
+    setError('');
+    setSuccess('');
+    try {
+      await api.delete(`/sponsor/drivers/${driver.driver_user_id}`);
+      if (selectedDriver?.driver_user_id === driver.driver_user_id) {
+        setSelectedDriver(null);
+      }
+      await fetchDrivers();
+      setSuccess(`${driverDisplayName(driver)} was removed from your sponsor program.`);
+    } catch (err) {
+      const apiErr = err as ApiError;
+      setError(apiErr.message || 'Failed to remove driver.');
     } finally {
       setActionLoading(null);
     }
@@ -106,6 +133,12 @@ export function SponsorDriversPage() {
     <section aria-labelledby="drivers-heading">
       <h2 id="drivers-heading">Drivers</h2>
       <p className="mt-1">View and manage drivers enrolled in your program.</p>
+
+      {success && (
+        <div className="mt-2">
+          <Alert variant="success">{success}</Alert>
+        </div>
+      )}
 
       {drivers.length === 0 ? (
         <p className="placeholder-msg mt-2">
@@ -193,6 +226,13 @@ export function SponsorDriversPage() {
                           Unban
                         </Button>
                       )}
+                      <Button
+                        variant="secondary"
+                        loading={actionLoading === driver.driver_user_id}
+                        onClick={() => removeDriver(driver)}
+                      >
+                        Remove Driver
+                      </Button>
                     </div>
                   </td>
                 </tr>

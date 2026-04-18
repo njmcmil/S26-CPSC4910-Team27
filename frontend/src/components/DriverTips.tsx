@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Tip, tipsService } from '../services/tipsService';
+import { Alert } from './Alert';
+import { useAuth } from '../auth/AuthContext';
 
 export default function DriverTips() {
+  const { activeSponsorId } = useAuth();
   const [tip, setTip] = useState<Tip | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     loadTip();
-  }, []);
+  }, [activeSponsorId]);
 
   useEffect(() => {
     if (!open) return;
@@ -30,8 +34,9 @@ export default function DriverTips() {
   /* -------------------------------- */
   const loadTip = async () => {
     setLoading(true);
+    setError('');
     try {
-      const data = await tipsService.getTips();
+      const data = await tipsService.getTips(activeSponsorId ?? undefined);
 
       // Only show ONE tip at a time (first in list)
       if (data.length > 0) {
@@ -43,6 +48,7 @@ export default function DriverTips() {
       }
     } catch (err) {
       console.error('Failed to load tips', err);
+      setError('Could not load tips right now. Please try again.');
       setTip(null);
       setOpen(false);
     } finally {
@@ -62,6 +68,7 @@ export default function DriverTips() {
       setOpen(false);
     } catch (err) {
       console.error('Failed to mark tip viewed', err);
+      setError('Could not mark tip as viewed. Please try again.');
     }
   };
 
@@ -71,6 +78,7 @@ export default function DriverTips() {
 
   return (
     <div>
+      {error && <Alert variant="error">{error}</Alert>}
       {loading && <p>Loading tips...</p>}
 
       {!loading && tip && !open && (

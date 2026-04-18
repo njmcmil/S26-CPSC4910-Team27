@@ -7,13 +7,19 @@ Purpose:
 """
 
 import os
+from urllib.parse import quote
 from dotenv import load_dotenv
 
 load_dotenv()
 
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 FROM_EMAIL = os.getenv("EMAIL_FROM", "teamtwentyseven3@gmail.com")
-BASE_URL = os.getenv("FRONTEND_URL", "http://52.200.244.222:5173")
+BASE_URL = os.getenv("FRONTEND_URL", "http://52.200.244.222:5173").rstrip("/")
+
+
+def _app_link(path: str) -> str:
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    return f"{BASE_URL}{normalized_path}"
 
 
 def _send(to_email: str, subject: str, html: str, plain: str) -> bool:
@@ -41,7 +47,7 @@ def _send(to_email: str, subject: str, html: str, plain: str) -> bool:
 
 
 def send_password_reset_email(to_email: str, reset_token: str, username: str) -> bool:
-    reset_link = f"{BASE_URL}/reset-password?token={reset_token}"
+    reset_link = _app_link(f"/reset-password?token={quote(reset_token, safe='')}")
     subject = "Password Reset Request - Good Driver Incentive Program"
     plain = f"Hello {username},\n\nReset your password: {reset_link}\n\nExpires in 24 hours."
     html = f"""
@@ -63,6 +69,7 @@ def send_password_change_confirmation(to_email: str, username: str) -> bool:
         <p>Hello {username},</p>
         <p>Your password was successfully changed.</p>
         <p>If you did not make this change, please contact support immediately.</p>
+        <p><a href="{_app_link('/account/settings')}">Review account settings</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -99,7 +106,7 @@ def send_login_notification_email(
             <li><strong>Operating System:</strong> {os_name}</li>
         </ul>
         <p>If this was not you, change your password immediately and review your trusted devices.</p>
-        <p><a href="{BASE_URL}/account/settings">Review trusted devices</a></p>
+        <p><a href="{_app_link('/account/settings')}">Review trusted devices</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -139,7 +146,7 @@ def send_failed_login_alert_email(
             <li><strong>Operating System:</strong> {os_name}</li>
         </ul>
         <p>If this was not you, reset your password and review your trusted devices immediately.</p>
-        <p><a href="{BASE_URL}/account/settings">Review trusted devices</a></p>
+        <p><a href="{_app_link('/account/settings')}">Review trusted devices</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -176,7 +183,7 @@ def send_driver_application_approval_email(
         <p>Hello {username},</p>
         <p>Your driver application{sponsor_text} has been <strong>approved</strong>.</p>
         <p>You are now eligible to earn reward points and redeem them for incentives.</p>
-        <p><a href="{BASE_URL}/driver/dashboard">Go to your dashboard</a></p>
+        <p><a href="{_app_link('/driver/dashboard')}">Go to your dashboard</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -198,7 +205,7 @@ def send_points_notification(
         <p><strong>{sign}{points_changed} points</strong> have been {action} your account.</p>
         <p><strong>Reason:</strong> {reason}</p>
         <p><strong>New Balance:</strong> {new_total} points</p>
-        <p><a href="{BASE_URL}/driver/points">View your points history</a></p>
+        <p><a href="{_app_link('/driver/points')}">View your points history</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -216,6 +223,28 @@ def send_dropped_by_sponsor_email(
         <p>Hello {username},</p>
         <p>You have been removed from the program{sponsor_text}.</p>
         <p>If you have questions, please contact support.</p>
+        <p><a href="{_app_link('/driver/applications')}">View available sponsors</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_removed_by_admin_email(
+    to_email: str,
+    username: str,
+    role: str,
+) -> bool:
+    subject = "Account Access Removed - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        "An administrator removed your account access from the Good Driver Incentive Program.\n"
+        "If this was unexpected, please contact support."
+    )
+    html = f"""
+        <h2>Account Access Removed</h2>
+        <p>Hello {username},</p>
+        <p>An administrator removed your <strong>{role}</strong> account access from the Good Driver Incentive Program.</p>
+        <p>If this was unexpected, please contact support.</p>
+        <p><a href="{_app_link('/login')}">Return to login</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -258,7 +287,7 @@ def send_order_placed_email(
         </ul>
         <ul>{items_html}</ul>
         <p><strong>Total Points Used:</strong> {total_points}</p>
-        <p><a href="{BASE_URL}/driver/catalog">Browse more items</a></p>
+        <p><a href="{_app_link('/driver/orders')}">View your orders</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -288,7 +317,7 @@ def send_sponsor_order_placed_email(
             <li><strong>Points Used:</strong> {points_cost}</li>
             <li><strong>Time:</strong> {placed_at}</li>
         </ul>
-        <p><a href="{BASE_URL}/driver/orders">View your orders</a></p>
+        <p><a href="{_app_link('/driver/orders')}">View your orders</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -312,6 +341,7 @@ def send_sponsor_account_deactivated_email(
         <p>Your sponsor account (<strong>{name}</strong>) has been <strong>deactivated</strong> by an administrator.</p>
         {"<p><strong>Reason:</strong> " + reason + "</p>" if reason else ""}
         <p>If you believe this is an error, please contact support.</p>
+        <p><a href="{_app_link('/account-blocked')}">Request an account review</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -336,6 +366,7 @@ def send_sponsor_account_banned_email(
         <p>Your sponsor account (<strong>{name}</strong>) has been <strong>banned</strong> by an administrator.</p>
         {"<p><strong>Reason:</strong> " + reason + "</p>" if reason else ""}
         <p>If you believe this is an error, please contact support.</p>
+        <p><a href="{_app_link('/account-blocked')}">Request an account review</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -359,6 +390,7 @@ def send_driver_account_deactivated_email(
         <p>Your driver account has been <strong>deactivated</strong> by {changed_by_label}.</p>
         {"<p><strong>Reason:</strong> " + reason + "</p>" if reason else ""}
         <p>If you believe this is an error, please contact support or request a review.</p>
+        <p><a href="{_app_link('/account-blocked')}">Request an account review</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -382,6 +414,7 @@ def send_driver_account_banned_email(
         <p>Your driver account has been <strong>banned</strong> by {changed_by_label}.</p>
         {"<p><strong>Reason:</strong> " + reason + "</p>" if reason else ""}
         <p>If you believe this is an error, please contact support or request a review.</p>
+        <p><a href="{_app_link('/account-blocked')}">Request an account review</a></p>
     """
     return _send(to_email, subject, html, plain)
 
@@ -422,6 +455,133 @@ def send_order_success_email(
             <li><strong>Browser:</strong> {purchase_browser_name}</li>
             <li><strong>Operating System:</strong> {purchase_os_name}</li>
         </ul>
-        <p><a href="{BASE_URL}/driver/orders">View your orders</a></p>
+        <p><a href="{_app_link('/driver/orders')}">View your orders</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_account_appeal_submitted_email(
+    to_email: str,
+    username: str,
+    user_role: str,
+    account_status: str,
+) -> bool:
+    subject = "Account Review Request Received - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        f"We received your {user_role} account review request for your {account_status} account status.\n\n"
+        "An administrator will review your message and follow up inside the platform."
+    )
+    html = f"""
+        <h2>Account Review Request Received</h2>
+        <p>Hello {username},</p>
+        <p>We received your <strong>{user_role}</strong> account review request for your <strong>{account_status}</strong> account status.</p>
+        <p>An administrator will review your message and follow up inside the platform.</p>
+        <p><a href="{_app_link('/account-blocked')}">Return to account review page</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_admin_account_appeal_notification_email(
+    to_email: str,
+    admin_username: str,
+    requester_username: str,
+    requester_role: str,
+    account_status: str,
+) -> bool:
+    subject = "New Account Review Request - Good Driver Incentive Program"
+    plain = (
+        f"Hello {admin_username},\n\n"
+        f"{requester_username} submitted a new {requester_role} account review request.\n\n"
+        f"Current account status: {account_status}\n"
+        f"Review it in the admin communication logs."
+    )
+    html = f"""
+        <h2>New Account Review Request</h2>
+        <p>Hello {admin_username},</p>
+        <p><strong>{requester_username}</strong> submitted a new <strong>{requester_role}</strong> account review request.</p>
+        <p><strong>Current account status:</strong> {account_status}</p>
+        <p><a href="{_app_link('/admin/communication-logs')}">Open communication logs</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_account_appeal_resolved_email(
+    to_email: str,
+    username: str,
+    status: str,
+    admin_response: str | None = None,
+) -> bool:
+    resolved = status == "resolved"
+    admin_response_plain = f"\n\nAdmin response: {admin_response}" if admin_response else ""
+    follow_up_text = (
+        "You can now sign back in to your account."
+        if resolved
+        else "You can review the update in the platform."
+    )
+    subject = (
+        "Account Review Approved - Good Driver Incentive Program"
+        if resolved
+        else "Account Review Update - Good Driver Incentive Program"
+    )
+    plain = (
+        f"Hello {username},\n\n"
+        f"Your account review request has been marked as {status}."
+        f"{admin_response_plain}\n\n"
+        f"{follow_up_text}"
+    )
+    html = f"""
+        <h2>{'Account Review Approved' if resolved else 'Account Review Update'}</h2>
+        <p>Hello {username},</p>
+        <p>Your account review request has been marked as <strong>{status}</strong>.</p>
+        {"<p><strong>Admin response:</strong> " + admin_response + "</p>" if admin_response else ""}
+        <p><a href="{_app_link('/login' if resolved else '/account-blocked')}">{'Sign in to your account' if resolved else 'View account review status'}</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_admin_account_access_email(
+    to_email: str,
+    username: str,
+    admin_username: str,
+    account_role: str,
+) -> bool:
+    subject = "Administrator Account Access Notice - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        f"An administrator ({admin_username}) accessed your {account_role} account using the internal view-as tool.\n\n"
+        "This action is logged for security review."
+    )
+    html = f"""
+        <h2>Administrator Account Access Notice</h2>
+        <p>Hello {username},</p>
+        <p>An administrator (<strong>{admin_username}</strong>) accessed your <strong>{account_role}</strong> account using the internal view-as tool.</p>
+        <p>This action is logged for security review.</p>
+        <p><a href="{_app_link('/account/settings')}">Review your account settings</a></p>
+    """
+    return _send(to_email, subject, html, plain)
+
+
+def send_sponsor_account_created_email(
+    to_email: str,
+    username: str,
+    temporary_password: str,
+) -> bool:
+    subject = "Your Sponsor Account Is Ready - Good Driver Incentive Program"
+    plain = (
+        f"Hello {username},\n\n"
+        "An administrator created your sponsor account.\n\n"
+        f"Username: {username}\n"
+        f"Temporary Password: {temporary_password}\n\n"
+        "Please sign in and change your password as soon as possible."
+    )
+    html = f"""
+        <h2>Your Sponsor Account Is Ready</h2>
+        <p>Hello {username},</p>
+        <p>An administrator created your sponsor account.</p>
+        <p><strong>Username:</strong> {username}</p>
+        <p><strong>Temporary Password:</strong> {temporary_password}</p>
+        <p><a href="{_app_link('/login')}">Sign in to your account</a></p>
+        <p>After signing in, please update your password right away from account settings.</p>
     """
     return _send(to_email, subject, html, plain)

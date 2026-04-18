@@ -1,6 +1,7 @@
 import { useEffect, useState} from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../services/apiClient'
+import { useAuth } from '../../auth/AuthContext';
 
 interface CatalogItemDetail {
     item_id: string;
@@ -22,6 +23,7 @@ function getCatalogImageAlt(title: string) {
 }
 
 export function DriverProductDetail() {
+    const { refreshSponsors } = useAuth();
     const { itemId } = useParams<{ itemId: string }>();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -59,6 +61,7 @@ export function DriverProductDetail() {
       );
       setCurrentPoints(res.new_points_balance);
       setItem(prev => prev ? { ...prev, stock_quantity: res.remaining_stock } : prev);
+      await refreshSponsors();
       setFeedback({ type: 'success', msg: res.message });
     } catch (err: any) {
       const detail = err?.detail ?? err?.message ?? 'Purchase failed.';
