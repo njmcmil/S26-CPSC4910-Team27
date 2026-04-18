@@ -10,6 +10,7 @@ class CreateUserRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+    remember_device: bool = False
 
 class LoginResponse(BaseModel):
     user_id: int
