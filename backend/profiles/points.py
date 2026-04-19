@@ -869,16 +869,18 @@ async def get_driver_point_history_for_sponsor(
         # Get paginated point history with expires_at
         cursor.execute("""
             SELECT
-                date,
-                points_changed,
-                reason,
-                changed_by_user_id,
-                expires_at
-            FROM audit_log
-            WHERE category = 'point_change'
-            AND driver_id = %s
-            AND date BETWEEN %s AND %s
-            ORDER BY date DESC
+                al.date,
+                al.points_changed,
+                al.reason,
+                al.changed_by_user_id,
+                al.expires_at,
+                u.username AS changed_by_username
+            FROM audit_log al
+            LEFT JOIN Users u ON u.user_id = al.changed_by_user_id
+            WHERE al.category = 'point_change'
+            AND al.driver_id = %s
+            AND al.date BETWEEN %s AND %s
+            ORDER BY al.date DESC
             LIMIT %s OFFSET %s
         """, (driver_id, parsed_start, parsed_end, limit, offset))
 
