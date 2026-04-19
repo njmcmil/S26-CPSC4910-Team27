@@ -13,6 +13,7 @@ interface PointHistoryRow {
   points_changed: number;
   reason: string;
   changed_by_user_id: number;
+  changed_by_username: string | null;
   expires_at: string | null;
 }
 
@@ -252,6 +253,7 @@ export function SponsorReportsPage() {
                   <th style={th}>Date</th>
                   <th style={th}>Points Changed</th>
                   <th style={th}>Reason</th>
+                  <th style={th}>Changed By</th>
                   <th style={th}>Expires</th>
                 </tr></thead>
                 <tbody>{history.map((r, i) => (
@@ -263,6 +265,7 @@ export function SponsorReportsPage() {
                       </span>
                     </td>
                     <td style={td}>{r.reason}</td>
+                    <td style={td}>{r.changed_by_username ?? '—'}</td>
                     <td style={td}>{r.expires_at ? new Date(r.expires_at).toLocaleDateString() : '—'}</td>
                   </tr>
                 ))}</tbody>
