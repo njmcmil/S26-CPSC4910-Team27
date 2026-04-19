@@ -645,27 +645,46 @@ def get_driver_status_changes(current_user: dict = Depends(require_role("sponsor
 
 
 @router.get("/audit-logs", response_model=List[SponsorUserActionLog])
-def get_sponsor_user_action_logs(current_user: dict = Depends(require_role("sponsor"))):
+def get_sponsor_user_action_logs(
+    current_user: dict = Depends(require_role("sponsor")),
+    category: str = None,
+):
     sponsor_id = current_user["user_id"]
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
-        cursor.execute(
-            """
-            SELECT
-                al.date,
-                al.changed_by_user_id,
-                u.username AS changed_by_username,
-                al.reason
-            FROM audit_log al
-            LEFT JOIN Users u ON u.user_id = al.changed_by_user_id
-            WHERE al.category = 'sponsor_user_action'
-              AND al.sponsor_id = %s
-            ORDER BY al.date DESC
-            """,
-            (sponsor_id,),
-        )
+        if category:
+            cursor.execute(
+                """
+                SELECT
+                    al.date,
+                    al.changed_by_user_id,
+                    u.username AS changed_by_username,
+                    al.reason
+                FROM audit_log al
+                LEFT JOIN Users u ON u.user_id = al.changed_by_user_id
+                WHERE al.category = %s
+                  AND al.sponsor_id = %s
+                ORDER BY al.date DESC
+                """,
+                (category, sponsor_id),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    al.date,
+                    al.changed_by_user_id,
+                    u.username AS changed_by_username,
+                    al.reason
+                FROM audit_log al
+                LEFT JOIN Users u ON u.user_id = al.changed_by_user_id
+                WHERE al.sponsor_id = %s
+                ORDER BY al.date DESC
+                """,
+                (sponsor_id,),
+            )
         rows = cursor.fetchall()
         return [
             SponsorUserActionLog(
