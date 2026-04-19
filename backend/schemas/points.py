@@ -74,6 +74,7 @@ class PointHistoryItem(BaseModel):
     points_changed: int
     reason: Optional[str] = None
     changed_by_user_id: Optional[int] = None
+    changed_by_username: Optional[str] = None
     expires_at: Optional[datetime] = None
 
 class PointHistoryResponse(BaseModel):
