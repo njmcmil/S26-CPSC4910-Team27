@@ -704,6 +704,53 @@ def get_about_public():
         cursor.close()
         conn.close()
 
+@app.get("/admin/profile")
+def get_admin_profile(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT u.user_id, u.username, u.email,
+                   p.first_name, p.last_name, p.phone_number
+            FROM Users u
+            LEFT JOIN Profiles p ON p.user_id = u.user_id
+            WHERE u.user_id = %s
+        """, (current_user["user_id"],))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.put("/admin/profile")
+def update_admin_profile(body: dict, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT profile_id FROM Profiles WHERE user_id = %s", (current_user["user_id"],))
+        existing = cursor.fetchone()
+        if existing:
+            cursor.execute("""
+                UPDATE Profiles SET first_name = %s, last_name = %s, phone_number = %s
+                WHERE user_id = %s
+            """, (body.get("first_name"), body.get("last_name"), body.get("phone_number"), current_user["user_id"]))
+        else:
+            cursor.execute("""
+                INSERT INTO Profiles (user_id, first_name, last_name, phone_number)
+                VALUES (%s, %s, %s, %s)
+            """, (current_user["user_id"], body.get("first_name"), body.get("last_name"), body.get("phone_number")))
+        conn.commit()
+        return {"success": True}
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.get("/api/driver/sponsors")
 def get_driver_sponsors(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "driver":
