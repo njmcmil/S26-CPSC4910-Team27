@@ -378,7 +378,10 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
       {
         label: 'Account',
         defaultOpen: false,
-        items: [{ to: '/account/settings', label: 'Settings' }],
+        items: [
+          { to: '/admin/profile', label: 'Profile' },
+          { to: '/account/settings', label: 'Settings' },
+        ],
       },
     ],
     standalone: [{ to: '/about', label: 'About' }],
