@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { sponsorService } from '../../services/sponsorService';
+import { api } from '../../services/apiClient';
 import { getCatalog } from '../../services/productService';
 import { Alert } from '../../components/Alert';
 import type { Product } from '../../types';
@@ -36,6 +37,7 @@ export function SponsorCatalog() {
 
   const [ratings, setRatings] = useState<Record<string, 'G' | 'PG'>>({});
   const [pointsCosts, setPointsCosts] = useState<Record<string, number>>({});
+  const [dollarPerPoint, setDollarPerPoint] = useState<number>(0.01);
 
   /* ===================================================== */
   /* ================= LOAD EBAY ========================== */
@@ -115,6 +117,9 @@ export function SponsorCatalog() {
 
   useEffect(() => {
     loadEbayProducts(query);
+    api.get<{ dollar_per_point: number }>('/api/sponsor/reward-defaults')
+      .then(res => setDollarPerPoint(res.dollar_per_point || 0.01))
+      .catch(() => {});
   }, []);
 
   /* ===================================================== */
@@ -407,6 +412,11 @@ export function SponsorCatalog() {
                       <option value="PG">PG</option>
                     </select>
 
+                    {product.price?.value && dollarPerPoint > 0 && (
+                      <p className="catalog-muted-note" style={{ fontSize: '0.8rem', marginBottom: '0.25rem' }}>
+                        Recommended: {Math.round(parseFloat(product.price.value) / dollarPerPoint).toLocaleString()} pts
+                      </p>
+                    )}
                     <label
                       className="catalog-field"
                     >
