@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/apiClient';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -28,6 +29,7 @@ const STATUS_COLORS: Record<OrderStatus, { color: string; background: string }> 
 
 export function DriverOrdersPage() {
   const { refreshSponsors } = useAuth();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +159,18 @@ export function DriverOrdersPage() {
                         }}
                       >
                         {cancelling === order.order_id ? 'Cancelling…' : 'Cancel'}
+                      </button>
+                    )}
+                    {order.status === 'pending' && (
+                      <button
+                        onClick={() => navigate('/driver/order-confirmation')}
+                        style={{
+                          background: 'none', border: '1px solid #2563eb',
+                          color: '#2563eb', borderRadius: 'var(--radius)',
+                          padding: '2px 10px', cursor: 'pointer', fontSize: '0.82rem',
+                        }}
+                      >
+                        Track Package
                       </button>
                     )}
                     {order.status !== 'cancelled' && (
