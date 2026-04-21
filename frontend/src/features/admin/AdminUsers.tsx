@@ -48,6 +48,14 @@ export function AdminUsersPage() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [search, setSearch] = useState('');
   const [impersonatingUserId, setImpersonatingUserId] = useState<number | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newUsername, setNewUsername] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState<'admin' | 'sponsor' | 'driver'>('admin');
+  const [createError, setCreateError] = useState('');
+  const [createSuccess, setCreateSuccess] = useState('');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     api.get<UserRow[]>('/admin/users')
@@ -71,6 +79,36 @@ export function AdminUsersPage() {
     }
   };
 
+  const handleCreateUser = async () => {
+    setCreateError('');
+    setCreateSuccess('');
+    if (!newUsername.trim() || !newEmail.trim() || !newPassword.trim()) {
+      setCreateError('All fields are required.');
+      return;
+    }
+    setCreating(true);
+    try {
+      await api.post('/create-user', {
+        username: newUsername.trim(),
+        email: newEmail.trim(),
+        password: newPassword,
+        role: newRole,
+      });
+      setCreateSuccess(`User "${newUsername}" created successfully!`);
+      setNewUsername('');
+      setNewEmail('');
+      setNewPassword('');
+      setNewRole('admin');
+      setShowCreateForm(false);
+      const res = await api.get<UserRow[]>('/admin/users');
+      setUsers(res);
+    } catch (err: any) {
+      setCreateError(err?.message ?? 'Failed to create user.');
+    } finally {
+      setCreating(false);
+    }
+  };
+  
   const filtered = users.filter((u) => {
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
     const q = search.toLowerCase();
@@ -119,6 +157,50 @@ export function AdminUsersPage() {
         </div>
       </div>
 
+      {createSuccess && <Alert variant="success">{createSuccess}</Alert>}
+
+      <div style={{ marginTop: '1rem', marginBottom: '1rem' }}>
+        <button type="button" className="btn btn-primary"
+          onClick={() => { setShowCreateForm(!showCreateForm); setCreateError(''); }}>
+          {showCreateForm ? '✕ Cancel' : '+ Add New User'}
+        </button>
+      </div>
+
+      {showCreateForm && (
+        <div className="card" style={{ marginBottom: '1.5rem', maxWidth: 480 }}>
+          <h3 style={{ marginBottom: '1rem' }}>Create New User</h3>
+          {createError && <Alert variant="error">{createError}</Alert>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Username</label>
+              <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.875rem' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Email</label>
+              <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.875rem' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Password</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.875rem' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Role</label>
+              <select value={newRole} onChange={e => setNewRole(e.target.value as 'admin' | 'sponsor' | 'driver')}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: '0.875rem' }}>
+                <option value="admin">Admin</option>
+                <option value="sponsor">Sponsor</option>
+                <option value="driver">Driver</option>
+              </select>
+            </div>
+            <button type="button" onClick={handleCreateUser} disabled={creating} className="btn btn-primary">
+              {creating ? 'Creating...' : 'Create User'}
+            </button>
+          </div>
+        </div>
+      )}
       {loading && <p className="mt-2">Loading…</p>}
       {error && (
         <div className="mt-2">
