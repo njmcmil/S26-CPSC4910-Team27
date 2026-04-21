@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../services/apiClient';
 
 interface SponsorInfo {
@@ -17,6 +18,11 @@ export function AboutPage() {
 
   return (
     <section aria-labelledby="about-heading" style={{ maxWidth: 800, margin: '0 auto' }}>
+      <div style={{ marginBottom: '1rem' }}>
+        <Link to="/login" style={{ fontSize: '0.875rem', color: 'var(--color-primary)', fontWeight: 600 }}>
+          ← Back to Login
+        </Link>
+      </div>
       <h2 id="about-heading">About the Good Driver Incentive Program</h2>
 
       <div className="card mt-2">
