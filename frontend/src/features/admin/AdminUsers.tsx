@@ -4,6 +4,7 @@ import { api } from '../../services/apiClient';
 import { Alert } from '../../components/Alert';
 import { useAuth } from '../../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import type { ApiError } from '../../types';
 
 interface UserRow {
   user_id: number;
@@ -92,12 +93,30 @@ export function AdminUsersPage() {
 
     setCreateLoading(true);
     try {
-      const response = await api.post<{ message: string }>('/admin/users', {
+      const payload = {
         username: createForm.username.trim(),
         email: createForm.email.trim(),
         password: createForm.password,
         role: createForm.role,
-      });
+      };
+      let response: { message: string };
+      try {
+        response = await api.post<{ message: string }>('/admin/users', payload);
+      } catch (err: unknown) {
+        const apiErr = err as ApiError;
+        const oldBackendMissingRoute = apiErr.status === 404 || apiErr.status === 405;
+        if (oldBackendMissingRoute && payload.role !== 'admin') {
+          // Backward compatibility while prod API catches up.
+          response = await api.post<{ message: string }>('/create-user', payload);
+        } else if (oldBackendMissingRoute && payload.role === 'admin') {
+          throw {
+            message:
+              'This deployed backend does not support admin creation yet. Deploy latest backend and try again.',
+          };
+        } else {
+          throw err;
+        }
+      }
       setCreateSuccess(response.message || 'User created successfully.');
       setCreateForm({
         username: '',
@@ -165,6 +184,7 @@ export function AdminUsersPage() {
           Username
           <input
             type="text"
+            autoComplete="username"
             value={createForm.username}
             onChange={(e) => setCreateForm((prev) => ({ ...prev, username: e.target.value }))}
             required
@@ -174,6 +194,7 @@ export function AdminUsersPage() {
           Email
           <input
             type="email"
+            autoComplete="email"
             value={createForm.email}
             onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
             required
@@ -183,6 +204,7 @@ export function AdminUsersPage() {
           Password
           <input
             type="password"
+            autoComplete="new-password"
             value={createForm.password}
             onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))}
             required
