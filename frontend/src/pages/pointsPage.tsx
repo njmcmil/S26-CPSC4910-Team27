@@ -121,7 +121,7 @@ export function PointsPage() {
       <div className="card points-balance-card mt-1">
         <div className="points-balance">
           <span className="points-label">Current Balance</span>
-          <span className="points-amount">{data.current_balance.toLocaleString()}</span>
+          <span className="points-amount">{(data.current_balance ?? 0).toLocaleString()}</span>
           <span className="points-unit">points</span>
         </div>
       </div>
