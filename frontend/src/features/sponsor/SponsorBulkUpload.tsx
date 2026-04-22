@@ -6,7 +6,7 @@ import { Alert } from '../../components/Alert';
 
 interface CreatedUser {
   username: string;
-  role: 'sponsor' | 'driver';
+  role: 'driver';
   temp_password: string;
 }
 
@@ -17,8 +17,6 @@ interface ValidationError {
 }
 
 interface UploadResult {
-  orgs_created: number;
-  sponsors_created: number;
   drivers_created: number;
   created_users: CreatedUser[];
   errors: ValidationError[];
@@ -36,16 +34,14 @@ interface PreflightError {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Validates file content and returns format warnings.
- * Invalid lines are reported but do NOT block the upload —
- * the server handles partial success row-by-row.
+ * Validates file content and returns format warnings for sponsor uploads.
+ * Only D (driver) records are accepted.
+ * Format: D|username|email
  *
- * Valid line formats:
- *   O|org_name
- *   S|username|email
- *   D|username|email|sponsor_username
+ * Invalid lines are reported as warnings — they do NOT block the upload.
+ * The server skips invalid rows and processes valid ones.
  */
-function validateBulkFileContent(content: string): PreflightError[] {
+function validateSponsorBulkFileContent(content: string): PreflightError[] {
   const lines = content.split('\n');
   const errors: PreflightError[] = [];
   const HEADER_TOKENS = new Set(['type', 'record_type', 'role']);
@@ -62,114 +58,43 @@ function validateBulkFileContent(content: string): PreflightError[] {
 
     if (HEADER_TOKENS.has(rawType.toLowerCase())) return;
 
-    if (type !== 'O' && type !== 'S' && type !== 'D') {
+    if (type !== 'D') {
       errors.push({
         line_number: lineNumber,
         raw_line: rawLine,
-        reason: `Line starts with "${rawType}" — must be O (organization), S (sponsor), or D (driver).`,
-        hint: 'Change the first field to O, S, or D, then separate fields with pipes.',
+        reason: `Line starts with "${rawType}" — sponsor bulk upload only accepts D (driver) records.`,
+        hint: 'Change the first field to D. Format: D|username|email',
       });
       return;
     }
 
-    if (type === 'O') {
-      if (parts.length < 2 || !parts[1]?.trim()) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: `Organization line has ${parts.length} field(s) — expected 2 (O|org_name).`,
-          hint: 'Format: O|My Organization Name — one pipe character.',
-        });
-      }
+    if (parts.length < 3) {
+      errors.push({
+        line_number: lineNumber,
+        raw_line: rawLine,
+        reason: `Driver line has ${parts.length} field(s) — expected at least 3 (D|username|email).`,
+        hint: 'Format: D|username|email — make sure you have at least 2 pipe characters.',
+      });
       return;
     }
 
-    if (type === 'S') {
-      if (parts.length < 3) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: `Sponsor line has ${parts.length} field(s) — expected 3 (S|username|email).`,
-          hint: 'Format: S|username|email — exactly 2 pipe characters.',
-        });
-        return;
-      }
-      if (parts.length > 3) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: `Sponsor line has ${parts.length} fields — expected 3 (S|username|email).`,
-          hint: 'Remove extra pipe characters. Sponsor lines use exactly 2 pipes.',
-        });
-        return;
-      }
-      const [, username, email] = parts;
-      if (!username?.trim()) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: 'Username field is empty.',
-          hint: 'Add a username: S|myusername|email@example.com',
-        });
-        return;
-      }
-      if (!email?.trim() || !EMAIL_RE.test(email.trim())) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: `"${email?.trim() || '(empty)'}" is not a valid email address.`,
-          hint: 'Use a valid email format, e.g. user@example.com',
-        });
-      }
+    const [, username, email] = parts;
+    if (!username?.trim()) {
+      errors.push({
+        line_number: lineNumber,
+        raw_line: rawLine,
+        reason: 'Username field is empty.',
+        hint: 'Add a username: D|myusername|email@example.com',
+      });
       return;
     }
-
-    if (type === 'D') {
-      if (parts.length < 4) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: `Driver line has ${parts.length} field(s) — expected 4 (D|username|email|sponsor_username).`,
-          hint: 'Format: D|username|email|sponsor_username — exactly 3 pipe characters.',
-        });
-        return;
-      }
-      if (parts.length > 4) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: `Driver line has ${parts.length} fields — expected 4 (D|username|email|sponsor_username).`,
-          hint: 'Remove extra pipe characters. Driver lines use exactly 3 pipes.',
-        });
-        return;
-      }
-      const [, username, email, sponsorUsername] = parts;
-      if (!username?.trim()) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: 'Username field is empty.',
-          hint: 'Add a username: D|myusername|email@example.com|sponsor_name',
-        });
-        return;
-      }
-      if (!email?.trim() || !EMAIL_RE.test(email.trim())) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: `"${email?.trim() || '(empty)'}" is not a valid email address.`,
-          hint: 'Use a valid email format, e.g. user@example.com',
-        });
-        return;
-      }
-      if (!sponsorUsername?.trim()) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: 'Sponsor username field is empty.',
-          hint: "The last field must be the sponsor's username: D|username|email|sponsor_username",
-        });
-      }
+    if (!email?.trim() || !EMAIL_RE.test(email.trim())) {
+      errors.push({
+        line_number: lineNumber,
+        raw_line: rawLine,
+        reason: `"${email?.trim() || '(empty)'}" is not a valid email address.`,
+        hint: 'Use a valid email format, e.g. user@example.com',
+      });
     }
   });
 
@@ -178,7 +103,7 @@ function validateBulkFileContent(content: string): PreflightError[] {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export function AdminBulkUploadPage() {
+export function SponsorBulkUploadPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -195,7 +120,7 @@ export function AdminBulkUploadPage() {
       return;
     }
     const text = await file.text();
-    setPreflightErrors(validateBulkFileContent(text));
+    setPreflightErrors(validateSponsorBulkFileContent(text));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -212,7 +137,7 @@ export function AdminBulkUploadPage() {
       formData.append('file', file);
 
       const token = getToken();
-      const res = await fetch(`${API_BASE_URL}/bulk-upload`, {
+      const res = await fetch(`${API_BASE_URL}/sponsor/bulk-upload`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
@@ -245,41 +170,37 @@ export function AdminBulkUploadPage() {
   };
 
   return (
-    <section className="card" aria-labelledby="bulk-upload-heading">
-      <h2 id="bulk-upload-heading">Bulk Upload</h2>
+    <section className="card" aria-labelledby="sponsor-bulk-upload-heading">
+      <h2 id="sponsor-bulk-upload-heading">Bulk Driver Upload</h2>
       <p className="mt-1" style={{ color: 'var(--color-text-muted)' }}>
-        Upload a CSV or pipe-delimited text file to create organizations, sponsor, and driver
-        accounts in bulk. Each new user receives a unique temporary password shown once after
-        upload. Valid rows are always processed even if other rows in the file are invalid.
+        Upload a pipe-delimited text file to create driver accounts in bulk. All drivers are
+        automatically linked to your sponsor organization. Each new driver receives a unique
+        temporary password shown once after upload. Valid rows are always processed even if other
+        rows in the file are invalid.
       </p>
 
       {/* Format reference card */}
       <div className="card mt-2" style={{ background: 'var(--color-bg)', fontSize: '0.85rem' }}>
         <p style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Required file format</p>
         <pre style={{ margin: 0, lineHeight: 1.6 }}>
-{`O|org_name
-S|username|email
-D|username|email|sponsor_username`}
+{`D|username|email`}
         </pre>
         <ul style={{ marginTop: '0.75rem', paddingLeft: '1.25rem', lineHeight: 1.8, color: 'var(--color-text-muted)' }}>
-          <li><strong>O</strong> — register an organization (2 fields)</li>
-          <li><strong>S</strong> — create a sponsor account (3 fields)</li>
-          <li><strong>D</strong> — create a driver account linked to a sponsor (4 fields)</li>
+          <li><strong>D</strong> — create a driver account (3 fields separated by <code>|</code>)</li>
         </ul>
         <p style={{ marginTop: '0.5rem', color: 'var(--color-text-muted)' }}>
-          Sponsors defined earlier in the file can be referenced by driver lines in the same
-          file. Blank lines and lines starting with <code>#</code> are ignored. Invalid rows are
-          skipped and reported — valid rows are still processed.
+          One driver per line. Blank lines and lines starting with <code>#</code> are ignored.
+          Invalid rows are skipped and reported — valid rows are still processed.
         </p>
       </div>
 
       <form onSubmit={handleSubmit} style={{ marginTop: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div>
-          <label htmlFor="bulk-file" style={{ display: 'block', fontWeight: 600, marginBottom: '0.35rem' }}>
+          <label htmlFor="sponsor-bulk-file" style={{ display: 'block', fontWeight: 600, marginBottom: '0.35rem' }}>
             Select file (.txt or .csv)
           </label>
           <input
-            id="bulk-file"
+            id="sponsor-bulk-file"
             ref={fileRef}
             type="file"
             accept=".txt,.csv,text/plain,text/csv"
@@ -360,8 +281,6 @@ D|username|email|sponsor_username`}
             Upload complete
           </p>
           <ul style={{ listStyle: 'none', padding: 0, lineHeight: 2 }}>
-            <li>Organizations registered: <strong>{result.orgs_created ?? 0}</strong></li>
-            <li>Sponsors created: <strong>{result.sponsors_created}</strong></li>
             <li>Drivers created: <strong>{result.drivers_created}</strong></li>
           </ul>
 
@@ -383,7 +302,6 @@ D|username|email|sponsor_username`}
                   <thead>
                     <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border, #ddd)' }}>
                       <th style={{ padding: '0.4rem 0.75rem' }}>Username</th>
-                      <th style={{ padding: '0.4rem 0.75rem' }}>Role</th>
                       <th style={{ padding: '0.4rem 0.75rem' }}>Temporary Password</th>
                     </tr>
                   </thead>
@@ -391,7 +309,6 @@ D|username|email|sponsor_username`}
                     {result.created_users.map((u) => (
                       <tr key={u.username} style={{ borderBottom: '1px solid var(--color-border, #eee)' }}>
                         <td style={{ padding: '0.4rem 0.75rem', fontFamily: 'monospace' }}>{u.username}</td>
-                        <td style={{ padding: '0.4rem 0.75rem' }}>{u.role}</td>
                         <td style={{ padding: '0.4rem 0.75rem', fontFamily: 'monospace' }}>{u.temp_password}</td>
                       </tr>
                     ))}
@@ -404,7 +321,7 @@ D|username|email|sponsor_username`}
           {result.errors.length > 0 && (
             <div style={{ marginTop: '0.75rem' }}>
               <p style={{ fontWeight: 600, color: 'var(--color-warning)', marginBottom: '0.35rem' }}>
-                Skipped lines ({result.errors.length}) — these entries were not created
+                Skipped lines ({result.errors.length}) — these drivers were not created
               </p>
               <ul style={{ paddingLeft: '1.25rem', lineHeight: 1.8, fontSize: '0.875rem' }}>
                 {result.errors.map((e) => (

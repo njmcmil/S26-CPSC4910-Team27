@@ -2,31 +2,33 @@
 bulk_upload.py
 --------------
 Purpose:
-    Handles bulk creation of sponsor and driver accounts from a
-    CSV or pipe-delimited file.  Uses the existing create_user() function so
-    all business rules (password hashing, SponsorProfiles init, etc.)
-    are respected.
+    Handles bulk creation of organizations, sponsor, and driver accounts from a
+    CSV or pipe-delimited file.
 
-Format:
+Format (Admin):
+    O|org_name                            → create/register an organization
     S|username|email                      → create a sponsor account
     D|username|email|sponsor_username     → create a driver and link to sponsor
-    or CSV equivalent:
-    S,username,email
-    D,username,email,sponsor_username
+
+Format (Sponsor - driver only):
+    D|username|email                      → create a driver linked to the uploading sponsor
+
+Both endpoints support partial success: valid rows are processed even if other rows fail.
 """
 
 import csv
 import secrets
 import string
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from auth.auth import hash_password
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from auth.auth import hash_password, require_role
 from shared.db import get_connection
 from shared.services import get_user_by_username
 
 router = APIRouter()
 
-VALID_TYPES = {"S", "D"}
+# All globally recognised type tokens.
+VALID_TYPES = {"S", "D", "O"}
 
 
 # ---------------------------------------------------------------------------
@@ -44,38 +46,6 @@ def generate_temp_password() -> str:
     chars   = list(lower + upper + digit + special) + rest
     secrets.SystemRandom().shuffle(chars)
     return ''.join(chars)
-
-
-def link_driver_to_sponsor(driver_user_id: int, sponsor_user_id: int) -> None:
-    """Insert an approved SponsorDrivers row."""
-    conn   = get_connection()
-    cursor = conn.cursor()
-    try:
-        try:
-            cursor.execute(
-                """
-                INSERT INTO SponsorDrivers (sponsor_user_id, driver_user_id, status)
-                VALUES (%s, %s, 'approved')
-                ON DUPLICATE KEY UPDATE sponsor_user_id = sponsor_user_id
-                """,
-                (sponsor_user_id, driver_user_id),
-            )
-        except Exception as exc:
-            # Compatibility fallback for schemas without SponsorDrivers.status.
-            if "Unknown column 'status'" not in str(exc):
-                raise
-            cursor.execute(
-                """
-                INSERT INTO SponsorDrivers (sponsor_user_id, driver_user_id)
-                VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE sponsor_user_id = sponsor_user_id
-                """,
-                (sponsor_user_id, driver_user_id),
-            )
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
 
 
 def link_driver_to_sponsor_with_cursor(cursor, sponsor_user_id: int, driver_user_id: int) -> None:
@@ -149,91 +119,6 @@ def log_bulk_upload_error(line_number: int, raw_line: str, reason: str) -> None:
 # Parsing
 # ---------------------------------------------------------------------------
 
-def parse_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimiter: str) -> tuple[list[dict], list[dict]]:
-    """
-    Parse pipe-delimited content into validated record dicts.
-
-    Accepted line formats:
-      S|username|email
-      D|username|email|sponsor_username
-    """
-    records: list[dict] = []
-    errors:  list[dict] = []
-    header_tokens = {"type", "record_type", "role"}
-
-    for line_num, row in enumerate(rows, start=1):
-        raw_line = raw_lines[line_num - 1] if line_num - 1 < len(raw_lines) else delimiter.join(row)
-        line = raw_line.strip()
-        if not line:
-            continue
-
-        # Trim UTF-8 BOM from first token and normalize all fields.
-        fields = [f.strip() for f in row]
-        if fields:
-            fields[0] = fields[0].lstrip("\ufeff").strip()
-        if not fields:
-            continue
-
-        # Skip comment lines / metadata lines without treating them as errors.
-        if fields[0].startswith("#") or fields[0].startswith("//"):
-            continue
-
-        # Skip a common header row (type,username,email,...).
-        if fields[0].lower() in header_tokens:
-            continue
-
-        record_type = fields[0].upper()
-
-        if record_type not in VALID_TYPES:
-            errors.append({
-                "line_number": line_num,
-                "raw_line":    raw_line,
-                "reason":      f"Invalid type '{fields[0]}'. Must be S or D.",
-            })
-            continue
-
-        if record_type == "S":
-            # Tolerate a trailing empty CSV cell, e.g. "S,username,email,"
-            if len(fields) == 4 and fields[3] == "":
-                fields = fields[:3]
-            if len(fields) != 3:
-                errors.append({
-                    "line_number": line_num,
-                    "raw_line":    raw_line,
-                    "reason":      f"S record requires 3 fields (S{delimiter}username{delimiter}email), got {len(fields)}.",
-                })
-                continue
-            records.append({
-                "type":        "S",
-                "username":    fields[1],
-                "email":       fields[2],
-                "line_number": line_num,
-                "raw_line":    raw_line,
-            })
-
-        elif record_type == "D":
-            # Tolerate a trailing empty CSV cell, e.g. "D,username,email,sponsor,"
-            if len(fields) == 5 and fields[4] == "":
-                fields = fields[:4]
-            if len(fields) != 4:
-                errors.append({
-                    "line_number": line_num,
-                    "raw_line":    raw_line,
-                    "reason":      f"D record requires 4 fields (D{delimiter}username{delimiter}email{delimiter}sponsor_username), got {len(fields)}.",
-                })
-                continue
-            records.append({
-                "type":             "D",
-                "username":         fields[1],
-                "email":            fields[2],
-                "sponsor_username": fields[3],
-                "line_number":      line_num,
-                "raw_line":         raw_line,
-            })
-
-    return records, errors
-
-
 def read_bulk_rows(content: str) -> tuple[list[list[str]], list[str], str]:
     """
     Read uploaded file and return parsed rows, original raw lines, and detected delimiter.
@@ -259,12 +144,196 @@ def read_bulk_rows(content: str) -> tuple[list[list[str]], list[str], str]:
     return rows, raw_lines, delimiter
 
 
+def _skip_header_or_comment(fields: list[str]) -> bool:
+    """Return True if this row should be silently skipped (not counted as an error)."""
+    header_tokens = {"type", "record_type", "role"}
+    if not fields:
+        return True
+    first = fields[0]
+    if first.startswith("#") or first.startswith("//"):
+        return True
+    if first.lower() in header_tokens:
+        return True
+    return False
+
+
+def parse_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimiter: str) -> tuple[list[dict], list[dict]]:
+    """
+    Parse pipe/comma-delimited content into validated record dicts for admin uploads.
+
+    Accepted line formats:
+      O|org_name
+      S|username|email
+      D|username|email|sponsor_username
+    """
+    records: list[dict] = []
+    errors:  list[dict] = []
+
+    for line_num, row in enumerate(rows, start=1):
+        raw_line = raw_lines[line_num - 1] if line_num - 1 < len(raw_lines) else delimiter.join(row)
+        if not raw_line.strip():
+            continue
+
+        fields = [f.strip() for f in row]
+        if fields:
+            fields[0] = fields[0].lstrip("\ufeff").strip()
+
+        if _skip_header_or_comment(fields):
+            continue
+
+        record_type = fields[0].upper()
+
+        if record_type not in VALID_TYPES:
+            errors.append({
+                "line_number": line_num,
+                "raw_line":    raw_line,
+                "reason":      f"Invalid type '{fields[0]}'. Must be O, S, or D.",
+            })
+            continue
+
+        if record_type == "O":
+            # Tolerate trailing empty CSV cell: "O,org_name,"
+            if len(fields) == 3 and fields[2] == "":
+                fields = fields[:2]
+            if len(fields) != 2:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line":    raw_line,
+                    "reason":      f"O record requires 2 fields (O{delimiter}org_name), got {len(fields)}.",
+                })
+                continue
+            if not fields[1]:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line":    raw_line,
+                    "reason":      "O record: org_name must not be empty.",
+                })
+                continue
+            records.append({
+                "type":        "O",
+                "org_name":    fields[1],
+                "line_number": line_num,
+                "raw_line":    raw_line,
+            })
+
+        elif record_type == "S":
+            # Tolerate trailing empty CSV cell: "S,username,email,"
+            if len(fields) == 4 and fields[3] == "":
+                fields = fields[:3]
+            if len(fields) != 3:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line":    raw_line,
+                    "reason":      f"S record requires 3 fields (S{delimiter}username{delimiter}email), got {len(fields)}.",
+                })
+                continue
+            records.append({
+                "type":        "S",
+                "username":    fields[1],
+                "email":       fields[2],
+                "line_number": line_num,
+                "raw_line":    raw_line,
+            })
+
+        elif record_type == "D":
+            # Tolerate trailing empty CSV cell: "D,username,email,sponsor,"
+            if len(fields) == 5 and fields[4] == "":
+                fields = fields[:4]
+            if len(fields) != 4:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line":    raw_line,
+                    "reason":      f"D record requires 4 fields (D{delimiter}username{delimiter}email{delimiter}sponsor_username), got {len(fields)}.",
+                })
+                continue
+            records.append({
+                "type":             "D",
+                "username":         fields[1],
+                "email":            fields[2],
+                "sponsor_username": fields[3],
+                "line_number":      line_num,
+                "raw_line":         raw_line,
+            })
+
+    return records, errors
+
+
+def parse_sponsor_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimiter: str) -> tuple[list[dict], list[dict]]:
+    """
+    Parse pipe/comma-delimited content for sponsor bulk uploads.
+    Only D (driver) records are accepted; sponsor is auto-assigned from the JWT.
+    Format: D|username|email
+    """
+    records: list[dict] = []
+    errors:  list[dict] = []
+
+    for line_num, row in enumerate(rows, start=1):
+        raw_line = raw_lines[line_num - 1] if line_num - 1 < len(raw_lines) else delimiter.join(row)
+        if not raw_line.strip():
+            continue
+
+        fields = [f.strip() for f in row]
+        if fields:
+            fields[0] = fields[0].lstrip("\ufeff").strip()
+
+        if _skip_header_or_comment(fields):
+            continue
+
+        record_type = fields[0].upper()
+
+        # Reject non-D record types with a clear message.
+        if record_type not in VALID_TYPES:
+            errors.append({
+                "line_number": line_num,
+                "raw_line":    raw_line,
+                "reason":      f"Invalid type '{fields[0]}'. Sponsor bulk upload only accepts D (driver) records.",
+            })
+            continue
+
+        if record_type != "D":
+            errors.append({
+                "line_number": line_num,
+                "raw_line":    raw_line,
+                "reason":      f"Record type '{record_type}' is not allowed for sponsor bulk uploads. Only D (driver) records are accepted.",
+            })
+            continue
+
+        # Accept D|username|email (3 fields) or D|username|email|anything (4 fields).
+        # The 4th field is ignored — sponsor is auto-assigned.
+        if len(fields) == 5 and fields[4] == "":
+            fields = fields[:4]
+        if len(fields) < 3:
+            errors.append({
+                "line_number": line_num,
+                "raw_line":    raw_line,
+                "reason":      f"D record requires at least 3 fields (D{delimiter}username{delimiter}email), got {len(fields)}.",
+            })
+            continue
+
+        records.append({
+            "type":        "D",
+            "username":    fields[1],
+            "email":       fields[2],
+            "line_number": line_num,
+            "raw_line":    raw_line,
+        })
+
+    return records, errors
+
+
 # ---------------------------------------------------------------------------
-# Route handler
+# Route handlers
 # ---------------------------------------------------------------------------
 
 @router.post("/bulk-upload")
-async def bulk_upload(file: UploadFile = File(...)):
+async def bulk_upload(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_role("admin")),
+):
+    """
+    Admin bulk upload. Accepts O, S, and D records.
+    Processes valid rows independently — partial success is supported.
+    """
     raw_bytes = await file.read()
     try:
         content = raw_bytes.decode("utf-8")
@@ -276,21 +345,34 @@ async def bulk_upload(file: UploadFile = File(...)):
 
     records, errors = parse_bulk_rows(rows, raw_lines, delimiter)
 
+    orgs_created     = 0
     sponsors_created = 0
     drivers_created  = 0
-    created_users:   list[dict] = []   # {username, role, temp_password}
+    created_users:   list[dict] = []
 
-    # Track sponsors created in this batch so D lines can reference them
-    # even before they exist in the DB (i.e., S line appears before D line in file)
+    # Cache sponsors created in this batch so D lines can reference them
+    # before the DB commit is visible to other connections.
     batch_sponsors: dict[str, int] = {}  # username -> user_id
+    sponsor_cache:  dict[str, dict] = {}
 
-    sponsor_cache: dict[str, dict] = {}
-    conn = get_connection()
+    conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         for record in records:
             try:
-                if record["type"] == "S":
+                if record["type"] == "O":
+                    cursor.execute(
+                        """
+                        INSERT INTO BulkOrganizations (name)
+                        VALUES (%s)
+                        ON DUPLICATE KEY UPDATE name = name
+                        """,
+                        (record["org_name"],),
+                    )
+                    conn.commit()
+                    orgs_created += 1
+
+                elif record["type"] == "S":
                     temp_pw = generate_temp_password()
                     user = create_user_fast(
                         cursor=cursor,
@@ -301,18 +383,18 @@ async def bulk_upload(file: UploadFile = File(...)):
                     )
                     conn.commit()
                     batch_sponsors[record["username"]] = user["user_id"]
-                    sponsor_cache[record["username"]] = user
+                    sponsor_cache[record["username"]]  = user
                     sponsors_created += 1
                     created_users.append({
-                        "username": record["username"],
-                        "role": "sponsor",
+                        "username":      record["username"],
+                        "role":          "sponsor",
                         "temp_password": temp_pw,
                     })
 
                 elif record["type"] == "D":
                     sponsor_username = record["sponsor_username"]
 
-                    # Resolve sponsor — check current-batch cache, then local cache, then DB
+                    # Resolve sponsor: batch cache → local cache → DB
                     if sponsor_username in batch_sponsors:
                         sponsor_id = batch_sponsors[sponsor_username]
                     else:
@@ -339,40 +421,116 @@ async def bulk_upload(file: UploadFile = File(...)):
                     conn.commit()
                     drivers_created += 1
                     created_users.append({
-                        "username": record["username"],
-                        "role": "driver",
+                        "username":      record["username"],
+                        "role":          "driver",
                         "temp_password": temp_pw,
                     })
 
-            except ValueError as e:
+            except ValueError as exc:
                 conn.rollback()
-                err = {
+                errors.append({
                     "line_number": record["line_number"],
-                    "raw_line": record["raw_line"],
-                    "reason": str(e),
-                }
-                errors.append(err)
+                    "raw_line":    record["raw_line"],
+                    "reason":      str(exc),
+                })
 
-            except Exception as e:
+            except Exception as exc:
                 conn.rollback()
-                err = {
+                errors.append({
                     "line_number": record["line_number"],
-                    "raw_line": record["raw_line"],
-                    "reason": f"Unexpected error: {e}",
-                }
-                errors.append(err)
+                    "raw_line":    record["raw_line"],
+                    "reason":      f"Unexpected error: {exc}",
+                })
     finally:
         cursor.close()
         conn.close()
 
-    # Persist parse/processing errors after upload loop.
     for error in errors:
         log_bulk_upload_error(error["line_number"], error["raw_line"], error["reason"])
 
     return {
+        "orgs_created":     orgs_created,
         "sponsors_created": sponsors_created,
         "drivers_created":  drivers_created,
         "created_users":    created_users,
         "error_count":      len(errors),
         "errors":           errors,
+    }
+
+
+@router.post("/sponsor/bulk-upload")
+async def sponsor_bulk_upload(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_role("sponsor")),
+):
+    """
+    Sponsor bulk upload. Only D (driver) records are accepted.
+    Drivers are automatically linked to the authenticated sponsor.
+    Format: D|username|email  (no sponsor_username field required)
+    Processes valid rows independently — partial success is supported.
+    """
+    raw_bytes = await file.read()
+    try:
+        content = raw_bytes.decode("utf-8")
+        rows, raw_lines, delimiter = read_bulk_rows(content)
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded text.")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not parse file. Use pipe-delimited UTF-8 text.")
+
+    records, errors = parse_sponsor_bulk_rows(rows, raw_lines, delimiter)
+
+    sponsor_user_id = current_user["user_id"]
+    drivers_created = 0
+    created_users:  list[dict] = []
+
+    conn   = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        for record in records:
+            try:
+                temp_pw = generate_temp_password()
+                user = create_user_fast(
+                    cursor=cursor,
+                    username=record["username"],
+                    email=record["email"],
+                    role="driver",
+                    plain_password=temp_pw,
+                )
+                link_driver_to_sponsor_with_cursor(cursor, sponsor_user_id, user["user_id"])
+                conn.commit()
+                drivers_created += 1
+                created_users.append({
+                    "username":      record["username"],
+                    "role":          "driver",
+                    "temp_password": temp_pw,
+                })
+
+            except ValueError as exc:
+                conn.rollback()
+                errors.append({
+                    "line_number": record["line_number"],
+                    "raw_line":    record["raw_line"],
+                    "reason":      str(exc),
+                })
+
+            except Exception as exc:
+                conn.rollback()
+                errors.append({
+                    "line_number": record["line_number"],
+                    "raw_line":    record["raw_line"],
+                    "reason":      f"Unexpected error: {exc}",
+                })
+    finally:
+        cursor.close()
+        conn.close()
+
+    for error in errors:
+        log_bulk_upload_error(error["line_number"], error["raw_line"], error["reason"])
+
+    return {
+        "drivers_created": drivers_created,
+        "created_users":   created_users,
+        "error_count":     len(errors),
+        "errors":          errors,
     }

@@ -193,6 +193,14 @@ const ROUTE_CONFIG: RouteConfig[] = [
     ],
   },
   {
+    pattern: '/sponsor/bulk-upload',
+    crumbs: [
+      { label: 'Dashboard', to: '/sponsor/dashboard' },
+      { label: 'Driver Management' },
+      { label: 'Bulk Driver Upload' },
+    ],
+  },
+  {
     pattern: '/admin/bulk-upload',
     crumbs: [
       { label: 'Dashboard', to: '/admin/dashboard' },

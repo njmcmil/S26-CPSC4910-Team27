@@ -37,6 +37,7 @@ import { SponsorErrorLogs } from '../features/sponsor/SponsorErrorLogs';
 import { SponsorAuditLogs } from '../features/sponsor/SponsorAuditLogs';
 import { SponsorReportsPage } from '../features/sponsor/SponsorReports';
 import { SponsorUsersPage } from '../features/sponsor/SponsorUsers';
+import { SponsorBulkUploadPage } from '../features/sponsor/SponsorBulkUpload';
 
 import { AdminDashboardPage } from '../features/admin/AdminDashboard';
 import { AdminUsersPage } from '../features/admin/AdminUsers';
@@ -115,6 +116,7 @@ export const router = createBrowserRouter([
               { path: '/sponsor/audit-logs', element: <SponsorAuditLogs /> },
               { path: '/sponsor/error-logs', element: <SponsorErrorLogs /> },
               { path: '/sponsor/reports', element: <SponsorReportsPage /> },
+              { path: '/sponsor/bulk-upload', element: <SponsorBulkUploadPage /> },
             ],
           },
 
