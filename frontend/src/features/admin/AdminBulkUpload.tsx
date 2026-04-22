@@ -22,6 +22,7 @@ interface UploadResult {
   drivers_created: number;
   created_users: CreatedUser[];
   errors: ValidationError[];
+  warnings?: ValidationError[];
 }
 
 interface PreflightError {
@@ -44,6 +45,10 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *   O|org_name
  *   S|username|email
  *   D|username|email|sponsor_username
+ *
+ * Legacy RC formats (also accepted):
+ *   S|org_name|first_name|last_name|email[|points_delta|reason]
+ *   D|org_name|first_name|last_name|email[|points_delta|reason]
  */
 function validateBulkFileContent(content: string): PreflightError[] {
   const lines = content.split('\n');
@@ -85,31 +90,53 @@ function validateBulkFileContent(content: string): PreflightError[] {
     }
 
     if (type === 'S') {
-      if (parts.length < 3) {
+      if (parts.length === 3) {
+        const [, username, email] = parts;
+        if (!username?.trim()) {
+          errors.push({
+            line_number: lineNumber,
+            raw_line: rawLine,
+            reason: 'Username field is empty.',
+            hint: 'Add a username: S|myusername|email@example.com',
+          });
+          return;
+        }
+        if (!email?.trim() || !EMAIL_RE.test(email.trim())) {
+          errors.push({
+            line_number: lineNumber,
+            raw_line: rawLine,
+            reason: `"${email?.trim() || '(empty)'}" is not a valid email address.`,
+            hint: 'Use a valid email format, e.g. user@example.com',
+          });
+        }
+        return;
+      }
+
+      if (parts.length !== 5 && parts.length !== 7) {
         errors.push({
           line_number: lineNumber,
           raw_line: rawLine,
-          reason: `Sponsor line has ${parts.length} field(s) — expected 3 (S|username|email).`,
-          hint: 'Format: S|username|email — exactly 2 pipe characters.',
+          reason: `Sponsor line has ${parts.length} field(s) — expected 3 (new format) or 5/7 (legacy format).`,
+          hint: 'Use S|username|email or S|org|first|last|email|points|reason.',
         });
         return;
       }
-      if (parts.length > 3) {
+      const [, orgName, firstName, lastName, email, pointsDelta = '', reason = ''] = parts;
+      if (!orgName?.trim()) {
         errors.push({
           line_number: lineNumber,
           raw_line: rawLine,
-          reason: `Sponsor line has ${parts.length} fields — expected 3 (S|username|email).`,
-          hint: 'Remove extra pipe characters. Sponsor lines use exactly 2 pipes.',
+          reason: 'Legacy sponsor line requires an organization name for admin upload.',
+          hint: 'Use S|organization|first|last|email[|points|reason].',
         });
         return;
       }
-      const [, username, email] = parts;
-      if (!username?.trim()) {
+      if (!firstName?.trim() || !lastName?.trim()) {
         errors.push({
           line_number: lineNumber,
           raw_line: rawLine,
-          reason: 'Username field is empty.',
-          hint: 'Add a username: S|myusername|email@example.com',
+          reason: 'Legacy sponsor line requires first and last name.',
+          hint: 'Format: S|org|first|last|email[|points|reason]',
         });
         return;
       }
@@ -120,36 +147,86 @@ function validateBulkFileContent(content: string): PreflightError[] {
           reason: `"${email?.trim() || '(empty)'}" is not a valid email address.`,
           hint: 'Use a valid email format, e.g. user@example.com',
         });
+      }
+      if (pointsDelta.trim()) {
+        if (!/^[+-]?\d+$/.test(pointsDelta.trim())) {
+          errors.push({
+            line_number: lineNumber,
+            raw_line: rawLine,
+            reason: `Legacy sponsor points value "${pointsDelta}" is not a valid integer.`,
+            hint: 'Use numbers like 100 or -50.',
+          });
+          return;
+        }
+        if (!reason.trim()) {
+          errors.push({
+            line_number: lineNumber,
+            raw_line: rawLine,
+            reason: 'Legacy sponsor line includes points but no reason.',
+            hint: 'Provide a reason when points are included.',
+          });
+        }
       }
       return;
     }
 
     if (type === 'D') {
-      if (parts.length < 4) {
+      if (parts.length === 4) {
+        const [, username, email, sponsorUsername] = parts;
+        if (!username?.trim()) {
+          errors.push({
+            line_number: lineNumber,
+            raw_line: rawLine,
+            reason: 'Username field is empty.',
+            hint: 'Add a username: D|myusername|email@example.com|sponsor_name',
+          });
+          return;
+        }
+        if (!email?.trim() || !EMAIL_RE.test(email.trim())) {
+          errors.push({
+            line_number: lineNumber,
+            raw_line: rawLine,
+            reason: `"${email?.trim() || '(empty)'}" is not a valid email address.`,
+            hint: 'Use a valid email format, e.g. user@example.com',
+          });
+          return;
+        }
+        if (!sponsorUsername?.trim()) {
+          errors.push({
+            line_number: lineNumber,
+            raw_line: rawLine,
+            reason: 'Sponsor username field is empty.',
+            hint: "The last field must be the sponsor's username: D|username|email|sponsor_username",
+          });
+        }
+        return;
+      }
+
+      if (parts.length !== 5 && parts.length !== 7) {
         errors.push({
           line_number: lineNumber,
           raw_line: rawLine,
-          reason: `Driver line has ${parts.length} field(s) — expected 4 (D|username|email|sponsor_username).`,
-          hint: 'Format: D|username|email|sponsor_username — exactly 3 pipe characters.',
+          reason: `Driver line has ${parts.length} field(s) — expected 4 (new format) or 5/7 (legacy format).`,
+          hint: 'Use D|username|email|sponsor_username or D|org|first|last|email|points|reason.',
         });
         return;
       }
-      if (parts.length > 4) {
+      const [, orgName, firstName, lastName, email, pointsDelta = '', reason = ''] = parts;
+      if (!orgName?.trim()) {
         errors.push({
           line_number: lineNumber,
           raw_line: rawLine,
-          reason: `Driver line has ${parts.length} fields — expected 4 (D|username|email|sponsor_username).`,
-          hint: 'Remove extra pipe characters. Driver lines use exactly 3 pipes.',
+          reason: 'Legacy driver line requires an organization name for admin upload.',
+          hint: 'Use D|organization|first|last|email[|points|reason].',
         });
         return;
       }
-      const [, username, email, sponsorUsername] = parts;
-      if (!username?.trim()) {
+      if (!firstName?.trim() || !lastName?.trim()) {
         errors.push({
           line_number: lineNumber,
           raw_line: rawLine,
-          reason: 'Username field is empty.',
-          hint: 'Add a username: D|myusername|email@example.com|sponsor_name',
+          reason: 'Legacy driver line requires first and last name.',
+          hint: 'Format: D|org|first|last|email[|points|reason]',
         });
         return;
       }
@@ -162,13 +239,24 @@ function validateBulkFileContent(content: string): PreflightError[] {
         });
         return;
       }
-      if (!sponsorUsername?.trim()) {
-        errors.push({
-          line_number: lineNumber,
-          raw_line: rawLine,
-          reason: 'Sponsor username field is empty.',
-          hint: "The last field must be the sponsor's username: D|username|email|sponsor_username",
-        });
+      if (pointsDelta.trim()) {
+        if (!/^[+-]?\d+$/.test(pointsDelta.trim())) {
+          errors.push({
+            line_number: lineNumber,
+            raw_line: rawLine,
+            reason: `Legacy driver points value "${pointsDelta}" is not a valid integer.`,
+            hint: 'Use numbers like 100 or -50.',
+          });
+          return;
+        }
+        if (!reason.trim()) {
+          errors.push({
+            line_number: lineNumber,
+            raw_line: rawLine,
+            reason: 'Legacy driver line includes points but no reason.',
+            hint: 'Provide a reason when points are included.',
+          });
+        }
       }
     }
   });
@@ -259,12 +347,16 @@ export function AdminBulkUploadPage() {
         <pre style={{ margin: 0, lineHeight: 1.6 }}>
 {`O|org_name
 S|username|email
-D|username|email|sponsor_username`}
+D|username|email|sponsor_username
+
+# Legacy (RC sample) also supported
+S|org_name|first_name|last_name|email|points_delta|reason
+D|org_name|first_name|last_name|email|points_delta|reason`}
         </pre>
         <ul style={{ marginTop: '0.75rem', paddingLeft: '1.25rem', lineHeight: 1.8, color: 'var(--color-text-muted)' }}>
           <li><strong>O</strong> — register an organization (2 fields)</li>
-          <li><strong>S</strong> — create a sponsor account (3 fields)</li>
-          <li><strong>D</strong> — create a driver account linked to a sponsor (4 fields)</li>
+          <li><strong>S</strong> — create sponsor account (3 fields new format, 5/7 fields legacy format)</li>
+          <li><strong>D</strong> — create driver linked to sponsor (4 fields new format, 5/7 fields legacy format)</li>
         </ul>
         <p style={{ marginTop: '0.5rem', color: 'var(--color-text-muted)' }}>
           Sponsors defined earlier in the file can be referenced by driver lines in the same
@@ -364,6 +456,26 @@ D|username|email|sponsor_username`}
             <li>Sponsors created: <strong>{result.sponsors_created}</strong></li>
             <li>Drivers created: <strong>{result.drivers_created}</strong></li>
           </ul>
+
+          {(result.warnings?.length ?? 0) > 0 && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <p style={{ fontWeight: 600, color: 'var(--color-warning)', marginBottom: '0.35rem' }}>
+                Warnings ({result.warnings?.length}) — these rows were still processed
+              </p>
+              <ul style={{ paddingLeft: '1.25rem', lineHeight: 1.8, fontSize: '0.875rem' }}>
+                {result.warnings?.map((w) => (
+                  <li key={`warning-${w.line_number}-${w.reason}`}>
+                    <strong>Line {w.line_number}:</strong> {w.reason}
+                    {w.raw_line && (
+                      <div style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#666', marginTop: '0.15rem' }}>
+                        {w.raw_line}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {result.created_users.length > 0 && (
             <div style={{ marginTop: '1rem' }}>

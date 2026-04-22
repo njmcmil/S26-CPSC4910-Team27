@@ -6,7 +6,7 @@ import { Alert } from '../../components/Alert';
 
 interface CreatedUser {
   username: string;
-  role: 'driver';
+  role: 'driver' | 'sponsor';
   temp_password: string;
 }
 
@@ -18,8 +18,10 @@ interface ValidationError {
 
 interface UploadResult {
   drivers_created: number;
+  sponsors_created?: number;
   created_users: CreatedUser[];
   errors: ValidationError[];
+  warnings?: ValidationError[];
 }
 
 interface PreflightError {
@@ -35,8 +37,10 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Validates file content and returns format warnings for sponsor uploads.
- * Only D (driver) records are accepted.
- * Format: D|username|email
+ * D (driver) and S (sponsor user) records are accepted.
+ * Formats:
+ *   D|username|email
+ *   D|org_name|first_name|last_name|email[|points_delta|reason]  (legacy RC format)
  *
  * Invalid lines are reported as warnings — they do NOT block the upload.
  * The server skips invalid rows and processes valid ones.
@@ -58,33 +62,65 @@ function validateSponsorBulkFileContent(content: string): PreflightError[] {
 
     if (HEADER_TOKENS.has(rawType.toLowerCase())) return;
 
-    if (type !== 'D') {
+    if (type === 'O') {
       errors.push({
         line_number: lineNumber,
         raw_line: rawLine,
-        reason: `Line starts with "${rawType}" — sponsor bulk upload only accepts D (driver) records.`,
-        hint: 'Change the first field to D. Format: D|username|email',
+        reason: 'Organization records are not allowed in sponsor bulk upload.',
+        hint: 'Remove the O row. Sponsor uploads only work inside your current organization.',
       });
       return;
     }
 
-    if (parts.length < 3) {
+    if (type !== 'D' && type !== 'S') {
       errors.push({
         line_number: lineNumber,
         raw_line: rawLine,
-        reason: `Driver line has ${parts.length} field(s) — expected at least 3 (D|username|email).`,
-        hint: 'Format: D|username|email — make sure you have at least 2 pipe characters.',
+        reason: `Line starts with "${rawType}" — sponsor bulk upload only accepts D and S records.`,
+        hint: 'Use D for drivers or S for sponsor users.',
       });
       return;
     }
 
-    const [, username, email] = parts;
-    if (!username?.trim()) {
+    if (parts.length === 3 || parts.length === 4) {
+      const [, username, email] = parts;
+      if (!username?.trim()) {
+        errors.push({
+          line_number: lineNumber,
+          raw_line: rawLine,
+          reason: `${type} record username is empty.`,
+          hint: `Add a username: ${type}|myusername|email@example.com`,
+        });
+        return;
+      }
+      if (!email?.trim() || !EMAIL_RE.test(email.trim())) {
+        errors.push({
+          line_number: lineNumber,
+          raw_line: rawLine,
+          reason: `"${email?.trim() || '(empty)'}" is not a valid email address.`,
+          hint: 'Use a valid email format, e.g. user@example.com',
+        });
+      }
+      return;
+    }
+
+    if (parts.length !== 5 && parts.length !== 7) {
       errors.push({
         line_number: lineNumber,
         raw_line: rawLine,
-        reason: 'Username field is empty.',
-        hint: 'Add a username: D|myusername|email@example.com',
+        reason: `${type} line has ${parts.length} field(s) — expected 3/4 (new format) or 5/7 (legacy format).`,
+        hint: `Use ${type}|username|email or ${type}|org|first|last|email|points|reason.`,
+      });
+      return;
+    }
+
+    const [, orgName, firstName, lastName, email, pointsDelta = '', reason = ''] = parts;
+    if (!firstName?.trim() || !lastName?.trim()) {
+      errors.push({
+        line_number: lineNumber,
+        raw_line: rawLine,
+        reason: `Legacy ${type} line requires first and last name.`,
+        hint: `Format: ${type}|org|first|last|email[|points|reason]`,
       });
       return;
     }
@@ -95,6 +131,29 @@ function validateSponsorBulkFileContent(content: string): PreflightError[] {
         reason: `"${email?.trim() || '(empty)'}" is not a valid email address.`,
         hint: 'Use a valid email format, e.g. user@example.com',
       });
+      return;
+    }
+    if (pointsDelta.trim()) {
+      if (type === 'S') {
+        return;
+      }
+      if (!/^[+-]?\d+$/.test(pointsDelta.trim())) {
+        errors.push({
+          line_number: lineNumber,
+          raw_line: rawLine,
+          reason: `Legacy driver points value "${pointsDelta}" is not a valid integer.`,
+          hint: 'Use numbers like 100 or -50.',
+        });
+        return;
+      }
+      if (!reason.trim()) {
+        errors.push({
+          line_number: lineNumber,
+          raw_line: rawLine,
+          reason: 'Legacy driver line includes points but no reason.',
+          hint: 'Provide a reason when points are included.',
+        });
+      }
     }
   });
 
@@ -171,12 +230,11 @@ export function SponsorBulkUploadPage() {
 
   return (
     <section className="card" aria-labelledby="sponsor-bulk-upload-heading">
-      <h2 id="sponsor-bulk-upload-heading">Bulk Driver Upload</h2>
+      <h2 id="sponsor-bulk-upload-heading">Bulk User Upload</h2>
       <p className="mt-1" style={{ color: 'var(--color-text-muted)' }}>
-        Upload a pipe-delimited text file to create driver accounts in bulk. All drivers are
-        automatically linked to your sponsor organization. Each new driver receives a unique
-        temporary password shown once after upload. Valid rows are always processed even if other
-        rows in the file are invalid.
+        Upload a pipe-delimited text file to create driver and sponsor-user accounts in bulk.
+        Drivers are automatically linked to your organization, and sponsor-user rows stay inside
+        your current organization. Valid rows are processed even if other rows are invalid.
       </p>
 
       {/* Format reference card */}
@@ -184,13 +242,20 @@ export function SponsorBulkUploadPage() {
         <p style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Required file format</p>
         <pre style={{ margin: 0, lineHeight: 1.6 }}>
 {`D|username|email`}
+{`
+# Legacy (RC sample) also supported
+D|org_name|first_name|last_name|email|points_delta|reason
+S|username|email
+S|org_name|first_name|last_name|email|points_delta|reason`}
         </pre>
         <ul style={{ marginTop: '0.75rem', paddingLeft: '1.25rem', lineHeight: 1.8, color: 'var(--color-text-muted)' }}>
-          <li><strong>D</strong> — create a driver account (3 fields separated by <code>|</code>)</li>
+          <li><strong>D</strong> — create or update driver account in your organization</li>
+          <li><strong>S</strong> — create sponsor-user account in your organization</li>
         </ul>
         <p style={{ marginTop: '0.5rem', color: 'var(--color-text-muted)' }}>
-          One driver per line. Blank lines and lines starting with <code>#</code> are ignored.
-          Invalid rows are skipped and reported — valid rows are still processed.
+          Organization names on sponsor uploads are ignored. Points on sponsor-user rows are also
+          ignored. Blank lines and lines starting with <code>#</code> are ignored. Invalid rows are
+          skipped and reported.
         </p>
       </div>
 
@@ -281,8 +346,29 @@ export function SponsorBulkUploadPage() {
             Upload complete
           </p>
           <ul style={{ listStyle: 'none', padding: 0, lineHeight: 2 }}>
+            <li>Sponsor users created: <strong>{result.sponsors_created ?? 0}</strong></li>
             <li>Drivers created: <strong>{result.drivers_created}</strong></li>
           </ul>
+
+          {(result.warnings?.length ?? 0) > 0 && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <p style={{ fontWeight: 600, color: 'var(--color-warning)', marginBottom: '0.35rem' }}>
+                Warnings ({result.warnings?.length}) — these rows were still processed
+              </p>
+              <ul style={{ paddingLeft: '1.25rem', lineHeight: 1.8, fontSize: '0.875rem' }}>
+                {result.warnings?.map((w) => (
+                  <li key={`warning-${w.line_number}-${w.reason}`}>
+                    <strong>Line {w.line_number}:</strong> {w.reason}
+                    {w.raw_line && (
+                      <div style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#666', marginTop: '0.15rem' }}>
+                        {w.raw_line}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {result.created_users.length > 0 && (
             <div style={{ marginTop: '1rem' }}>
@@ -321,7 +407,7 @@ export function SponsorBulkUploadPage() {
           {result.errors.length > 0 && (
             <div style={{ marginTop: '0.75rem' }}>
               <p style={{ fontWeight: 600, color: 'var(--color-warning)', marginBottom: '0.35rem' }}>
-                Skipped lines ({result.errors.length}) — these drivers were not created
+                Skipped lines ({result.errors.length}) — these entries were not created
               </p>
               <ul style={{ paddingLeft: '1.25rem', lineHeight: 1.8, fontSize: '0.875rem' }}>
                 {result.errors.map((e) => (

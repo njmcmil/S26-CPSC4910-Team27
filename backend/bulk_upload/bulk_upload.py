@@ -17,6 +17,7 @@ Both endpoints support partial success: valid rows are processed even if other r
 """
 
 import csv
+import re
 import secrets
 import string
 
@@ -29,6 +30,7 @@ router = APIRouter()
 
 # All globally recognised type tokens.
 VALID_TYPES = {"S", "D", "O"}
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +74,16 @@ def link_driver_to_sponsor_with_cursor(cursor, sponsor_user_id: int, driver_user
         )
 
 
-def create_user_fast(cursor, username: str, email: str, role: str, plain_password: str) -> dict:
+def create_user_fast(
+    cursor,
+    username: str,
+    email: str,
+    role: str,
+    plain_password: str,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    company_name: str | None = None,
+) -> dict:
     """
     Faster user creation for bulk upload using an existing DB cursor.
     Preserves required sponsor defaults while avoiding per-row new connections.
@@ -96,6 +107,37 @@ def create_user_fast(cursor, username: str, email: str, role: str, plain_passwor
             """,
             (user_id,),
         )
+        if company_name:
+            cursor.execute(
+                """
+                UPDATE SponsorProfiles
+                SET company_name = COALESCE(NULLIF(company_name, ''), %s)
+                WHERE user_id = %s
+                """,
+                (company_name, user_id),
+            )
+
+    if role == "driver":
+        cursor.execute(
+            """
+            INSERT INTO DriverProfiles (user_id, points_balance)
+            VALUES (%s, 0)
+            ON DUPLICATE KEY UPDATE user_id = user_id
+            """,
+            (user_id,),
+        )
+
+    if first_name or last_name:
+        cursor.execute(
+            """
+            INSERT INTO Profiles (user_id, first_name, last_name)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                first_name = COALESCE(VALUES(first_name), first_name),
+                last_name = COALESCE(VALUES(last_name), last_name)
+            """,
+            (user_id, first_name, last_name),
+        )
 
     return {"user_id": user_id, "username": username, "role": role, "email": email}
 
@@ -113,6 +155,90 @@ def log_bulk_upload_error(line_number: int, raw_line: str, reason: str) -> None:
     finally:
         cursor.close()
         conn.close()
+
+
+def _append_warning(record: dict, reason: str) -> None:
+    record.setdefault("warnings", []).append(reason)
+
+
+def _create_or_update_points_with_reason(
+    cursor,
+    sponsor_user_id: int,
+    driver_user_id: int,
+    points_delta: int,
+    points_reason: str,
+    changed_by_user_id: int,
+) -> None:
+    cursor.execute(
+        """
+        UPDATE SponsorDrivers
+        SET total_points = total_points + %s
+        WHERE sponsor_user_id = %s AND driver_user_id = %s
+        """,
+        (points_delta, sponsor_user_id, driver_user_id),
+    )
+    cursor.execute(
+        """
+        INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+        VALUES (NOW(), 'point_change', %s, %s, %s, %s, %s)
+        """,
+        (sponsor_user_id, driver_user_id, points_delta, points_reason, changed_by_user_id),
+    )
+
+
+def _create_sponsor_user_linked_to_owner(
+    cursor,
+    sponsor_owner_user_id: int,
+    username: str,
+    email: str,
+    plain_password: str,
+    first_name: str | None = None,
+    last_name: str | None = None,
+) -> dict:
+    password_hash = hash_password(plain_password)
+    cursor.execute(
+        """
+        INSERT INTO Users (username, password_hash, role, email)
+        VALUES (%s, %s, 'sponsor', %s)
+        """,
+        (username, password_hash, email),
+    )
+    user_id = cursor.lastrowid
+    if first_name or last_name:
+        cursor.execute(
+            """
+            INSERT INTO Profiles (user_id, first_name, last_name)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                first_name = COALESCE(VALUES(first_name), first_name),
+                last_name = COALESCE(VALUES(last_name), last_name)
+            """,
+            (user_id, first_name, last_name),
+        )
+    cursor.execute(
+        """
+        INSERT INTO SponsorUserLinks (sponsor_user_id, sponsor_owner_user_id, created_by_user_id)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            sponsor_owner_user_id = VALUES(sponsor_owner_user_id),
+            created_by_user_id = VALUES(created_by_user_id)
+        """,
+        (user_id, sponsor_owner_user_id, sponsor_owner_user_id),
+    )
+    return {"user_id": user_id, "username": username, "role": "sponsor", "email": email}
+
+
+def _get_existing_user_by_email(cursor, email: str, role: str) -> dict | None:
+    cursor.execute(
+        """
+        SELECT user_id, username, role, email
+        FROM Users
+        WHERE email = %s AND role = %s
+        LIMIT 1
+        """,
+        (email, role),
+    )
+    return cursor.fetchone()
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +283,52 @@ def _skip_header_or_comment(fields: list[str]) -> bool:
     return False
 
 
+def _valid_email(value: str) -> bool:
+    return bool(value and EMAIL_RE.match(value))
+
+
+def _slugify_name(value: str) -> str:
+    lowered = value.strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "_", lowered).strip("_")
+    return slug
+
+
+def _derive_unique_username(first_name: str, last_name: str, email: str, role_hint: str) -> str:
+    name_base = "_".join(
+        part for part in (_slugify_name(first_name), _slugify_name(last_name)) if part
+    )
+    email_base = _slugify_name(email.split("@", 1)[0]) if "@" in email else ""
+    base = name_base or email_base or f"{role_hint}_user"
+    candidate = base
+    suffix = 1
+    while get_user_by_username(candidate):
+        suffix += 1
+        candidate = f"{base}{suffix}"
+    return candidate
+
+
+def _parse_optional_points_and_reason(
+    fields: list[str],
+    points_index: int,
+    reason_index: int,
+) -> tuple[int | None, str | None, str | None]:
+    if len(fields) <= points_index:
+        return None, None, None
+    points_raw = (fields[points_index] or "").strip()
+    reason = (fields[reason_index] or "").strip() if len(fields) > reason_index else ""
+    if not points_raw:
+        if reason:
+            return None, None, "Reason was provided but points delta was empty."
+        return None, None, None
+    try:
+        points = int(points_raw)
+    except ValueError:
+        return None, None, f"Invalid points value '{points_raw}'. Must be an integer like 100 or -50."
+    if not reason:
+        return None, None, "A reason is required when points are included."
+    return points, reason, None
+
+
 def parse_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimiter: str) -> tuple[list[dict], list[dict]]:
     """
     Parse pipe/comma-delimited content into validated record dicts for admin uploads.
@@ -165,6 +337,10 @@ def parse_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimiter: str)
       O|org_name
       S|username|email
       D|username|email|sponsor_username
+
+    Legacy RC format (also accepted):
+      S|org_name|first_name|last_name|email[|points_delta|reason]
+      D|org_name|first_name|last_name|email[|points_delta|reason]
     """
     records: list[dict] = []
     errors:  list[dict] = []
@@ -220,17 +396,80 @@ def parse_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimiter: str)
             # Tolerate trailing empty CSV cell: "S,username,email,"
             if len(fields) == 4 and fields[3] == "":
                 fields = fields[:3]
-            if len(fields) != 3:
+            if len(fields) == 3:
+                if not fields[1]:
+                    errors.append({
+                        "line_number": line_num,
+                        "raw_line": raw_line,
+                        "reason": "S record: username must not be empty.",
+                    })
+                    continue
+                if not _valid_email(fields[2]):
+                    errors.append({
+                        "line_number": line_num,
+                        "raw_line": raw_line,
+                        "reason": f"S record: invalid email '{fields[2]}'.",
+                    })
+                    continue
+                records.append({
+                    "type":        "S",
+                    "username":    fields[1],
+                    "email":       fields[2],
+                    "line_number": line_num,
+                    "raw_line":    raw_line,
+                })
+                continue
+
+            # Legacy: S|org|first|last|email[|points|reason]
+            if len(fields) not in (5, 7):
                 errors.append({
                     "line_number": line_num,
                     "raw_line":    raw_line,
-                    "reason":      f"S record requires 3 fields (S{delimiter}username{delimiter}email), got {len(fields)}.",
+                    "reason":      f"S record requires 3 fields (new format) or 5/7 fields (legacy format), got {len(fields)}.",
+                })
+                continue
+            org_name = fields[1]
+            first_name = fields[2]
+            last_name = fields[3]
+            email = fields[4]
+            if not org_name:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": "Legacy S record requires an organization name for admin uploads.",
+                })
+                continue
+            if not first_name or not last_name:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": "Legacy S record requires first and last name.",
+                })
+                continue
+            if not _valid_email(email):
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"Legacy S record: invalid email '{email}'.",
+                })
+                continue
+            points_delta, points_reason, points_error = _parse_optional_points_and_reason(fields, 5, 6)
+            if points_error:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"Legacy S record: {points_error}",
                 })
                 continue
             records.append({
                 "type":        "S",
-                "username":    fields[1],
-                "email":       fields[2],
+                "legacy":      True,
+                "org_name":    org_name,
+                "first_name":  first_name,
+                "last_name":   last_name,
+                "email":       email,
+                "points_delta": points_delta,
+                "points_reason": points_reason,
                 "line_number": line_num,
                 "raw_line":    raw_line,
             })
@@ -239,18 +478,88 @@ def parse_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimiter: str)
             # Tolerate trailing empty CSV cell: "D,username,email,sponsor,"
             if len(fields) == 5 and fields[4] == "":
                 fields = fields[:4]
-            if len(fields) != 4:
+            if len(fields) == 4:
+                if not fields[1]:
+                    errors.append({
+                        "line_number": line_num,
+                        "raw_line": raw_line,
+                        "reason": "D record: username must not be empty.",
+                    })
+                    continue
+                if not _valid_email(fields[2]):
+                    errors.append({
+                        "line_number": line_num,
+                        "raw_line": raw_line,
+                        "reason": f"D record: invalid email '{fields[2]}'.",
+                    })
+                    continue
+                if not fields[3]:
+                    errors.append({
+                        "line_number": line_num,
+                        "raw_line": raw_line,
+                        "reason": "D record: sponsor_username must not be empty.",
+                    })
+                    continue
+                records.append({
+                    "type":             "D",
+                    "username":         fields[1],
+                    "email":            fields[2],
+                    "sponsor_username": fields[3],
+                    "line_number":      line_num,
+                    "raw_line":         raw_line,
+                })
+                continue
+
+            # Legacy: D|org|first|last|email[|points|reason]
+            if len(fields) not in (5, 7):
                 errors.append({
                     "line_number": line_num,
                     "raw_line":    raw_line,
-                    "reason":      f"D record requires 4 fields (D{delimiter}username{delimiter}email{delimiter}sponsor_username), got {len(fields)}.",
+                    "reason":      f"D record requires 4 fields (new format) or 5/7 fields (legacy format), got {len(fields)}.",
+                })
+                continue
+            org_name = fields[1]
+            first_name = fields[2]
+            last_name = fields[3]
+            email = fields[4]
+            if not org_name:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": "Legacy D record requires an organization name for admin uploads.",
+                })
+                continue
+            if not first_name or not last_name:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": "Legacy D record requires first and last name.",
+                })
+                continue
+            if not _valid_email(email):
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"Legacy D record: invalid email '{email}'.",
+                })
+                continue
+            points_delta, points_reason, points_error = _parse_optional_points_and_reason(fields, 5, 6)
+            if points_error:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"Legacy D record: {points_error}",
                 })
                 continue
             records.append({
-                "type":             "D",
-                "username":         fields[1],
-                "email":            fields[2],
-                "sponsor_username": fields[3],
+                "type":         "D",
+                "legacy":       True,
+                "org_name":     org_name,
+                "first_name":   first_name,
+                "last_name":    last_name,
+                "email":        email,
+                "points_delta": points_delta,
+                "points_reason": points_reason,
                 "line_number":      line_num,
                 "raw_line":         raw_line,
             })
@@ -261,8 +570,12 @@ def parse_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimiter: str)
 def parse_sponsor_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimiter: str) -> tuple[list[dict], list[dict]]:
     """
     Parse pipe/comma-delimited content for sponsor bulk uploads.
-    Only D (driver) records are accepted; sponsor is auto-assigned from the JWT.
-    Format: D|username|email
+    D and S records are accepted; sponsor scope is always the authenticated sponsor's organization.
+    Format:
+      D|username|email
+      D|org_name|first_name|last_name|email[|points_delta|reason]   (legacy)
+      S|username|email
+      S|org_name|first_name|last_name|email[|points_delta|reason]   (legacy)
     """
     records: list[dict] = []
     errors:  list[dict] = []
@@ -281,42 +594,105 @@ def parse_sponsor_bulk_rows(rows: list[list[str]], raw_lines: list[str], delimit
 
         record_type = fields[0].upper()
 
-        # Reject non-D record types with a clear message.
         if record_type not in VALID_TYPES:
             errors.append({
                 "line_number": line_num,
                 "raw_line":    raw_line,
-                "reason":      f"Invalid type '{fields[0]}'. Sponsor bulk upload only accepts D (driver) records.",
+                "reason":      f"Invalid type '{fields[0]}'. Sponsor bulk upload only accepts D and S records.",
             })
             continue
 
-        if record_type != "D":
+        if record_type == "O":
             errors.append({
                 "line_number": line_num,
                 "raw_line":    raw_line,
-                "reason":      f"Record type '{record_type}' is not allowed for sponsor bulk uploads. Only D (driver) records are accepted.",
+                "reason":      "Organization records are not allowed in sponsor bulk upload.",
             })
             continue
 
-        # Accept D|username|email (3 fields) or D|username|email|anything (4 fields).
-        # The 4th field is ignored — sponsor is auto-assigned.
-        if len(fields) == 5 and fields[4] == "":
-            fields = fields[:4]
-        if len(fields) < 3:
-            errors.append({
-                "line_number": line_num,
-                "raw_line":    raw_line,
-                "reason":      f"D record requires at least 3 fields (D{delimiter}username{delimiter}email), got {len(fields)}.",
-            })
-            continue
+        if record_type in {"D", "S"}:
+            if len(fields) == 5 and fields[4] == "":
+                fields = fields[:4]
 
-        records.append({
-            "type":        "D",
-            "username":    fields[1],
-            "email":       fields[2],
-            "line_number": line_num,
-            "raw_line":    raw_line,
-        })
+            if len(fields) in (3, 4):
+                if not fields[1]:
+                    errors.append({
+                        "line_number": line_num,
+                        "raw_line": raw_line,
+                        "reason": f"{record_type} record: username must not be empty.",
+                    })
+                    continue
+                if not _valid_email(fields[2]):
+                    errors.append({
+                        "line_number": line_num,
+                        "raw_line": raw_line,
+                        "reason": f"{record_type} record: invalid email '{fields[2]}'.",
+                    })
+                    continue
+                records.append({
+                    "type":        record_type,
+                    "username":    fields[1],
+                    "email":       fields[2],
+                    "line_number": line_num,
+                    "raw_line":    raw_line,
+                    "warnings":    [],
+                })
+                continue
+
+            if len(fields) not in (5, 7):
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"{record_type} record requires 3/4 fields (new format) or 5/7 fields (legacy format), got {len(fields)}.",
+                })
+                continue
+
+            org_name = fields[1]
+            first_name = fields[2]
+            last_name = fields[3]
+            email = fields[4]
+            if not first_name or not last_name:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"Legacy {record_type} record requires first and last name.",
+                })
+                continue
+            if not _valid_email(email):
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"Legacy {record_type} record: invalid email '{email}'.",
+                })
+                continue
+            points_delta, points_reason, points_error = _parse_optional_points_and_reason(fields, 5, 6)
+            if points_error:
+                errors.append({
+                    "line_number": line_num,
+                    "raw_line": raw_line,
+                    "reason": f"Legacy {record_type} record: {points_error}",
+                })
+                continue
+            record = {
+                "type":         record_type,
+                "legacy":       True,
+                "org_name":     org_name,
+                "first_name":   first_name,
+                "last_name":    last_name,
+                "email":        email,
+                "points_delta": points_delta,
+                "points_reason": points_reason,
+                "line_number":  line_num,
+                "raw_line":     raw_line,
+                "warnings":     [],
+            }
+            if org_name:
+                _append_warning(record, "Organization name was ignored for sponsor bulk upload.")
+            if record_type == "S" and points_delta is not None:
+                _append_warning(record, "Points on sponsor-user rows were ignored.")
+                record["points_delta"] = None
+                record["points_reason"] = None
+            records.append(record)
 
     return records, errors
 
@@ -344,6 +720,7 @@ async def bulk_upload(
         raise HTTPException(status_code=400, detail="Could not parse file. Use CSV or pipe-delimited UTF-8 text.")
 
     records, errors = parse_bulk_rows(rows, raw_lines, delimiter)
+    warnings: list[dict] = []
 
     orgs_created     = 0
     sponsors_created = 0
@@ -354,6 +731,7 @@ async def bulk_upload(
     # before the DB commit is visible to other connections.
     batch_sponsors: dict[str, int] = {}  # username -> user_id
     sponsor_cache:  dict[str, dict] = {}
+    org_to_sponsor_user_id: dict[str, int] = {}
 
     conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -373,58 +751,138 @@ async def bulk_upload(
                     orgs_created += 1
 
                 elif record["type"] == "S":
-                    temp_pw = generate_temp_password()
-                    user = create_user_fast(
-                        cursor=cursor,
-                        username=record["username"],
-                        email=record["email"],
-                        role="sponsor",
-                        plain_password=temp_pw,
-                    )
+                    is_legacy = bool(record.get("legacy"))
+                    username = record.get("username")
+                    if is_legacy:
+                        username = _derive_unique_username(
+                            first_name=record.get("first_name", ""),
+                            last_name=record.get("last_name", ""),
+                            email=record["email"],
+                            role_hint="sponsor",
+                        )
+
+                    existing_sponsor = _get_existing_user_by_email(cursor, record["email"], "sponsor")
+                    if existing_sponsor:
+                        user = existing_sponsor
+                        _append_warning(record, "Sponsor already existed, so the existing account was reused.")
+                        temp_pw = "(existing account)"
+                    else:
+                        temp_pw = generate_temp_password()
+                        user = create_user_fast(
+                            cursor=cursor,
+                            username=username,
+                            email=record["email"],
+                            role="sponsor",
+                            plain_password=temp_pw,
+                            first_name=record.get("first_name"),
+                            last_name=record.get("last_name"),
+                            company_name=record.get("org_name"),
+                        )
+                        sponsors_created += 1
+                        created_users.append({
+                            "username":      username,
+                            "role":          "sponsor",
+                            "temp_password": temp_pw,
+                        })
                     conn.commit()
-                    batch_sponsors[record["username"]] = user["user_id"]
-                    sponsor_cache[record["username"]]  = user
-                    sponsors_created += 1
-                    created_users.append({
-                        "username":      record["username"],
-                        "role":          "sponsor",
-                        "temp_password": temp_pw,
-                    })
+                    batch_sponsors[user["username"]] = user["user_id"]
+                    sponsor_cache[user["username"]]  = user
+                    org_name = (record.get("org_name") or "").strip()
+                    if org_name:
+                        org_to_sponsor_user_id[org_name] = user["user_id"]
 
                 elif record["type"] == "D":
-                    sponsor_username = record["sponsor_username"]
+                    is_legacy = bool(record.get("legacy"))
+                    sponsor_id: int | None = None
 
-                    # Resolve sponsor: batch cache → local cache → DB
-                    if sponsor_username in batch_sponsors:
-                        sponsor_id = batch_sponsors[sponsor_username]
+                    if is_legacy:
+                        org_name = (record.get("org_name") or "").strip()
+                        if org_name and org_name in org_to_sponsor_user_id:
+                            sponsor_id = org_to_sponsor_user_id[org_name]
+                        elif org_name:
+                            cursor.execute(
+                                """
+                                SELECT sp.user_id
+                                FROM SponsorProfiles sp
+                                JOIN Users u ON u.user_id = sp.user_id
+                                WHERE u.role = 'sponsor'
+                                  AND sp.company_name = %s
+                                ORDER BY sp.user_id
+                                LIMIT 1
+                                """,
+                                (org_name,),
+                            )
+                            row = cursor.fetchone()
+                            if row:
+                                sponsor_id = int(row["user_id"])
+                                org_to_sponsor_user_id[org_name] = sponsor_id
+                        if sponsor_id is None:
+                            raise ValueError(
+                                "Legacy D record requires an org with an existing sponsor in this file or database."
+                            )
                     else:
-                        sponsor = sponsor_cache.get(sponsor_username)
-                        if not sponsor:
-                            sponsor = get_user_by_username(sponsor_username)
-                            if sponsor:
-                                sponsor_cache[sponsor_username] = sponsor
-                        if not sponsor:
-                            raise ValueError(f"Sponsor '{sponsor_username}' not found")
-                        if sponsor["role"] != "sponsor":
-                            raise ValueError(f"User '{sponsor_username}' is not a sponsor")
-                        sponsor_id = sponsor["user_id"]
+                        sponsor_username = record["sponsor_username"]
+                        # Resolve sponsor: batch cache → local cache → DB
+                        if sponsor_username in batch_sponsors:
+                            sponsor_id = batch_sponsors[sponsor_username]
+                        else:
+                            sponsor = sponsor_cache.get(sponsor_username)
+                            if not sponsor:
+                                sponsor = get_user_by_username(sponsor_username)
+                                if sponsor:
+                                    sponsor_cache[sponsor_username] = sponsor
+                            if not sponsor:
+                                raise ValueError(f"Sponsor '{sponsor_username}' not found")
+                            if sponsor["role"] != "sponsor":
+                                raise ValueError(f"User '{sponsor_username}' is not a sponsor")
+                            sponsor_id = sponsor["user_id"]
 
-                    temp_pw = generate_temp_password()
-                    user = create_user_fast(
-                        cursor=cursor,
-                        username=record["username"],
-                        email=record["email"],
-                        role="driver",
-                        plain_password=temp_pw,
-                    )
+                    username = record.get("username")
+                    if is_legacy:
+                        username = _derive_unique_username(
+                            first_name=record.get("first_name", ""),
+                            last_name=record.get("last_name", ""),
+                            email=record["email"],
+                            role_hint="driver",
+                        )
+
+                    existing_driver = _get_existing_user_by_email(cursor, record["email"], "driver")
+                    if existing_driver:
+                        user = existing_driver
+                        temp_pw = "(existing account)"
+                        _append_warning(record, "Driver already existed, so the existing account was updated.")
+                    else:
+                        temp_pw = generate_temp_password()
+                        user = create_user_fast(
+                            cursor=cursor,
+                            username=username,
+                            email=record["email"],
+                            role="driver",
+                            plain_password=temp_pw,
+                            first_name=record.get("first_name"),
+                            last_name=record.get("last_name"),
+                        )
+                        drivers_created += 1
+                        created_users.append({
+                            "username":      username,
+                            "role":          "driver",
+                            "temp_password": temp_pw,
+                        })
                     link_driver_to_sponsor_with_cursor(cursor, sponsor_id, user["user_id"])
+
+                    points_delta = record.get("points_delta")
+                    points_reason = record.get("points_reason")
+                    if points_delta is not None and points_reason:
+                        _create_or_update_points_with_reason(
+                            cursor=cursor,
+                            sponsor_user_id=sponsor_id,
+                            driver_user_id=user["user_id"],
+                            points_delta=int(points_delta),
+                            points_reason=points_reason,
+                            changed_by_user_id=current_user["user_id"],
+                        )
+
                     conn.commit()
-                    drivers_created += 1
-                    created_users.append({
-                        "username":      record["username"],
-                        "role":          "driver",
-                        "temp_password": temp_pw,
-                    })
 
             except ValueError as exc:
                 conn.rollback()
@@ -441,6 +899,13 @@ async def bulk_upload(
                     "raw_line":    record["raw_line"],
                     "reason":      f"Unexpected error: {exc}",
                 })
+
+            for warning in record.get("warnings", []):
+                warnings.append({
+                    "line_number": record["line_number"],
+                    "raw_line": record["raw_line"],
+                    "reason": warning,
+                })
     finally:
         cursor.close()
         conn.close()
@@ -455,6 +920,7 @@ async def bulk_upload(
         "created_users":    created_users,
         "error_count":      len(errors),
         "errors":           errors,
+        "warnings":         warnings,
     }
 
 
@@ -479,9 +945,11 @@ async def sponsor_bulk_upload(
         raise HTTPException(status_code=400, detail="Could not parse file. Use pipe-delimited UTF-8 text.")
 
     records, errors = parse_sponsor_bulk_rows(rows, raw_lines, delimiter)
+    warnings: list[dict] = []
 
     sponsor_user_id = current_user["user_id"]
     drivers_created = 0
+    sponsors_created = 0
     created_users:  list[dict] = []
 
     conn   = get_connection()
@@ -489,22 +957,91 @@ async def sponsor_bulk_upload(
     try:
         for record in records:
             try:
-                temp_pw = generate_temp_password()
-                user = create_user_fast(
-                    cursor=cursor,
-                    username=record["username"],
-                    email=record["email"],
-                    role="driver",
-                    plain_password=temp_pw,
-                )
-                link_driver_to_sponsor_with_cursor(cursor, sponsor_user_id, user["user_id"])
+                if record["type"] == "S":
+                    is_legacy = bool(record.get("legacy"))
+                    username = record.get("username")
+                    if is_legacy:
+                        username = _derive_unique_username(
+                            first_name=record.get("first_name", ""),
+                            last_name=record.get("last_name", ""),
+                            email=record["email"],
+                            role_hint="sponsor",
+                        )
+
+                    existing_sponsor = _get_existing_user_by_email(cursor, record["email"], "sponsor")
+                    if existing_sponsor:
+                        _append_warning(record, "Sponsor user already existed, so no new account was created.")
+                        created_users.append({
+                            "username": existing_sponsor["username"],
+                            "role": "sponsor",
+                            "temp_password": "(existing account)",
+                        })
+                    else:
+                        temp_pw = generate_temp_password()
+                        user = _create_sponsor_user_linked_to_owner(
+                            cursor=cursor,
+                            sponsor_owner_user_id=sponsor_user_id,
+                            username=username,
+                            email=record["email"],
+                            plain_password=temp_pw,
+                            first_name=record.get("first_name"),
+                            last_name=record.get("last_name"),
+                        )
+                        sponsors_created += 1
+                        created_users.append({
+                            "username": user["username"],
+                            "role": "sponsor",
+                            "temp_password": temp_pw,
+                        })
+
+                elif record["type"] == "D":
+                    is_legacy = bool(record.get("legacy"))
+                    username = record.get("username")
+                    if is_legacy:
+                        username = _derive_unique_username(
+                            first_name=record.get("first_name", ""),
+                            last_name=record.get("last_name", ""),
+                            email=record["email"],
+                            role_hint="driver",
+                        )
+
+                    existing_driver = _get_existing_user_by_email(cursor, record["email"], "driver")
+                    if existing_driver:
+                        user = existing_driver
+                        _append_warning(record, "Driver already existed, so points/linking were updated on the existing account.")
+                    else:
+                        temp_pw = generate_temp_password()
+                        user = create_user_fast(
+                            cursor=cursor,
+                            username=username,
+                            email=record["email"],
+                            role="driver",
+                            plain_password=temp_pw,
+                            first_name=record.get("first_name"),
+                            last_name=record.get("last_name"),
+                        )
+                        drivers_created += 1
+                        created_users.append({
+                            "username": username,
+                            "role": "driver",
+                            "temp_password": temp_pw,
+                        })
+
+                    link_driver_to_sponsor_with_cursor(cursor, sponsor_user_id, user["user_id"])
+
+                    points_delta = record.get("points_delta")
+                    points_reason = record.get("points_reason")
+                    if points_delta is not None and points_reason:
+                        _create_or_update_points_with_reason(
+                            cursor=cursor,
+                            sponsor_user_id=sponsor_user_id,
+                            driver_user_id=user["user_id"],
+                            points_delta=int(points_delta),
+                            points_reason=points_reason,
+                            changed_by_user_id=current_user["user_id"],
+                        )
+
                 conn.commit()
-                drivers_created += 1
-                created_users.append({
-                    "username":      record["username"],
-                    "role":          "driver",
-                    "temp_password": temp_pw,
-                })
 
             except ValueError as exc:
                 conn.rollback()
@@ -521,6 +1058,13 @@ async def sponsor_bulk_upload(
                     "raw_line":    record["raw_line"],
                     "reason":      f"Unexpected error: {exc}",
                 })
+
+            for warning in record.get("warnings", []):
+                warnings.append({
+                    "line_number": record["line_number"],
+                    "raw_line": record["raw_line"],
+                    "reason": warning,
+                })
     finally:
         cursor.close()
         conn.close()
@@ -530,7 +1074,9 @@ async def sponsor_bulk_upload(
 
     return {
         "drivers_created": drivers_created,
+        "sponsors_created": sponsors_created,
         "created_users":   created_users,
         "error_count":     len(errors),
         "errors":          errors,
+        "warnings":        warnings,
     }
