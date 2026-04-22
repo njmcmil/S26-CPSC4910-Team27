@@ -316,7 +316,7 @@ const ROLE_NAV: Record<UserRole, GroupedNav> = {
           { to: '/sponsor/drivers', label: 'Drivers' },
           { to: '/sponsor/applications', label: 'Applications' },
           { to: '/sponsor/points', label: 'Points' },
-          { to: '/sponsor/bulk-upload', label: 'Bulk Driver Upload' },
+          { to: '/sponsor/bulk-upload', label: 'Bulk User Upload' },
         ],
       },
       {

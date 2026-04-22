@@ -197,7 +197,7 @@ const ROUTE_CONFIG: RouteConfig[] = [
     crumbs: [
       { label: 'Dashboard', to: '/sponsor/dashboard' },
       { label: 'Driver Management' },
-      { label: 'Bulk Driver Upload' },
+      { label: 'Bulk User Upload' },
     ],
   },
   {
