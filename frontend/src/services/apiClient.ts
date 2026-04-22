@@ -1,7 +1,24 @@
 import type { ApiError } from '../types';
 
+/** Same default as `.env.production` — used if the build has no env (e.g. misconfigured CI). */
+const PRODUCTION_API_FALLBACK =
+  'https://f8kqwmp227.execute-api.us-east-1.amazonaws.com';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+function resolveApiBaseUrl(): string {
+  const raw = import.meta.env.VITE_API_BASE_URL;
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.trim().replace(/\/+$/, '');
+  }
+  if (import.meta.env.DEV) {
+    return 'http://localhost:8000';
+  }
+  return PRODUCTION_API_FALLBACK;
+}
+
+const BASE_URL = resolveApiBaseUrl();
+
+/** Public base URL for fetch calls outside this module (e.g. file uploads). */
+export const API_BASE_URL = BASE_URL;
 const BLOCKED_STATE_KEY = 'gdip_blocked_state';
 
 let authToken: string | null = null;

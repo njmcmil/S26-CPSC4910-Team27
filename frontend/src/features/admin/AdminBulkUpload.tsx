@@ -1,8 +1,6 @@
 import { useRef, useState } from 'react';
-import { getToken } from '../../services/apiClient';
+import { API_BASE_URL, getToken } from '../../services/apiClient';
 import { Alert } from '../../components/Alert';
-
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -198,7 +196,7 @@ export function AdminBulkUploadPage() {
       formData.append('file', file);
 
       const token = getToken();
-      const res = await fetch(`${BASE_URL}/bulk-upload`, {
+      const res = await fetch(`${API_BASE_URL}/bulk-upload`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,

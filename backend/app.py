@@ -24,6 +24,7 @@ Usage:
 # --- Standard Library & Third Party ---
 from datetime import datetime, timedelta
 import hashlib
+import os
 from mysql.connector import IntegrityError
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -107,10 +108,19 @@ origins = [
     "http://52.200.244.222:5173", # EC2 frontend
     "https://good-driver-app-team27-emhfeqdndxgrdybe.eastus-01.azurewebsites.net",
 ]
+_extra_origins = os.getenv("CORS_EXTRA_ORIGINS", "")
+if _extra_origins.strip():
+    origins.extend(
+        o.strip() for o in _extra_origins.split(",") if o.strip() and o.strip() not in origins
+    )
+
+# Any hostname under *.azurewebsites.net (regional default URL, short name, slots, etc.)
+_azure_origin_regex = r"^https://[a-zA-Z0-9.-]+\.azurewebsites\.net$"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=_azure_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
