@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from shared.db import get_connection
 from auth.auth import create_access_token, get_current_user, get_current_user_allow_blocked, require_role
 from schemas.admin import (
+    AdminCreateUserRequest,
     AccountAppealListResponse,
     AccountAppealResolveRequest,
     AccountStatusChangeRequest,
@@ -31,6 +32,7 @@ from users.email_service import (
     send_sponsor_account_banned_email,
 )
 from shared.services import get_user_by_id
+from users.users import create_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -178,6 +180,52 @@ def list_all_users(current_user: dict = Depends(require_role("admin"))):
     finally:
         cursor.close()
         conn.close()
+
+
+@router.post("/users")
+def admin_create_user(
+    body: AdminCreateUserRequest,
+    current_user: dict = Depends(require_role("admin")),
+):
+    try:
+        created_user = create_user(
+            username=body.username.strip(),
+            password=body.password,
+            role=body.role,
+            email=body.email.strip().lower(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to create user")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO audit_log (date, category, sponsor_id, driver_id, points_changed, reason, changed_by_user_id)
+            VALUES (NOW(), 'admin_user_created', NULL, NULL, NULL, %s, %s)
+            """,
+            (
+                f"Admin created {created_user.get('role')} user '{created_user.get('username')}'",
+                current_user["user_id"],
+            ),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    return {
+        "message": f"{body.role.capitalize()} user created successfully.",
+        "user": {
+            "user_id": created_user.get("user_id"),
+            "username": created_user.get("username"),
+            "role": created_user.get("role"),
+            "email": created_user.get("email"),
+        },
+    }
 
 @router.get("/users/{username}")
 def get_user(username: str, current_user: dict = Depends(require_role("admin"))):

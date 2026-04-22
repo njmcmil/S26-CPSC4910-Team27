@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
 import { api } from '../../services/apiClient';
 import { Alert } from '../../components/Alert';
 import { useAuth } from '../../auth/AuthContext';
@@ -13,6 +14,14 @@ interface UserRow {
 }
 
 type RoleFilter = 'all' | 'driver' | 'sponsor' | 'admin';
+type CreateRole = 'driver' | 'sponsor' | 'admin';
+
+interface CreateUserForm {
+  username: string;
+  email: string;
+  password: string;
+  role: CreateRole;
+}
 
 const STATUS_COLORS: Record<string, React.CSSProperties> = {
   active: { background: '#dcfce7', color: '#166534' },
@@ -48,15 +57,61 @@ export function AdminUsersPage() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [search, setSearch] = useState('');
   const [impersonatingUserId, setImpersonatingUserId] = useState<number | null>(null);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+  const [createForm, setCreateForm] = useState<CreateUserForm>({
+    username: '',
+    email: '',
+    password: '',
+    role: 'driver',
+  });
 
-  useEffect(() => {
+  const loadUsers = () => {
+    setLoading(true);
     api.get<UserRow[]>('/admin/users')
       .then(setUsers)
       .catch((err: unknown) => {
         setError((err as { message?: string })?.message ?? 'Failed to load users.');
       })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadUsers();
   }, []);
+
+  const createUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreateSuccess(null);
+    setError(null);
+
+    if (!createForm.username.trim() || !createForm.email.trim() || !createForm.password) {
+      setError('Username, email, and password are required to create a user.');
+      return;
+    }
+
+    setCreateLoading(true);
+    try {
+      const response = await api.post<{ message: string }>('/admin/users', {
+        username: createForm.username.trim(),
+        email: createForm.email.trim(),
+        password: createForm.password,
+        role: createForm.role,
+      });
+      setCreateSuccess(response.message || 'User created successfully.');
+      setCreateForm({
+        username: '',
+        email: '',
+        password: '',
+        role: 'driver',
+      });
+      loadUsers();
+    } catch (err: unknown) {
+      setError((err as { message?: string })?.message ?? 'Could not create user.');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
 
   const startViewAs = async (user: UserRow) => {
     if (user.role !== 'driver' && user.role !== 'sponsor') return;
@@ -91,6 +146,77 @@ export function AdminUsersPage() {
     <section className="card" aria-labelledby="users-heading">
       <h2 id="users-heading">User Management</h2>
       <p className="mt-1">View all users and their IDs. Use driver IDs in the Driver Sponsors Lookup.</p>
+
+      <form
+        onSubmit={createUser}
+        className="mt-2"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: '0.6rem',
+          alignItems: 'end',
+          padding: '0.8rem',
+          border: '1px solid #e5e7eb',
+          borderRadius: '0.6rem',
+          background: '#f9fafb',
+        }}
+      >
+        <label style={{ display: 'grid', gap: '0.25rem' }}>
+          Username
+          <input
+            type="text"
+            value={createForm.username}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, username: e.target.value }))}
+            required
+          />
+        </label>
+        <label style={{ display: 'grid', gap: '0.25rem' }}>
+          Email
+          <input
+            type="email"
+            value={createForm.email}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
+            required
+          />
+        </label>
+        <label style={{ display: 'grid', gap: '0.25rem' }}>
+          Password
+          <input
+            type="password"
+            value={createForm.password}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))}
+            required
+          />
+        </label>
+        <label style={{ display: 'grid', gap: '0.25rem' }}>
+          Role
+          <select
+            value={createForm.role}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, role: e.target.value as CreateRole }))}
+          >
+            <option value="driver">Driver</option>
+            <option value="sponsor">Sponsor</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <button
+          type="submit"
+          className="btn btn-primary btn-sm"
+          disabled={createLoading}
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          {createLoading ? 'Creating…' : 'Add New User'}
+        </button>
+      </form>
+
+      <p className="mt-1" style={{ fontSize: '0.82rem', color: '#6b7280' }}>
+        Password must meet complexity requirements (8+ chars, upper/lowercase, number, special character).
+      </p>
+      {createSuccess && (
+        <p className="mt-1" style={{ color: '#166534', fontWeight: 600 }}>
+          {createSuccess}
+        </p>
+      )}
 
       <div className="mt-2" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
         <input

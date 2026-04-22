@@ -899,6 +899,12 @@ def dismiss_driver_notification(notification_id: int, current_user: dict = Depen
 @app.post("/create-user")
 def create_user_endpoint(request: CreateUserRequest):
     try:
+        if request.role == "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Admin accounts can only be created by an authenticated admin user.",
+            )
+
         user = create_user(
             username=request.username,
             password=request.password,
@@ -906,6 +912,9 @@ def create_user_endpoint(request: CreateUserRequest):
             email=request.email
         )
         return {"message": "User created successfully!", "user": user}
+
+    except HTTPException:
+        raise
 
     except ValueError as ve:
         # Password validation errors

@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr
 
 
 class AccountStatusChangeRequest(BaseModel):
@@ -158,3 +160,10 @@ class AccountAppealRow(BaseModel):
 
 class AccountAppealListResponse(BaseModel):
     appeals: list[AccountAppealRow]
+
+
+class AdminCreateUserRequest(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+    role: Literal["driver", "sponsor", "admin"]
